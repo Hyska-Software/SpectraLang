@@ -12928,6 +12928,48 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.collections.BitSet"
+kind = "type"
+namespace = "std.collections"
+signature = "record BitSet {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.BitSet"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.DisjointSet"
+kind = "type"
+namespace = "std.collections"
+signature = "record DisjointSet {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.DisjointSet"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.HashSet"
+kind = "type"
+namespace = "std.collections"
+signature = "record HashSet {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.HashSet"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.collections.Iterator"
 kind = "type"
 namespace = "std.collections"
@@ -12965,6 +13007,34 @@ effects = []
 error_model = "none"
 binding = "spectra.type.std.collections.Map"
 maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.OrderedMap"
+kind = "type"
+namespace = "std.collections"
+signature = "record OrderedMap {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.OrderedMap"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.PriorityQueue"
+kind = "type"
+namespace = "std.collections"
+signature = "record PriorityQueue {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.PriorityQueue"
+maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
@@ -13010,6 +13080,542 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.Vector"
+kind = "type"
+namespace = "std.collections"
+signature = "record Vector {  }"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.type.std.collections.Vector"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.bitset_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet) -> int"
+params = [{ name = "arg0", ty = "BitSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.bitset_contains"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, int) -> bool"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_contains"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_count"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet) -> int"
+params = [{ name = "arg0", ty = "BitSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_count"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_difference_with"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, BitSet) -> unit"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "BitSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_difference_with"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet) -> unit"
+params = [{ name = "arg0", ty = "BitSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_insert"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, int) -> bool"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_insert"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_intersect_with"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, BitSet) -> unit"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "BitSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_intersect_with"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet) -> Iterator"
+params = [{ name = "arg0", ty = "BitSet" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_iter"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> BitSet"
+params = []
+returns = "BitSet"
+ir_return = "BitSet"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_remove"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, int) -> bool"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_remove"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_union_with"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(BitSet, BitSet) -> unit"
+params = [{ name = "arg0", ty = "BitSet" }, { name = "arg1", ty = "BitSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_union_with"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.bitset_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> BitSet"
+params = [{ name = "arg0", ty = "int" }]
+returns = "BitSet"
+ir_return = "BitSet"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.bitset_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_add"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet) -> int"
+params = [{ name = "arg0", ty = "DisjointSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_add"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_connected"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet, int, int) -> bool"
+params = [{ name = "arg0", ty = "DisjointSet" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_connected"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_count"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet) -> int"
+params = [{ name = "arg0", ty = "DisjointSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_count"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_find"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet, int) -> int"
+params = [{ name = "arg0", ty = "DisjointSet" }, { name = "arg1", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_find"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet) -> unit"
+params = [{ name = "arg0", ty = "DisjointSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> DisjointSet"
+params = [{ name = "arg0", ty = "int" }]
+returns = "DisjointSet"
+ir_return = "DisjointSet"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.disjoint_set_union"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(DisjointSet, int, int) -> bool"
+params = [{ name = "arg0", ty = "DisjointSet" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.disjoint_set_union"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet) -> int"
+params = [{ name = "arg0", ty = "HashSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet) -> unit"
+params = [{ name = "arg0", ty = "HashSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_clear"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_contains"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet, T) -> bool"
+params = [{ name = "arg0", ty = "HashSet" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_contains"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet) -> unit"
+params = [{ name = "arg0", ty = "HashSet" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_insert"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet, T) -> bool"
+params = [{ name = "arg0", ty = "HashSet" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_insert"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet) -> Iterator"
+params = [{ name = "arg0", ty = "HashSet" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_iter"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet) -> int"
+params = [{ name = "arg0", ty = "HashSet" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_len"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> HashSet"
+params = []
+returns = "HashSet"
+ir_return = "HashSet<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_remove"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(HashSet, T) -> bool"
+params = [{ name = "arg0", ty = "HashSet" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_remove"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.hash_set_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> HashSet"
+params = [{ name = "arg0", ty = "int" }]
+returns = "HashSet"
+ir_return = "HashSet<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.hash_set_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.iterator_free"
@@ -13079,6 +13685,24 @@ effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.collections.iterator_remaining"
 maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.list_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(List) -> int"
+params = [{ name = "arg0", ty = "List" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.list_capacity"
+maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
@@ -13468,6 +14092,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/stability_typed_option_accessors.spectra"
 
 [[entry]]
+path = "std.collections.list_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(List, int) -> unit"
+params = [{ name = "arg0", ty = "List" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.list_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.collections.list_set"
 kind = "function"
 namespace = "std.collections"
@@ -13517,6 +14159,42 @@ effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.collections.list_sort_by"
 maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.list_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> List"
+params = [{ name = "arg0", ty = "int" }]
+returns = "List"
+ir_return = "List<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.list_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.map_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Map) -> int"
+params = [{ name = "arg0", ty = "Map" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_capacity"
+maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
@@ -13741,6 +14419,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/stability_typed_option_accessors.spectra"
 
 [[entry]]
+path = "std.collections.map_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Map, int) -> unit"
+params = [{ name = "arg0", ty = "Map" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.collections.map_set"
 kind = "function"
 namespace = "std.collections"
@@ -13775,6 +14471,384 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/497_stdlib_map_iteration.spectra"
+
+[[entry]]
+path = "std.collections.map_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> Map"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Map"
+ir_return = "Map<int,int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.map_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_contains"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap, K) -> bool"
+params = [{ name = "arg0", ty = "OrderedMap" }, { name = "arg1", ty = "K" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_contains"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap) -> unit"
+params = [{ name = "arg0", ty = "OrderedMap" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_get"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap, K) -> Option"
+params = [{ name = "arg0", ty = "OrderedMap" }, { name = "arg1", ty = "K" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_get"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap) -> Iterator"
+params = [{ name = "arg0", ty = "OrderedMap" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_iter"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap) -> int"
+params = [{ name = "arg0", ty = "OrderedMap" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_len"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> OrderedMap"
+params = []
+returns = "OrderedMap"
+ir_return = "OrderedMap<int,int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_range_keys"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap, K, K) -> Iterator"
+params = [{ name = "arg0", ty = "OrderedMap" }, { name = "arg1", ty = "K" }, { name = "arg2", ty = "K" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_range_keys"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_remove"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap, K) -> Option"
+params = [{ name = "arg0", ty = "OrderedMap" }, { name = "arg1", ty = "K" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_remove"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.ordered_map_set"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(OrderedMap, K, V) -> unit"
+params = [{ name = "arg0", ty = "OrderedMap" }, { name = "arg1", ty = "K" }, { name = "arg2", ty = "V" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.ordered_map_set"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> int"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> unit"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_clear"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> unit"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> int"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_len"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> PriorityQueue"
+params = []
+returns = "PriorityQueue"
+ir_return = "PriorityQueue<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_new_min"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> PriorityQueue"
+params = []
+returns = "PriorityQueue"
+ir_return = "PriorityQueue<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_new_min"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_peek"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> Option"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_peek"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_pop"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue) -> Option"
+params = [{ name = "arg0", ty = "PriorityQueue" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_pop"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_push"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(PriorityQueue, T) -> unit"
+params = [{ name = "arg0", ty = "PriorityQueue" }, { name = "arg1", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_push"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.priority_queue_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> PriorityQueue"
+params = [{ name = "arg0", ty = "int" }]
+returns = "PriorityQueue"
+ir_return = "PriorityQueue<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.priority_queue_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
+
+[[entry]]
+path = "std.collections.queue_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue) -> int"
+params = [{ name = "arg0", ty = "Queue" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
 path = "std.collections.queue_clear"
@@ -13962,6 +15036,60 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/503_stdlib_collections_empty_options.spectra"
 
 [[entry]]
+path = "std.collections.queue_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Queue, int) -> unit"
+params = [{ name = "arg0", ty = "Queue" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.queue_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> Queue"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Queue"
+ir_return = "Queue<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.queue_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set) -> int"
+params = [{ name = "arg0", ty = "Set" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
 path = "std.collections.set_clear"
 kind = "function"
 namespace = "std.collections"
@@ -14119,6 +15247,60 @@ effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.collections.set_remove"
 maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Set, int) -> unit"
+params = [{ name = "arg0", ty = "Set" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.set_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> Set"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Set"
+ir_return = "Set<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.set_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.stack_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack) -> int"
+params = [{ name = "arg0", ty = "Stack" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_capacity"
+maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
@@ -14307,6 +15489,348 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/498_stdlib_stack_lifecycle.spectra"
+
+[[entry]]
+path = "std.collections.stack_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Stack, int) -> unit"
+params = [{ name = "arg0", ty = "Stack" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.stack_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> Stack"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Stack"
+ir_return = "Stack<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["allocation", "host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.stack_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> int"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_clear"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> unit"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_clear"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_contains"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, T) -> bool"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "T" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_contains"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_free"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> unit"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_free"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_get"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, int) -> Option"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "int" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_get"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_index_of"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, T) -> int"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "T" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_index_of"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_insert_at"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, int, T) -> unit"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_insert_at"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_is_empty"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> bool"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_is_empty"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_iter"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> Iterator"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "Iterator"
+ir_return = "Iterator<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_iter"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_len"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> int"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_len"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_new"
+kind = "function"
+namespace = "std.collections"
+signature = "fn() -> Vector"
+params = []
+returns = "Vector"
+ir_return = "Vector<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_new"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_pop"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector) -> Option"
+params = [{ name = "arg0", ty = "Vector" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_pop"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_push"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, T) -> unit"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_push"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_remove_at"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, int) -> Option"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "int" }]
+returns = "Option"
+ir_return = "unknown"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_remove_at"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_reserve"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, int) -> unit"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "int" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_reserve"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_set"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(Vector, int, T) -> unit"
+params = [{ name = "arg0", ty = "Vector" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "T" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_set"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.collections.vector_with_capacity"
+kind = "function"
+namespace = "std.collections"
+signature = "fn(int) -> Vector"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Vector"
+ir_return = "Vector<int>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.collections.vector_with_capacity"
+maturity = "beta"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
 path = "std.concurrent"

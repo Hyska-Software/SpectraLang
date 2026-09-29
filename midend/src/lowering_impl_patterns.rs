@@ -264,6 +264,10 @@ impl ASTLowering {
                     "string" => IRType::String,
                     "char" => IRType::Char,
                     "Range" => IRType::Range,
+                    "BitSet" | "DisjointSet" => IRType::Struct {
+                        name: type_name.to_string(),
+                        fields: Vec::new(),
+                    },
                     _ => {
                         // Check if this is a struct type
                         if let Some(fields) = self.struct_definitions.get(type_name) {
@@ -359,7 +363,7 @@ impl ASTLowering {
                 // through to the named-type path here turns `List<string>`
                 // into `Void`, which silently degrades `list_get`/`map_get`
                 // to untyped integers.
-                if name == "List" {
+                if matches!(name.as_str(), "List" | "Vector") {
                     let element_name = type_args
                         .first()
                         .map(|ann| self.type_annotation_to_string(ann))
@@ -368,7 +372,7 @@ impl ASTLowering {
                         name,
                         type_args,
                         IRType::Struct {
-                            name: format!("List_{element_name}"),
+                            name: format!("{name}_{element_name}"),
                             fields: Vec::new(),
                         },
                         substitutions,
@@ -395,7 +399,30 @@ impl ASTLowering {
                     );
                 }
 
-                if matches!(name.as_str(), "Set" | "Iterator" | "Stack" | "Queue") {
+                if name == "OrderedMap" {
+                    let key_name = type_args
+                        .first()
+                        .map(|ann| self.type_annotation_to_string(ann))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let value_name = type_args
+                        .get(1)
+                        .map(|ann| self.type_annotation_to_string(ann))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    return self.lower_generic_application(
+                        name,
+                        type_args,
+                        IRType::Struct {
+                            name: format!("OrderedMap_{key_name}_{value_name}"),
+                            fields: Vec::new(),
+                        },
+                        substitutions,
+                    );
+                }
+
+                if matches!(
+                    name.as_str(),
+                    "Set" | "Iterator" | "Stack" | "Queue" | "HashSet" | "PriorityQueue"
+                ) {
                     let element_name = type_args
                         .first()
                         .map(|ann| self.type_annotation_to_string(ann))

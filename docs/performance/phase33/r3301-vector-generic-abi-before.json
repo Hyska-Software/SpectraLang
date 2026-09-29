@@ -1,0 +1,31 @@
+{
+  "schema": "spectra.phase33.r3301_vector_generic_abi_baseline.v1",
+  "classification": "pre_optimization_release_observation",
+  "profile": "release",
+  "warmups_per_independent_group": 2,
+  "timed_samples_per_independent_group": 8,
+  "independent_groups": 3,
+  "workload": "Vector<T> indexed append and traversal compared with List<T>",
+  "ratio_semantics": "List median operation latency / Vector median operation latency; values below 1 mean List<T> is faster",
+  "provenance": "Transcribed from the first complete R-3308 release-gate output immediately before the VectorPush/VectorGet fast ABI change. The earlier full JSON report and binary metadata were replaced by the post-change report, so the original binary hash and source-tree fingerprint are unavailable.",
+  "measurements": {
+    "small": {
+      "jit_median_list_to_vector_speed_ratio": 0.6133,
+      "aot_median_list_to_vector_speed_ratio": 0.6201,
+      "jit_independent_group_list_to_vector_speed_ratios": [0.6205, 0.6244, 0.5997],
+      "aot_independent_group_list_to_vector_speed_ratios": [0.6243, 0.6286, 0.6123]
+    },
+    "medium": {
+      "jit_median_list_to_vector_speed_ratio": 0.5994,
+      "aot_median_list_to_vector_speed_ratio": 0.6248,
+      "jit_independent_group_list_to_vector_speed_ratios": [0.5912, 0.5872, 0.6029],
+      "aot_independent_group_list_to_vector_speed_ratios": [0.6118, 0.6288, 0.6742]
+    },
+    "large": {
+      "jit_median_list_to_vector_speed_ratio": 0.547,
+      "aot_median_list_to_vector_speed_ratio": 0.6299,
+      "jit_independent_group_list_to_vector_speed_ratios": [0.6037, 0.5485, 0.5446],
+      "aot_independent_group_list_to_vector_speed_ratios": [0.6136, 0.6264, 0.6257]
+    }
+  }
+}

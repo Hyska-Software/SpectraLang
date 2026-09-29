@@ -165,9 +165,15 @@ def read_expression(text: str, index: int) -> str:
 
 def struct_ir_name(name: str) -> str:
     """Render a midend struct name with the catalog IR type grammar."""
-    for prefix in ("List", "Set", "Iterator", "Stack", "Queue"):
+    for prefix in ("List", "Vector", "Set", "Iterator", "Stack", "Queue"):
         if name.startswith(prefix + "_"):
             return f"{prefix}<{name[len(prefix) + 1:]}>"
+    for prefix in ("HashSet", "PriorityQueue"):
+        if name.startswith(prefix + "_"):
+            return f"{prefix}<{name[len(prefix) + 1:]}>"
+    if name.startswith("OrderedMap_"):
+        key, value = name[len("OrderedMap_") :].split("_", 1)
+        return f"OrderedMap<{key},{value}>"
     if name.startswith("Map_"):
         key, value = name[len("Map_") :].split("_", 1)
         return f"Map<{key},{value}>"
@@ -195,7 +201,7 @@ def ir_type_text(expression: str) -> str:
     if match:
         return f"Result<{ir_type_text(match.group(1))}>"
     match = re.fullmatch(
-        r'IRType::Struct \{ name: "([A-Za-z0-9_]+)"\.to_string\(\), fields: Vec::new\(\), \}',
+        r'IRType::Struct \{ name: "([A-Za-z0-9_]+)"\.to_string\(\), fields: Vec::new\(\),? \}',
         expr,
     )
     if match:

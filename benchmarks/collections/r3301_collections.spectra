@@ -1,0 +1,599 @@
+module r3301_collections
+
+import std.collections as collections
+import std.convert as convert
+import std.io as io
+import std.option as option
+import std.string as string
+import std.time as time
+
+func report(name: string, construction_ns: int, operation_ns: int, operations: int, checksum: int, capacity_before: int, capacity_after: int, key_length: int) {
+    io.println(
+        "R3301|" + name + "|" + convert.int_to_string(construction_ns) + "|" +
+        convert.int_to_string(operation_ns) + "|" + convert.int_to_string(operations) + "|" +
+        convert.int_to_string(checksum) + "|" + convert.int_to_string(capacity_before) + "|" +
+        convert.int_to_string(capacity_after) + "|" + convert.int_to_string(key_length)
+    )
+}
+
+func bench_list(n: int, values: List<int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.list_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.list_push(values, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let value = collections.list_get(values, index)
+        if option.is_none(value) {
+            collections.list_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(value)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.list_capacity(values)
+    if collections.list_len(values) != n {
+        collections.list_free(values)
+        return false
+    }
+    report(name, construction_ns, operation_finished - operation_started, n * 2, checksum, capacity_before, capacity_after, 0)
+    collections.list_free(values)
+    return checksum == n * (n - 1) / 2
+}
+
+func bench_list_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: List<int> = collections.list_new()
+    let constructed = time.monotonic_nanos()
+    return bench_list(n, values, constructed - started, name)
+}
+
+func bench_list_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: List<int> = collections.list_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_list(n, values, constructed - started, name)
+}
+
+func bench_vector(n: int, values: Vector<int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.vector_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.vector_push(values, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let value = collections.vector_get(values, index)
+        if option.is_none(value) {
+            collections.vector_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(value)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.vector_capacity(values)
+    if collections.vector_len(values) != n {
+        collections.vector_free(values)
+        return false
+    }
+    report(name, construction_ns, operation_finished - operation_started, n * 2, checksum, capacity_before, capacity_after, 0)
+    collections.vector_free(values)
+    return checksum == n * (n - 1) / 2
+}
+
+func bench_vector_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Vector<int> = collections.vector_new()
+    let constructed = time.monotonic_nanos()
+    return bench_vector(n, values, constructed - started, name)
+}
+
+func bench_vector_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Vector<int> = collections.vector_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_vector(n, values, constructed - started, name)
+}
+
+func bench_map_int(n: int, values: Map<int, int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.map_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.map_set(values, i, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let value = collections.map_get(values, index)
+        if option.is_none(value) {
+            collections.map_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(value)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.map_capacity(values)
+    let passed = collections.map_len(values) == n && checksum == n * (n - 1) / 2
+    report(name, construction_ns, operation_finished - operation_started, n * 2, checksum, capacity_before, capacity_after, 0)
+    collections.map_free(values)
+    return passed
+}
+
+func bench_map_int_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Map<int, int> = collections.map_new()
+    let constructed = time.monotonic_nanos()
+    return bench_map_int(n, values, constructed - started, name)
+}
+
+func bench_map_int_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Map<int, int> = collections.map_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_map_int(n, values, constructed - started, name)
+}
+
+func bench_map_string(n: int, values: Map<string, int>, key: string, construction_ns: int, name: string, key_length: int) returns bool {
+    let capacity_before = collections.map_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    let hits = 0
+    while i < n {
+        collections.map_set(values, key, i)
+        if collections.map_contains(values, key) {
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.map_capacity(values)
+    let final_value = collections.map_get(values, key)
+    let passed = collections.map_len(values) == 1 && hits == n &&
+        option.is_some(final_value) && option.option_unwrap(final_value) == n - 1
+    report(name, construction_ns, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, key_length)
+    collections.map_free(values)
+    return passed
+}
+
+func bench_map_string_default(n: int, name: string, key_length: int) returns bool {
+    let key = string.repeat_str("s", key_length)
+    let started = time.monotonic_nanos()
+    let values: Map<string, int> = collections.map_new()
+    let constructed = time.monotonic_nanos()
+    return bench_map_string(n, values, key, constructed - started, name, key_length)
+}
+
+func bench_map_string_capacity(n: int, name: string, key_length: int) returns bool {
+    let key = string.repeat_str("s", key_length)
+    let started = time.monotonic_nanos()
+    let values: Map<string, int> = collections.map_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_map_string(n, values, key, constructed - started, name, key_length)
+}
+
+func bench_set_int(n: int, values: Set<int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.set_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let inserted = 0
+    let i = 0
+    while i < n {
+        if collections.set_insert(values, i) {
+            inserted = inserted + 1
+        }
+        i = i + 1
+    }
+    let hits = 0
+    let index = 0
+    while index < n {
+        if collections.set_contains(values, index) {
+            hits = hits + 1
+        }
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.set_capacity(values)
+    let passed = collections.set_len(values) == n && inserted == n && hits == n
+    report(name, construction_ns, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, 0)
+    collections.set_free(values)
+    return passed
+}
+
+func bench_set_int_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Set<int> = collections.set_new()
+    let constructed = time.monotonic_nanos()
+    return bench_set_int(n, values, constructed - started, name)
+}
+
+func bench_set_int_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Set<int> = collections.set_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_set_int(n, values, constructed - started, name)
+}
+
+func bench_set_string(n: int, values: Set<string>, key: string, construction_ns: int, name: string, key_length: int) returns bool {
+    let capacity_before = collections.set_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let inserted = 0
+    let hits = 0
+    let i = 0
+    while i < n {
+        if collections.set_insert(values, key) {
+            inserted = inserted + 1
+        }
+        if collections.set_contains(values, key) {
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.set_capacity(values)
+    let passed = collections.set_len(values) == 1 && inserted == 1 && hits == n
+    report(name, construction_ns, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, key_length)
+    collections.set_free(values)
+    return passed
+}
+
+func bench_set_string_default(n: int, name: string, key_length: int) returns bool {
+    let key = string.repeat_str("s", key_length)
+    let started = time.monotonic_nanos()
+    let values: Set<string> = collections.set_new()
+    let constructed = time.monotonic_nanos()
+    return bench_set_string(n, values, key, constructed - started, name, key_length)
+}
+
+func bench_set_string_capacity(n: int, name: string, key_length: int) returns bool {
+    let key = string.repeat_str("s", key_length)
+    let started = time.monotonic_nanos()
+    let values: Set<string> = collections.set_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_set_string(n, values, key, constructed - started, name, key_length)
+}
+
+func bench_stack(n: int, values: Stack<int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.stack_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.stack_push(values, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let item = collections.stack_pop(values)
+        if option.is_none(item) || option.option_unwrap(item) != n - index - 1 {
+            collections.stack_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(item)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.stack_capacity(values)
+    let passed = collections.stack_len(values) == 0 && checksum == n * (n - 1) / 2
+    report(name, construction_ns, operation_finished - operation_started, n * 2, checksum, capacity_before, capacity_after, 0)
+    collections.stack_free(values)
+    return passed
+}
+
+func bench_stack_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Stack<int> = collections.stack_new()
+    let constructed = time.monotonic_nanos()
+    return bench_stack(n, values, constructed - started, name)
+}
+
+func bench_stack_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Stack<int> = collections.stack_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_stack(n, values, constructed - started, name)
+}
+
+func bench_queue(n: int, values: Queue<int>, construction_ns: int, name: string) returns bool {
+    let capacity_before = collections.queue_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.queue_enqueue(values, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let item = collections.queue_dequeue(values)
+        if option.is_none(item) || option.option_unwrap(item) != index {
+            collections.queue_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(item)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.queue_capacity(values)
+    let passed = collections.queue_len(values) == 0 && checksum == n * (n - 1) / 2
+    report(name, construction_ns, operation_finished - operation_started, n * 2, checksum, capacity_before, capacity_after, 0)
+    collections.queue_free(values)
+    return passed
+}
+
+func bench_queue_default(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Queue<int> = collections.queue_new()
+    let constructed = time.monotonic_nanos()
+    return bench_queue(n, values, constructed - started, name)
+}
+
+func bench_queue_capacity(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: Queue<int> = collections.queue_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    return bench_queue(n, values, constructed - started, name)
+}
+
+func bench_string_matrix(n: int, size_name: string) returns bool {
+    if !bench_map_string_default(n, "map-string.8." + size_name + ".default", 8) { return false }
+    if !bench_map_string_capacity(n, "map-string.8." + size_name + ".capacity", 8) { return false }
+    if !bench_map_string_default(n, "map-string.64." + size_name + ".default", 64) { return false }
+    if !bench_map_string_capacity(n, "map-string.64." + size_name + ".capacity", 64) { return false }
+    if !bench_map_string_default(n, "map-string.256." + size_name + ".default", 256) { return false }
+    if !bench_map_string_capacity(n, "map-string.256." + size_name + ".capacity", 256) { return false }
+    if !bench_set_string_default(n, "set-string.8." + size_name + ".default", 8) { return false }
+    if !bench_set_string_capacity(n, "set-string.8." + size_name + ".capacity", 8) { return false }
+    if !bench_set_string_default(n, "set-string.64." + size_name + ".default", 64) { return false }
+    if !bench_set_string_capacity(n, "set-string.64." + size_name + ".capacity", 64) { return false }
+    if !bench_set_string_default(n, "set-string.256." + size_name + ".default", 256) { return false }
+    if !bench_set_string_capacity(n, "set-string.256." + size_name + ".capacity", 256) { return false }
+    return true
+}
+
+func bench_hash_set_int(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: HashSet<int> = collections.hash_set_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    let capacity_before = collections.hash_set_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let inserted = 0
+    let i = 0
+    while i < n {
+        if collections.hash_set_insert(values, i) { inserted = inserted + 1 }
+        i = i + 1
+    }
+    let hits = 0
+    let index = 0
+    while index < n {
+        if collections.hash_set_contains(values, index) { hits = hits + 1 }
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.hash_set_capacity(values)
+    let passed = collections.hash_set_len(values) == n && inserted == n && hits == n
+    report(name, constructed - started, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, 0)
+    collections.hash_set_free(values)
+    return passed
+}
+
+func bench_hash_set_string(n: int, name: string, key_length: int) returns bool {
+    let key = string.repeat_str("s", key_length)
+    let started = time.monotonic_nanos()
+    let values: HashSet<string> = collections.hash_set_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    let capacity_before = collections.hash_set_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let inserted = 0
+    let hits = 0
+    let i = 0
+    while i < n {
+        if collections.hash_set_insert(values, key) { inserted = inserted + 1 }
+        if collections.hash_set_contains(values, key) { hits = hits + 1 }
+        i = i + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.hash_set_capacity(values)
+    let passed = collections.hash_set_len(values) == 1 && inserted == 1 && hits == n
+    report(name, constructed - started, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, key_length)
+    collections.hash_set_free(values)
+    return passed
+}
+
+func bench_ordered_map(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: OrderedMap<int, int> = collections.ordered_map_new()
+    let constructed = time.monotonic_nanos()
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.ordered_map_set(values, i, i)
+        i = i + 1
+    }
+    let iterator = collections.ordered_map_range_keys(values, 0, n)
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let key = collections.iterator_next(iterator)
+        if option.is_none(key) || option.option_unwrap(key) != index {
+            collections.iterator_free(iterator)
+            collections.ordered_map_free(values)
+            return false
+        }
+        checksum = checksum + index
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let passed = collections.ordered_map_len(values) == n && checksum == n * (n - 1) / 2
+    report(name, constructed - started, operation_finished - operation_started, n * 2, checksum, -1, -1, 0)
+    collections.iterator_free(iterator)
+    collections.ordered_map_free(values)
+    return passed
+}
+
+func bench_priority_queue(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: PriorityQueue<int> = collections.priority_queue_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    let capacity_before = collections.priority_queue_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.priority_queue_push(values, i)
+        i = i + 1
+    }
+    let checksum = 0
+    let index = 0
+    while index < n {
+        let top = collections.priority_queue_peek(values)
+        let popped = collections.priority_queue_pop(values)
+        if option.is_none(top) || option.is_none(popped) ||
+            option.option_unwrap(top) != n - index - 1 ||
+            option.option_unwrap(popped) != n - index - 1 {
+            collections.priority_queue_free(values)
+            return false
+        }
+        checksum = checksum + option.option_unwrap(popped)
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.priority_queue_capacity(values)
+    let passed = collections.priority_queue_len(values) == 0 && checksum == n * (n - 1) / 2
+    report(name, constructed - started, operation_finished - operation_started, n * 3, checksum, capacity_before, capacity_after, 0)
+    collections.priority_queue_free(values)
+    return passed
+}
+
+func bench_bitset(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: BitSet = collections.bitset_with_capacity(n)
+    let constructed = time.monotonic_nanos()
+    let capacity_before = collections.bitset_capacity(values)
+    let operation_started = time.monotonic_nanos()
+    let i = 0
+    while i < n {
+        collections.bitset_insert(values, i)
+        i = i + 1
+    }
+    let hits = 0
+    let index = 0
+    while index < n {
+        if collections.bitset_contains(values, index) { hits = hits + 1 }
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let capacity_after = collections.bitset_capacity(values)
+    let passed = collections.bitset_count(values) == n && hits == n
+    report(name, constructed - started, operation_finished - operation_started, n * 2, hits, capacity_before, capacity_after, 0)
+    collections.bitset_free(values)
+    return passed
+}
+
+func bench_disjoint_set(n: int, name: string) returns bool {
+    let started = time.monotonic_nanos()
+    let values: DisjointSet = collections.disjoint_set_new(n)
+    let constructed = time.monotonic_nanos()
+    let operation_started = time.monotonic_nanos()
+    let successes = 0
+    let i = 0
+    while i < n {
+        // Seed 17 offsets the deterministic affine edge sequence.
+        let other = (i * 37 + 17) % n
+        if collections.disjoint_set_union(values, i, other) { successes = successes + 1 }
+        if !collections.disjoint_set_connected(values, i, other) {
+            collections.disjoint_set_free(values)
+            return false
+        }
+        i = i + 1
+    }
+    let repeated = 0
+    let index = 0
+    while index < n {
+        let other = (index * 37 + 17) % n
+        if collections.disjoint_set_union(values, index, other) { repeated = repeated + 1 }
+        index = index + 1
+    }
+    let operation_finished = time.monotonic_nanos()
+    let components = collections.disjoint_set_count(values)
+    let passed = repeated == 0 && components > 0 && components <= n
+    report(name, constructed - started, operation_finished - operation_started, n * 3, successes, -1, -1, 0)
+    collections.disjoint_set_free(values)
+    return passed
+}
+
+public func main() returns int {
+    if !bench_list_default(64, "list.small.default") { return 1 }
+    if !bench_list_capacity(64, "list.small.capacity") { return 2 }
+    if !bench_list_default(512, "list.medium.default") { return 3 }
+    if !bench_list_capacity(512, "list.medium.capacity") { return 4 }
+    if !bench_list_default(4096, "list.large.default") { return 5 }
+    if !bench_list_capacity(4096, "list.large.capacity") { return 6 }
+    if !bench_vector_default(64, "vector.small.default") { return 61 }
+    if !bench_vector_capacity(64, "vector.small.capacity") { return 62 }
+    if !bench_vector_default(512, "vector.medium.default") { return 63 }
+    if !bench_vector_capacity(512, "vector.medium.capacity") { return 64 }
+    if !bench_vector_default(4096, "vector.large.default") { return 65 }
+    if !bench_vector_capacity(4096, "vector.large.capacity") { return 66 }
+    if !bench_map_int_default(64, "map-int.small.default") { return 7 }
+    if !bench_map_int_capacity(64, "map-int.small.capacity") { return 8 }
+    if !bench_map_int_default(512, "map-int.medium.default") { return 9 }
+    if !bench_map_int_capacity(512, "map-int.medium.capacity") { return 10 }
+    if !bench_map_int_default(4096, "map-int.large.default") { return 11 }
+    if !bench_map_int_capacity(4096, "map-int.large.capacity") { return 12 }
+    if !bench_set_int_default(64, "set-int.small.default") { return 13 }
+    if !bench_set_int_capacity(64, "set-int.small.capacity") { return 14 }
+    if !bench_set_int_default(512, "set-int.medium.default") { return 15 }
+    if !bench_set_int_capacity(512, "set-int.medium.capacity") { return 16 }
+    if !bench_set_int_default(4096, "set-int.large.default") { return 17 }
+    if !bench_set_int_capacity(4096, "set-int.large.capacity") { return 18 }
+    if !bench_stack_default(64, "stack.small.default") { return 19 }
+    if !bench_stack_capacity(64, "stack.small.capacity") { return 20 }
+    if !bench_stack_default(512, "stack.medium.default") { return 21 }
+    if !bench_stack_capacity(512, "stack.medium.capacity") { return 22 }
+    if !bench_stack_default(4096, "stack.large.default") { return 23 }
+    if !bench_stack_capacity(4096, "stack.large.capacity") { return 24 }
+    if !bench_queue_default(64, "queue.small.default") { return 25 }
+    if !bench_queue_capacity(64, "queue.small.capacity") { return 26 }
+    if !bench_queue_default(512, "queue.medium.default") { return 27 }
+    if !bench_queue_capacity(512, "queue.medium.capacity") { return 28 }
+    if !bench_queue_default(4096, "queue.large.default") { return 29 }
+    if !bench_queue_capacity(4096, "queue.large.capacity") { return 30 }
+    if !bench_string_matrix(64, "small") { return 31 }
+    if !bench_string_matrix(512, "medium") { return 32 }
+    if !bench_string_matrix(4096, "large") { return 33 }
+    if !bench_hash_set_int(64, "hash-set-int.small") { return 34 }
+    if !bench_hash_set_int(512, "hash-set-int.medium") { return 35 }
+    if !bench_hash_set_int(4096, "hash-set-int.large") { return 36 }
+    if !bench_hash_set_string(64, "hash-set-string.8.small", 8) { return 37 }
+    if !bench_hash_set_string(64, "hash-set-string.64.small", 64) { return 38 }
+    if !bench_hash_set_string(64, "hash-set-string.256.small", 256) { return 39 }
+    if !bench_hash_set_string(512, "hash-set-string.8.medium", 8) { return 40 }
+    if !bench_hash_set_string(512, "hash-set-string.64.medium", 64) { return 41 }
+    if !bench_hash_set_string(512, "hash-set-string.256.medium", 256) { return 42 }
+    if !bench_hash_set_string(4096, "hash-set-string.8.large", 8) { return 43 }
+    if !bench_hash_set_string(4096, "hash-set-string.64.large", 64) { return 44 }
+    if !bench_hash_set_string(4096, "hash-set-string.256.large", 256) { return 45 }
+    if !bench_ordered_map(64, "ordered-map.small") { return 46 }
+    if !bench_ordered_map(512, "ordered-map.medium") { return 47 }
+    if !bench_ordered_map(4096, "ordered-map.large") { return 48 }
+    if !bench_priority_queue(64, "priority-queue.small") { return 49 }
+    if !bench_priority_queue(512, "priority-queue.medium") { return 50 }
+    if !bench_priority_queue(4096, "priority-queue.large") { return 51 }
+    if !bench_bitset(64, "bitset.small") { return 52 }
+    if !bench_bitset(512, "bitset.medium") { return 53 }
+    if !bench_bitset(4096, "bitset.large") { return 54 }
+    if !bench_disjoint_set(64, "disjoint-set.small") { return 58 }
+    if !bench_disjoint_set(512, "disjoint-set.medium") { return 59 }
+    if !bench_disjoint_set(4096, "disjoint-set.large") { return 60 }
+    return 0
+}

@@ -1,0 +1,55 @@
+module validation_collection_capacity
+
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let list: List<int> = collections.list_with_capacity(2)
+    collections.list_reserve(list, 8)
+    collections.list_push(list, 11)
+    collections.list_push(list, 22)
+    let list_capacity_ok = collections.list_capacity(list) >= 8
+
+    let map: Map<string, int> = collections.map_with_capacity(2)
+    collections.map_reserve(map, 8)
+    collections.map_set(map, "answer", 42)
+    let map_capacity_ok = collections.map_capacity(map) >= 8
+
+    let set: Set<int> = collections.set_with_capacity(2)
+    collections.set_reserve(set, 8)
+    let inserted = collections.set_insert(set, 33)
+    let set_capacity_ok = collections.set_capacity(set) >= 8
+
+    let stack: Stack<int> = collections.stack_with_capacity(2)
+    collections.stack_reserve(stack, 8)
+    collections.stack_push(stack, 44)
+    let stack_capacity_ok = collections.stack_capacity(stack) >= 8
+
+    let queue: Queue<int> = collections.queue_with_capacity(2)
+    collections.queue_reserve(queue, 8)
+    collections.queue_enqueue(queue, 55)
+    let queue_capacity_ok = collections.queue_capacity(queue) >= 8
+
+    let map_value = collections.map_get(map, "answer")
+    let stack_value = collections.stack_peek(stack)
+    let queue_value = collections.queue_peek(queue)
+    let passed = collections.list_len(list) == 2 &&
+        list_capacity_ok && map_capacity_ok && set_capacity_ok &&
+        stack_capacity_ok && queue_capacity_ok &&
+        option.is_some(map_value) &&
+        inserted &&
+        collections.set_contains(set, 33) &&
+        option.is_some(stack_value) &&
+        option.is_some(queue_value)
+
+    collections.list_free(list)
+    collections.map_free(map)
+    collections.set_free(set)
+    collections.stack_free(stack)
+    collections.queue_free(queue)
+
+    if passed {
+        return 0
+    }
+    return 1
+}

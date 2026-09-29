@@ -65,6 +65,8 @@ impl CodeGenerator {
                 | FastHostCall::MapContainsScalar
                 | FastHostCall::MapGetScalar
                 | FastHostCall::MapRemoveScalar
+                | FastHostCall::VectorPush
+                | FastHostCall::VectorGet
         )
     }
 
@@ -93,13 +95,14 @@ impl CodeGenerator {
             let value = value_map
                 .get(arg.id)
                 .ok_or_else(|| BackendCodegenError::missing_value(arg.id))?;
-            call_args.push(Self::host_argument_to_i64(builder, value, fast.host_name())?);
+            call_args.push(Self::host_argument_to_i64(
+                builder,
+                value,
+                fast.host_name(),
+            )?);
         }
 
-        let func_ref = module.declare_func_in_func(
-            hostcall.fast_func(fast),
-            builder.func,
-        );
+        let func_ref = module.declare_func_in_func(hostcall.fast_func(fast), builder.func);
         let call = builder.ins().call(func_ref, &call_args);
         let push_returns_length = matches!(fast, FastHostCall::ListPush);
         if push_returns_length {
@@ -272,8 +275,6 @@ impl CodeGenerator {
                     }
                     return Ok(());
                 }
-
-
 
                 if matches!(
                     fast_hostcall,
@@ -457,7 +458,6 @@ impl CodeGenerator {
                     return Ok(());
                 }
 
-
                 if matches!(
                     fast_hostcall,
                     HostCallClass::Fast(FastHostCall::MapContains)
@@ -499,7 +499,6 @@ impl CodeGenerator {
                     }
                     return Ok(());
                 }
-
 
                 if matches!(fast_hostcall, HostCallClass::Fast(FastHostCall::MapLen))
                     && args.len() == 1

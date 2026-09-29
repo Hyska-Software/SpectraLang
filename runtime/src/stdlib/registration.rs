@@ -509,6 +509,9 @@ pub(crate) fn register_io() {
 }
 
 pub(crate) fn register_collections() {
+    register_collection_capacity();
+    register_advanced_collections();
+    register_vector_collection();
     register_host_function(LIST_NEW, std_list_new);
     register_host_function(LIST_PUSH, std_list_push);
     register_host_function(LIST_LEN, std_list_len);

@@ -129,6 +129,18 @@ pub enum HandleKind {
     Stack = 112,
     /// `std.collections.Queue` storage handle.
     Queue = 113,
+    /// `std.collections.HashSet` storage handle.
+    HashSet = 114,
+    /// `std.collections.OrderedMap` storage handle.
+    OrderedMap = 115,
+    /// `std.collections.PriorityQueue` storage handle.
+    PriorityQueue = 116,
+    /// `std.collections.BitSet` storage handle.
+    BitSet = 117,
+    /// `std.collections.DisjointSet` storage handle.
+    DisjointSet = 118,
+    /// `std.collections.Vector` contiguous sequence handle.
+    Vector = 119,
     User = 255,
 }
 
@@ -231,6 +243,12 @@ impl HandleKind {
             111 => Self::AgentToolRegistry,
             112 => Self::Stack,
             113 => Self::Queue,
+            114 => Self::HashSet,
+            115 => Self::OrderedMap,
+            116 => Self::PriorityQueue,
+            117 => Self::BitSet,
+            118 => Self::DisjointSet,
+            119 => Self::Vector,
             255 => Self::User,
             81 => Self::ApiWebSocketServer,
             82 => Self::ApiWebSocket,

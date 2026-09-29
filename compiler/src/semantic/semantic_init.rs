@@ -420,16 +420,29 @@ impl SemanticAnalyzer {
             );
         }
 
-        // Runtime collections currently have a concrete scalar ABI (int
-        // elements and int keys/values), but their public type names are
-        // generic applications rather than untyped integer handles. This
-        // keeps the migration explicit while wider element ABIs are added.
+        // Runtime collection handles are represented by generic source types;
+        // the host ABI carries payload words and validates supported element
+        // kinds through type-directed dispatch.
         {
             let list_params = vec![make_type_param("T")];
             self.generic_structs
                 .insert("List".to_string(), (list_params, Vec::new()));
             self.struct_infos.insert(
                 "List".to_string(),
+                StructInfo {
+                    visibility: Visibility::Public,
+                    type_params: vec!["T".to_string()],
+                    fields: HashMap::new(),
+                    defining_module: None,
+                    defining_package: None,
+                },
+            );
+
+            let vector_params = vec![make_type_param("T")];
+            self.generic_structs
+                .insert("Vector".to_string(), (vector_params, Vec::new()));
+            self.struct_infos.insert(
+                "Vector".to_string(),
                 StructInfo {
                     visibility: Visibility::Public,
                     type_params: vec!["T".to_string()],
@@ -453,7 +466,28 @@ impl SemanticAnalyzer {
                 },
             );
 
-            for name in ["Set", "Iterator", "Stack", "Queue"] {
+            let ordered_map_params = vec![make_type_param("K"), make_type_param("V")];
+            self.generic_structs
+                .insert("OrderedMap".to_string(), (ordered_map_params, Vec::new()));
+            self.struct_infos.insert(
+                "OrderedMap".to_string(),
+                StructInfo {
+                    visibility: Visibility::Public,
+                    type_params: vec!["K".to_string(), "V".to_string()],
+                    fields: HashMap::new(),
+                    defining_module: None,
+                    defining_package: None,
+                },
+            );
+
+            for name in [
+                "Set",
+                "Iterator",
+                "Stack",
+                "Queue",
+                "HashSet",
+                "PriorityQueue",
+            ] {
                 let params = vec![make_type_param("T")];
                 self.generic_structs
                     .insert(name.to_string(), (params, Vec::new()));
@@ -462,6 +496,19 @@ impl SemanticAnalyzer {
                     StructInfo {
                         visibility: Visibility::Public,
                         type_params: vec!["T".to_string()],
+                        fields: HashMap::new(),
+                        defining_module: None,
+                        defining_package: None,
+                    },
+                );
+            }
+
+            for name in ["BitSet", "DisjointSet"] {
+                self.struct_infos.insert(
+                    name.to_string(),
+                    StructInfo {
+                        visibility: Visibility::Public,
+                        type_params: Vec::new(),
                         fields: HashMap::new(),
                         defining_module: None,
                         defining_package: None,

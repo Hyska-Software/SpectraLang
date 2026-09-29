@@ -193,10 +193,12 @@ pub enum RuntimeImport {
     MapRemoveScalar,
     /// Re-parent a pointer stored into a runtime-owned asynchronous frame.
     ManualEscapeStored,
+    VectorPush,
+    VectorGet,
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 115;
+    pub const COUNT: usize = 117;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -314,6 +316,8 @@ impl RuntimeImport {
         Self::MapGetScalar,
         Self::MapRemoveScalar,
         Self::ManualEscapeStored,
+        Self::VectorPush,
+        Self::VectorGet,
     ];
     pub const fn index(self) -> usize {
         self as usize
@@ -436,6 +440,8 @@ impl RuntimeImport {
             Self::MapGetScalar => "spectra_rt_map_get_scalar_fast",
             Self::MapRemoveScalar => "spectra_rt_map_remove_scalar_fast",
             Self::ManualEscapeStored => "spectra_rt_manual_escape_stored",
+            Self::VectorPush => "spectra_rt_vector_push_fast",
+            Self::VectorGet => "spectra_rt_vector_get_fast",
         }
     }
 
@@ -540,6 +546,8 @@ impl RuntimeImport {
             Self::MapGetScalar => (I64_I64, I64),
             Self::MapRemoveScalar => (I64_I64, I64),
             Self::ManualEscapeStored => (I64, EMPTY),
+            Self::VectorPush => (I64_I64, I32),
+            Self::VectorGet => (I64_I64, I64),
             Self::CoroutineFrameAlloc => (I64, I64),
             Self::CoroutineFrameStore => (I64_I64_I64, I64),
             Self::CoroutineFrameLoad => (I64_I64, I64),
@@ -669,14 +677,12 @@ impl RuntimeImport {
             Self::StackIter => crate::ffi::spectra_rt_stack_iter_fast as *const u8,
             Self::QueueIter => crate::ffi::spectra_rt_queue_iter_fast as *const u8,
             Self::MapSetScalar => crate::ffi::spectra_rt_map_set_scalar_fast as *const u8,
-            Self::MapContainsScalar => {
-                crate::ffi::spectra_rt_map_contains_scalar_fast as *const u8
-            }
+            Self::MapContainsScalar => crate::ffi::spectra_rt_map_contains_scalar_fast as *const u8,
             Self::MapGetScalar => crate::ffi::spectra_rt_map_get_scalar_fast as *const u8,
-            Self::MapRemoveScalar => {
-                crate::ffi::spectra_rt_map_remove_scalar_fast as *const u8
-            }
+            Self::MapRemoveScalar => crate::ffi::spectra_rt_map_remove_scalar_fast as *const u8,
             Self::ManualEscapeStored => crate::ffi::spectra_rt_manual_escape_stored as *const u8,
+            Self::VectorPush => crate::ffi::spectra_rt_vector_push_fast as *const u8,
+            Self::VectorGet => crate::ffi::spectra_rt_vector_get_fast as *const u8,
             Self::CoroutineFrameAlloc => {
                 crate::async_abi::spectra_rt_coroutine_frame_alloc as *const u8
             }
@@ -841,9 +847,11 @@ pub enum FastHostCall {
     MapContainsScalar,
     MapGetScalar,
     MapRemoveScalar,
+    VectorPush,
+    VectorGet,
 }
 impl FastHostCall {
-    pub const COUNT: usize = 85;
+    pub const COUNT: usize = 87;
 
     pub const ALL: &'static [Self] = &[
         Self::ConcurrentReset,
@@ -931,6 +939,8 @@ impl FastHostCall {
         Self::MapContainsScalar,
         Self::MapGetScalar,
         Self::MapRemoveScalar,
+        Self::VectorPush,
+        Self::VectorGet,
     ];
 
     pub const fn index(self) -> usize {
@@ -1024,6 +1034,8 @@ impl FastHostCall {
             Self::MapContainsScalar => "spectra.compiler.collections.map_contains_scalar",
             Self::MapGetScalar => "spectra.compiler.collections.map_get_scalar",
             Self::MapRemoveScalar => "spectra.compiler.collections.map_remove_scalar",
+            Self::VectorPush => "spectra.std.collections.vector_push",
+            Self::VectorGet => "spectra.std.collections.vector_get",
         }
     }
 
@@ -1114,6 +1126,8 @@ impl FastHostCall {
             Self::MapContainsScalar => RuntimeImport::MapContainsScalar,
             Self::MapGetScalar => RuntimeImport::MapGetScalar,
             Self::MapRemoveScalar => RuntimeImport::MapRemoveScalar,
+            Self::VectorPush => RuntimeImport::VectorPush,
+            Self::VectorGet => RuntimeImport::VectorGet,
         }
     }
 
@@ -1400,7 +1414,9 @@ mod tests {
                 | FastHostCall::MapSetScalar
                 | FastHostCall::MapContainsScalar
                 | FastHostCall::MapGetScalar
-                | FastHostCall::MapRemoveScalar => {}
+                | FastHostCall::MapRemoveScalar
+                | FastHostCall::VectorPush
+                | FastHostCall::VectorGet => {}
             }
 
             let name = fast.host_name();

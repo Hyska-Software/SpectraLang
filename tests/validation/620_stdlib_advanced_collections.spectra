@@ -1,0 +1,214 @@
+module validation_620_stdlib_advanced_collections
+
+from std.collections import BitSet, DisjointSet, HashSet, Iterator, OrderedMap, PriorityQueue
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let words: HashSet<string> = collections.hash_set_with_capacity(8)
+    if collections.hash_set_capacity(words) < 8 {
+        return 36
+    }
+    if collections.hash_set_insert(words, "alpha") != true {
+        return 1
+    }
+    if collections.hash_set_insert(words, "alpha") != false {
+        return 2
+    }
+    collections.hash_set_insert(words, "beta")
+    if collections.hash_set_contains(words, "alpha") != true or collections.hash_set_len(words) != 2 {
+        return 3
+    }
+    let hash_set_count = 0
+    for word in words {
+        hash_set_count = hash_set_count + 1
+    }
+    if hash_set_count != 2 {
+        return 33
+    }
+    let word_iter: Iterator<string> = collections.hash_set_iter(words)
+    if collections.iterator_remaining(word_iter) != 2 {
+        return 4
+    }
+    if option.is_some(collections.iterator_next(word_iter)) != true {
+        return 5
+    }
+    if option.is_some(collections.iterator_next(word_iter)) != true {
+        return 6
+    }
+    if option.is_some(collections.iterator_next(word_iter)) != false {
+        return 7
+    }
+    collections.iterator_free(word_iter)
+    if collections.hash_set_remove(words, "alpha") != true or collections.hash_set_contains(words, "alpha") {
+        return 8
+    }
+    collections.hash_set_clear(words)
+    if collections.hash_set_len(words) != 0 {
+        return 9
+    }
+    collections.hash_set_free(words)
+
+    let numeric_words: HashSet<int> = collections.hash_set_with_capacity(8)
+    let numeric_index = 0
+    while numeric_index < 128 {
+        if collections.hash_set_insert(numeric_words, numeric_index) != true {
+            return 39
+        }
+        numeric_index = numeric_index + 1
+    }
+    numeric_index = 0
+    while numeric_index < 128 {
+        if collections.hash_set_contains(numeric_words, numeric_index) != true {
+            return 40
+        }
+        numeric_index = numeric_index + 1
+    }
+    if collections.hash_set_len(numeric_words) != 128 {
+        return 41
+    }
+    collections.hash_set_free(numeric_words)
+
+    let ordered: OrderedMap<int, string> = collections.ordered_map_new()
+    collections.ordered_map_set(ordered, 4, "four")
+    collections.ordered_map_set(ordered, 1, "one")
+    collections.ordered_map_set(ordered, 3, "three")
+    collections.ordered_map_set(ordered, 2, "two")
+    collections.ordered_map_set(ordered, 3, "THREE")
+    let ordered_count = 0
+    for key in ordered {
+        ordered_count = ordered_count + key - key + 1
+    }
+    if ordered_count != 4 {
+        return 34
+    }
+    let updated = collections.ordered_map_get(ordered, 3)
+    if option.is_none(updated) or option.option_unwrap(updated) != "THREE" {
+        return 10
+    }
+    let key_iter: Iterator<int> = collections.ordered_map_range_keys(ordered, 2, 5)
+    let key_two = collections.iterator_next(key_iter)
+    let key_three = collections.iterator_next(key_iter)
+    let key_four = collections.iterator_next(key_iter)
+    if option.option_unwrap(key_two) != 2 or option.option_unwrap(key_three) != 3 or option.option_unwrap(key_four) != 4 {
+        return 11
+    }
+    if option.is_some(collections.iterator_next(key_iter)) {
+        return 12
+    }
+    collections.iterator_free(key_iter)
+    let removed = collections.ordered_map_remove(ordered, 1)
+    if option.is_some(removed) != true {
+        return 13
+    }
+    collections.ordered_map_free(ordered)
+
+    let maximums: PriorityQueue<int> = collections.priority_queue_with_capacity(8)
+    if collections.priority_queue_capacity(maximums) < 8 {
+        return 37
+    }
+    collections.priority_queue_push(maximums, 8)
+    collections.priority_queue_push(maximums, 2)
+    collections.priority_queue_push(maximums, 5)
+    let max_peek = collections.priority_queue_peek(maximums)
+    let max_pop = collections.priority_queue_pop(maximums)
+    if option.option_unwrap(max_peek) != 8 or option.option_unwrap(max_pop) != 8 {
+        return 14
+    }
+    if collections.priority_queue_len(maximums) != 2 {
+        return 15
+    }
+    collections.priority_queue_clear(maximums)
+    if option.is_some(collections.priority_queue_pop(maximums)) {
+        return 16
+    }
+    collections.priority_queue_free(maximums)
+
+    let minimums: PriorityQueue<int> = collections.priority_queue_new_min()
+    collections.priority_queue_push(minimums, 8)
+    collections.priority_queue_push(minimums, 2)
+    collections.priority_queue_push(minimums, 5)
+    if option.option_unwrap(collections.priority_queue_pop(minimums)) != 2 {
+        return 17
+    }
+    collections.priority_queue_free(minimums)
+
+    let left: BitSet = collections.bitset_with_capacity(65)
+    if collections.bitset_capacity(left) < 65 {
+        return 38
+    }
+    let right: BitSet = collections.bitset_new()
+    collections.bitset_insert(left, 0)
+    collections.bitset_insert(left, 63)
+    collections.bitset_insert(left, 64)
+    collections.bitset_insert(left, 65535)
+    collections.bitset_insert(right, 63)
+    collections.bitset_insert(right, 100)
+    if collections.bitset_contains(left, 64) != true or collections.bitset_contains(left, 65) {
+        return 18
+    }
+    collections.bitset_union_with(left, right)
+    if collections.bitset_count(left) != 5 {
+        return 19
+    }
+    collections.bitset_intersect_with(left, right)
+    if collections.bitset_count(left) != 2 or collections.bitset_contains(left, 100) != true {
+        return 20
+    }
+    collections.bitset_difference_with(left, right)
+    if collections.bitset_count(left) != 0 {
+        return 21
+    }
+    collections.bitset_insert(left, 0)
+    collections.bitset_insert(left, 64)
+    let bitset_count = 0
+    for bit in left {
+        bitset_count = bitset_count + bit - bit + 1
+    }
+    if bitset_count != 2 {
+        return 35
+    }
+    let bit_iter: Iterator<int> = collections.bitset_iter(left)
+    if option.option_unwrap(collections.iterator_next(bit_iter)) != 0 {
+        return 22
+    }
+    if option.option_unwrap(collections.iterator_next(bit_iter)) != 64 {
+        return 23
+    }
+    collections.iterator_free(bit_iter)
+    collections.bitset_remove(left, 64)
+    if collections.bitset_count(left) != 1 {
+        return 24
+    }
+    collections.bitset_free(left)
+    collections.bitset_free(right)
+
+    let groups: DisjointSet = collections.disjoint_set_new(5)
+    if collections.disjoint_set_count(groups) != 5 {
+        return 25
+    }
+    if collections.disjoint_set_union(groups, 0, 1) != true or collections.disjoint_set_union(groups, 1, 2) != true {
+        return 26
+    }
+    if collections.disjoint_set_union(groups, 0, 2) != false {
+        return 27
+    }
+    if collections.disjoint_set_connected(groups, 0, 2) != true or collections.disjoint_set_connected(groups, 0, 3) {
+        return 28
+    }
+    if collections.disjoint_set_find(groups, 0) != collections.disjoint_set_find(groups, 2) {
+        return 29
+    }
+    if collections.disjoint_set_count(groups) != 3 {
+        return 30
+    }
+    let added = collections.disjoint_set_add(groups)
+    if added != 5 or collections.disjoint_set_count(groups) != 4 {
+        return 31
+    }
+    if collections.disjoint_set_union(groups, 4, added) != true or collections.disjoint_set_count(groups) != 3 {
+        return 32
+    }
+    collections.disjoint_set_free(groups)
+    return 0
+}

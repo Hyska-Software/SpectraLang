@@ -215,6 +215,24 @@ pub(crate) fn lookup_std_host_group_math_io_error(
             },
             returns_value: true,
         }),
+        ("collections", "list_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.list_with_capacity",
+            return_type: IRType::Struct {
+                name: "List_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "list_reserve") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.list_reserve",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "list_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.list_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
         ("collections", "list_push") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.collections.list_push",
             return_type: IRType::Int,

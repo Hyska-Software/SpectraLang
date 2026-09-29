@@ -618,7 +618,12 @@ def matching_contract(symbol: str, manifest: dict[str, Any]) -> dict[str, Any] |
     if not namespaces:
         return None
     result = dict(max(namespaces, key=lambda x: len(x["prefix"])))
-    rules = [x for x in manifest.get("rule", []) if symbol == x.get("prefix") or symbol.startswith(x.get("prefix", "") + ".")]
+    def matches_rule(prefix: str) -> bool:
+        if prefix.endswith("_"):
+            return symbol.startswith(prefix)
+        return symbol == prefix or symbol.startswith(prefix + ".")
+
+    rules = [x for x in manifest.get("rule", []) if matches_rule(str(x.get("prefix", "")))]
     if rules:
         result.update(max(rules, key=lambda x: len(x["prefix"])))
     return result

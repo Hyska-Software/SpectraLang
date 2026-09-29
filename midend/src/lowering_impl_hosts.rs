@@ -48,6 +48,40 @@ impl ASTLowering {
         arg_exprs: &[Expression],
         ir_func: &mut IRFunction,
     ) -> Vec<Value> {
+        let collection_key_call = matches!(
+            runtime_name,
+            "spectra.std.collections.hash_set_insert"
+                | "spectra.std.collections.hash_set_contains"
+                | "spectra.std.collections.hash_set_remove"
+                | "spectra.std.collections.ordered_map_set"
+                | "spectra.std.collections.ordered_map_get"
+                | "spectra.std.collections.ordered_map_contains"
+                | "spectra.std.collections.ordered_map_remove"
+                | "spectra.std.collections.ordered_map_range_keys"
+                | "spectra.std.collections.priority_queue_push"
+        );
+        if collection_key_call {
+            let element_type = arg_exprs
+                .get(1)
+                .map(|argument| self.infer_expr_ir_type(argument));
+            let sort_kind = element_type
+                .as_ref()
+                .and_then(Self::list_sort_kind_for_element_type);
+            let sort_kind = sort_kind.unwrap_or_else(|| {
+                self.error(format!(
+                    "collection keys and priorities support only int, exact integers, float, bool, string, and char values; found {}",
+                    element_type
+                        .as_ref()
+                        .map(|ty| format!("{ty:?}"))
+                        .unwrap_or_else(|| "no key or value argument".to_string())
+                ));
+                spectra_contract::collection_sort::INVALID
+            });
+            let kind_value = self.builder.build_const_int(ir_func, sort_kind);
+            let mut shaped = arg_values;
+            shaped.push(kind_value);
+            return shaped;
+        }
         if runtime_name == "spectra.std.collections.list_sort" {
             let list_type = arg_exprs
                 .first()
@@ -333,9 +367,18 @@ impl ASTLowering {
                     },
                 }
             };
-            ["List_", "Set_", "Iterator_", "Stack_", "Queue_"]
-                .iter()
-                .find_map(|prefix| name.strip_prefix(prefix).map(part))
+            [
+                "List_",
+                "Vector_",
+                "Set_",
+                "Iterator_",
+                "Stack_",
+                "Queue_",
+                "HashSet_",
+                "PriorityQueue_",
+            ]
+            .iter()
+            .find_map(|prefix| name.strip_prefix(prefix).map(part))
         };
         let option_type = |payload: IRType| {
             let representation = IRType::Enum {
@@ -367,7 +410,9 @@ impl ASTLowering {
             let IRType::Struct { name, .. } = Self::ir_type_representation_static(ty) else {
                 return None;
             };
-            let suffix = name.strip_prefix("Map_")?;
+            let suffix = name
+                .strip_prefix("Map_")
+                .or_else(|| name.strip_prefix("OrderedMap_"))?;
             let (key, value) = suffix.split_once('_')?;
             Some((
                 collection_element_type(&format!("List_{key}"))?,
@@ -379,8 +424,10 @@ impl ASTLowering {
             .rsplit('.')
             .next()
             .unwrap_or_default();
-
-        if operation == "list_new" {
+        if matches!(
+            operation,
+            "list_new" | "list_with_capacity" | "vector_new" | "vector_with_capacity"
+        ) {
             if let Some(annotation) = self.current_expected_annotation.as_ref() {
                 let expected = self.lower_type_annotation(annotation);
                 if !Self::ir_type_contains_unknown(&expected) {
@@ -422,21 +469,52 @@ impl ASTLowering {
             }
         } else if matches!(
             operation,
-            "list_iter" | "set_iter" | "stack_iter" | "queue_iter" | "map_iter" | "map_values_iter"
+            "list_iter"
+                | "vector_iter"
+                | "set_iter"
+                | "stack_iter"
+                | "queue_iter"
+                | "hash_set_iter"
+                | "ordered_map_iter"
+                | "ordered_map_range_keys"
+                | "bitset_iter"
+                | "map_iter"
+                | "map_values_iter"
         ) {
             if let Some(first_type) = first_type.as_ref() {
+                if operation == "bitset_iter" {
+                    let payload = IRType::Int;
+                    descriptor.return_type = IRType::Generic {
+                        name: "Iterator".to_string(),
+                        args: vec![payload.clone()],
+                        representation: Box::new(IRType::Struct {
+                            name: format!("Iterator_{}", self.ir_type_to_ast_name(&payload)),
+                            fields: Vec::new(),
+                        }),
+                    };
+                    return descriptor;
+                }
                 let collection = if matches!(operation, "map_iter" | "map_values_iter") {
                     "Map"
+                } else if matches!(operation, "ordered_map_iter" | "ordered_map_range_keys") {
+                    "OrderedMap"
+                } else if operation == "hash_set_iter" {
+                    "HashSet"
                 } else if operation == "set_iter" {
                     "Set"
                 } else if operation == "stack_iter" {
                     "Stack"
                 } else if operation == "queue_iter" {
                     "Queue"
+                } else if operation == "vector_iter" {
+                    "Vector"
                 } else {
                     "List"
                 };
-                let payload = if operation == "map_iter" {
+                let payload = if matches!(
+                    operation,
+                    "map_iter" | "ordered_map_iter" | "ordered_map_range_keys"
+                ) {
                     map_types_for_type(first_type).map(|(key, _)| key)
                 } else if operation == "map_values_iter" {
                     map_types_for_type(first_type).map(|(_, value)| value)
@@ -457,15 +535,24 @@ impl ASTLowering {
         } else if matches!(
             operation,
             "set_get"
+                | "vector_get"
+                | "vector_pop"
+                | "vector_remove_at"
                 | "stack_pop"
                 | "stack_peek"
                 | "queue_dequeue"
                 | "queue_peek"
+                | "priority_queue_peek"
+                | "priority_queue_pop"
                 | "iterator_next"
         ) {
             if let Some(first_type) = first_type.as_ref() {
                 let collection = if operation == "set_get" {
                     "Set"
+                } else if operation.starts_with("vector_") {
+                    "Vector"
+                } else if matches!(operation, "priority_queue_peek" | "priority_queue_pop") {
+                    "PriorityQueue"
                 } else if matches!(operation, "stack_pop" | "stack_peek") {
                     "Stack"
                 } else if matches!(operation, "queue_dequeue" | "queue_peek") {
@@ -487,13 +574,34 @@ impl ASTLowering {
                 | "list_pop_option"
                 | "list_pop_front_option"
                 | "list_remove_at_option"
+                | "vector_get"
+                | "vector_pop"
+                | "vector_remove_at"
         ) {
             if let Some(first_type) = first_type.as_ref() {
                 if let Some(element_type) = collection_element_for_type(first_type, "List") {
                     descriptor.return_type = option_type(element_type);
                 }
             }
-        } else if matches!(operation, "map_new" | "stack_new" | "queue_new") {
+        } else if matches!(
+            operation,
+            "map_new"
+                | "map_with_capacity"
+                | "vector_new"
+                | "vector_with_capacity"
+                | "set_new"
+                | "set_with_capacity"
+                | "stack_new"
+                | "stack_with_capacity"
+                | "queue_new"
+                | "queue_with_capacity"
+                | "hash_set_new"
+                | "hash_set_with_capacity"
+                | "ordered_map_new"
+                | "priority_queue_new"
+                | "priority_queue_new_min"
+                | "priority_queue_with_capacity"
+        ) {
             if let Some(annotation) = self.current_expected_annotation.as_ref() {
                 let expected = self.lower_type_annotation(annotation);
                 if !Self::ir_type_contains_unknown(&expected) {
@@ -504,6 +612,12 @@ impl ASTLowering {
             operation,
             "map_get" | "map_remove" | "map_get_option" | "map_remove_option"
         ) {
+            if let Some(first_type) = first_type.as_ref() {
+                if let Some((_, value_type)) = map_types_for_type(first_type) {
+                    descriptor.return_type = option_type(value_type);
+                }
+            }
+        } else if matches!(operation, "ordered_map_get" | "ordered_map_remove") {
             if let Some(first_type) = first_type.as_ref() {
                 if let Some((_, value_type)) = map_types_for_type(first_type) {
                     descriptor.return_type = option_type(value_type);

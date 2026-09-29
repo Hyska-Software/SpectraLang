@@ -46,8 +46,8 @@ pub(crate) use list_host::*;
 #[path = "list_registry.rs"]
 mod list_registry;
 // Cross-crate seam for host-call provider crates that serialize collections.
-pub use list_registry::{list_create, list_elements};
 pub(crate) use list_registry::*;
+pub use list_registry::{list_create, list_elements};
 
 #[path = "string_map_fast.rs"]
 mod string_map_fast;
@@ -57,12 +57,24 @@ pub use string_map_fast::*;
 mod collections_fast;
 pub use collections_fast::*;
 
+#[path = "collections_capacity.rs"]
+mod collections_capacity;
+pub(crate) use collections_capacity::*;
+
 #[path = "ml_tensor_fast.rs"]
 mod ml_tensor_fast;
 pub use ml_tensor_fast::*;
 
 #[path = "list_methods.rs"]
 mod list_methods;
+
+#[path = "collections_advanced.rs"]
+mod collections_advanced;
+pub(crate) use collections_advanced::*;
+
+#[path = "collections_vector.rs"]
+mod collections_vector;
+pub(crate) use collections_vector::*;
 
 #[path = "tensor_types_registry.rs"]
 mod tensor_types_registry;

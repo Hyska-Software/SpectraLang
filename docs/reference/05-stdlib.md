@@ -737,15 +737,17 @@ let i2 = std.convert.bool_to_int(false)
 
 **PT-BR:**  
 O contrato de fonte de `std.collections` usa `List<T>`, `Map<K,V>`, `Set<T>`,
-`Stack<T>`, `Queue<T>` e `Iterator<T>` tipados. A implementação atual transporta esses valores como
+`Vector<T>`, `Stack<T>`, `Queue<T>`, `HashSet<T>`, `OrderedMap<K,V>`, `PriorityQueue<T>`,
+`BitSet`, `DisjointSet` e `Iterator<T>` tipados. A implementação atual transporta esses valores como
 handles opacos na ABI do runtime; esse detalhe não faz parte do tipo que o
 programa SpectraLang deve manipular.
 
 **EN-US:**  
 The source contract of `std.collections` uses typed `List<T>`, `Map<K,V>`,
-`Set<T>`, `Stack<T>`, `Queue<T>`, and `Iterator<T>`. The current runtime ABI transports those values as
-opaque handles; that representation is not a source-level type to manipulate
-directly.
+`Set<T>`, `Vector<T>`, `Stack<T>`, `Queue<T>`, `HashSet<T>`, `OrderedMap<K,V>`,
+`PriorityQueue<T>`, `BitSet`, `DisjointSet`, and `Iterator<T>`. The current
+runtime ABI transports these values as opaque handles; that representation is
+not a source-level type to manipulate directly.
 
 ```spectra
 import std.collections as col
@@ -760,6 +762,41 @@ import std.collections as col
 
 ```spectra
 let lista: List<int> = col.list_new()
+```
+
+#### Capacity-aware constructors and reservation (beta)
+
+**PT-BR:** Use `*_with_capacity` quando o tamanho aproximado já é conhecido;
+`*_reserve` garante espaço adicional sem mudar os elementos nem sua ordem. A
+capacidade é uma estimativa inferior, não um limite. Valores negativos e
+capacidades que excedem os limites representáveis são rejeitados pelo runtime;
+falhas de alocação seguem o erro de host-call. Os construtores antigos sem
+argumentos continuam disponíveis.
+
+**EN-US:** Use `*_with_capacity` when the approximate size is known;
+`*_reserve` ensures additional space without changing contents or order.
+Capacity is a lower bound, not a limit. Negative or unrepresentable requests
+are rejected by the runtime; allocation failures use the host-call error path.
+The existing collections also expose O(1) `*_capacity` queries returning the
+actual backing-store capacity. For `BitSet`, capacity is measured in addressable
+bit positions, rounded to complete `u64` words. These queries do not change the
+zero-argument constructors.
+
+| Coleção / Collection | Construtor / Constructor | Reserva / Reservation | Capacidade real / Actual capacity |
+|---|---|---|---|
+| `List<T>` | `list_with_capacity<T>(capacity: int)` | `list_reserve<T>(list: List<T>, additional: int)` | `list_capacity<T>(list: List<T>) -> int` |
+| `Map<K,V>` | `map_with_capacity<K,V>(capacity: int)` | `map_reserve<K,V>(map: Map<K,V>, additional: int)` | `map_capacity<K,V>(map: Map<K,V>) -> int` |
+| `Set<T>` | `set_with_capacity<T>(capacity: int)` | `set_reserve<T>(set: Set<T>, additional: int)` | `set_capacity<T>(set: Set<T>) -> int` |
+| `Stack<T>` | `stack_with_capacity<T>(capacity: int)` | `stack_reserve<T>(stack: Stack<T>, additional: int)` | `stack_capacity<T>(stack: Stack<T>) -> int` |
+| `Queue<T>` | `queue_with_capacity<T>(capacity: int)` | `queue_reserve<T>(queue: Queue<T>, additional: int)` | `queue_capacity<T>(queue: Queue<T>) -> int` |
+| `Vector<T>` | `vector_with_capacity<T>(capacity: int)` | `vector_reserve<T>(vector: Vector<T>, additional: int)` | `vector_capacity<T>(vector: Vector<T>) -> int` |
+| `HashSet<T>` | `hash_set_with_capacity<T>(capacity: int)` | — | `hash_set_capacity<T>(set: HashSet<T>) -> int` |
+| `PriorityQueue<T>` | `priority_queue_with_capacity<T>(capacity: int)` | — | `priority_queue_capacity<T>(queue: PriorityQueue<T>) -> int` |
+| `BitSet` | `bitset_with_capacity(bit_capacity: int)` | — | `bitset_capacity(set: BitSet) -> int` |
+
+```spectra
+let samples: List<float> = col.list_with_capacity(256)
+col.list_reserve(samples, 128)
 ```
 
 #### `list_push<T>(list: List<T>, value: T) -> unit` (beta)
@@ -790,6 +827,8 @@ payloads such as `-1` or `0`.
 | `list_pop` | `list_pop<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
 | `list_pop_front` | `list_pop_front<T>(list: List<T>) -> Option<T>` | `None` for an empty list |
 | `list_remove_at` | `list_remove_at<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
+| `vector_get` / `vector_remove_at` | `Vector<T>, index: int -> Option<T>` | `None` for an invalid index |
+| `vector_pop` | `vector_pop<T>(vector: Vector<T>) -> Option<T>` | `None` for an empty vector |
 | `map_get` | `map_get<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
 | `map_remove` | `map_remove<K,V>(map: Map<K,V>, key: K) -> Option<V>` | `None` for an unknown key |
 | `list_get_option` | `list_get_option<T>(list: List<T>, index: int) -> Option<T>` | `None` for an invalid index |
@@ -1036,17 +1075,23 @@ col.iterator_free(ids_iter)
 col.set_free(ids)
 ```
 
-As funções `list_iter`, `set_iter`, `map_iter`, `map_values_iter`, `stack_iter`
-e `queue_iter` criam iteradores snapshot; `map_iter` percorre as chaves em uma
-ordem estável para o snapshot atual. A expressão `for` consome o mesmo
-protocolo para ranges, arrays, listas, sets, pilhas, filas, mapas e iteradores
-explícitos. `std.range.iter` é o adaptador público para ranges.
+As funções `list_iter`, `vector_iter`, `set_iter`, `hash_set_iter`, `map_iter`,
+`map_values_iter`, `ordered_map_iter`, `ordered_map_range_keys`, `stack_iter`,
+`queue_iter` e `bitset_iter` criam iteradores snapshot. A ordem de `HashSet<T>`
+é indefinida; as chaves de `OrderedMap<K,V>` e índices de `BitSet` são
+ascendentes. `map_iter` percorre as chaves em ordem estável. A expressão `for`
+consome o mesmo protocolo para ranges, arrays, listas, vectors, sets, hash sets, pilhas,
+filas, mapas, mapas ordenados, bitsets e iteradores explícitos.
+`std.range.iter` é o adaptador público para ranges.
 
-The `list_iter`, `set_iter`, `map_iter`, `map_values_iter`, `stack_iter`, and
-`queue_iter` functions create snapshot iterators; `map_iter` visits keys in a
-stable order for the current snapshot. The `for` expression uses the same
-protocol for ranges, arrays, lists, sets, stacks, queues, maps, and explicit
-iterators. `std.range.iter` is the public range adapter.
+The `list_iter`, `vector_iter`, `set_iter`, `hash_set_iter`, `map_iter`, `map_values_iter`,
+`ordered_map_iter`, `ordered_map_range_keys`, `stack_iter`, `queue_iter`, and
+`bitset_iter` functions create snapshot iterators. `HashSet<T>` order is
+unspecified; `OrderedMap<K,V>` keys and `BitSet` indexes are ascending.
+`map_iter` visits keys in a stable order. The `for` expression uses the same
+protocol for ranges, arrays, lists, vectors, sets, hash sets, stacks, queues, maps,
+ordered maps, bitsets, and explicit iterators. `std.range.iter` is the public
+range adapter.
 
 | Função / Function | Assinatura / Signature | Resultado / Result |
 |---|---|---|
@@ -1056,7 +1101,9 @@ iterators. `std.range.iter` is the public range adapter.
 | `set_remove` | `set_remove<T>(set: Set<T>, value: T) -> bool` | `true` se removeu / removed |
 | `set_len` | `set_len<T>(set: Set<T>) -> int` | cardinalidade / cardinality |
 | `set_get` | `set_get<T>(set: Set<T>, index: int) -> Option<T>` | snapshot posicional |
-| `list_iter` / `set_iter` | `List<T>` / `Set<T> -> Iterator<T>` | snapshot iterator |
+| `list_iter` / `vector_iter` / `set_iter` / `hash_set_iter` | `List<T>` / `Vector<T>` / `Set<T>` / `HashSet<T> -> Iterator<T>` | snapshot iterator |
+| `ordered_map_iter` / `ordered_map_range_keys` | `OrderedMap<K,V> -> Iterator<K>` | chaves em ordem; `[start, end)` / ordered keys; half-open range |
+| `bitset_iter` | `BitSet -> Iterator<int>` | índices ascendentes / ascending indexes |
 | `map_iter` | `Map<K,V> -> Iterator<K>` | iterator de chaves / key iterator |
 | `map_values_iter` | `Map<K,V> -> Iterator<V>` | iterator de valores / value iterator |
 | `stack_iter` | `Stack<T> -> Iterator<T>` | snapshot do fundo ao topo / bottom-to-top snapshot |
@@ -1064,6 +1111,91 @@ iterators. `std.range.iter` is the public range adapter.
 | `iterator_next` | `iterator_next<T>(iterator: Iterator<T>) -> Option<T>` | próximo valor / next value |
 | `iterator_remaining` | `iterator_remaining<T>(iterator: Iterator<T>) -> int` | itens restantes / remaining |
 | `iterator_free` | `iterator_free<T>(iterator: Iterator<T>) -> unit` | libera o handle / drops handle |
+
+### Estruturas adicionais / Additional structures (beta)
+
+**PT-BR:** As estruturas com comparação aceitam `int`, inteiros exatos,
+`float`, `bool`, `string` e `char`. Agregados, funções e handles opacos não
+podem ser usados como chave ou prioridade. Strings são comparadas pelo
+conteúdo UTF-8. A ordenação de `float` usa ordem total IEEE, incluindo uma
+ordem determinística para zeros com sinal e NaNs.
+
+**EN-US:** Structures that compare values accept `int`, exact integers,
+`float`, `bool`, `string`, and `char`. Aggregates, functions, and opaque handles
+cannot be used as keys or priorities. Strings compare by UTF-8 content. Float
+ordering uses IEEE total order, including deterministic ordering for signed
+zeros and NaNs.
+
+| Estrutura / Structure | Operações principais / Main operations | Custo esperado / Expected cost |
+|---|---|---|
+| `Vector<T>` | `vector_new`, `vector_with_capacity`, `vector_capacity`, `vector_reserve`, `vector_push`, `vector_pop`, `vector_get`, `vector_set`, `vector_insert_at`, `vector_remove_at`, `vector_contains`, `vector_index_of`, `vector_len`, `vector_is_empty`, `vector_clear`, `vector_iter`, `vector_free` | acesso indexado O(1); push/pop amortizados O(1); inserção/remoção no meio e busca O(n) / indexed access O(1); amortized push/pop O(1); middle edits and search O(n) |
+| `HashSet<T>` | `hash_set_new`, `hash_set_with_capacity`, `hash_set_capacity`, `hash_set_insert`, `hash_set_contains`, `hash_set_remove`, `hash_set_len`, `hash_set_clear`, `hash_set_iter`, `hash_set_free` | inserção, busca e remoção O(1) esperado; iteração sem ordem garantida / expected O(1); iteration order unspecified |
+| `OrderedMap<K,V>` | `ordered_map_new`, `ordered_map_set`, `ordered_map_get`, `ordered_map_contains`, `ordered_map_remove`, `ordered_map_len`, `ordered_map_iter`, `ordered_map_range_keys`, `ordered_map_free` | operações O(log n); faixa O(log n + k) / operations O(log n); range O(log n + k) |
+| `PriorityQueue<T>` | `priority_queue_new`, `priority_queue_new_min`, `priority_queue_with_capacity`, `priority_queue_capacity`, `priority_queue_push`, `priority_queue_peek`, `priority_queue_pop`, `priority_queue_len`, `priority_queue_clear`, `priority_queue_free` | `push`/`pop` O(log n), `peek` O(1) |
+| `BitSet` | `bitset_new`, `bitset_with_capacity`, `bitset_capacity`, `bitset_insert`, `bitset_remove`, `bitset_contains`, `bitset_count`, `bitset_union_with`, `bitset_intersect_with`, `bitset_difference_with`, `bitset_iter`, `bitset_free` | membership O(1); operações em lote O(número de palavras) / membership O(1); bulk O(number of words) |
+| `DisjointSet` | `disjoint_set_new(size)`, `disjoint_set_add`, `disjoint_set_find`, `disjoint_set_union`, `disjoint_set_connected`, `disjoint_set_count`, `disjoint_set_free` | `find`/`union` amortizados O(α(n)) com path halving e union by size |
+
+`HashSet<T>` usa igualdade por valor e não promete uma ordem para snapshots.
+`Vector<T>` mantém elementos contíguos e preserva a ordem da sequência. Acesso
+indexado custa O(1), append/pop no final são amortizados O(1), e busca ou
+inserção/remoção no meio custam O(n). Use `List<T>` quando operações nas duas
+extremidades forem necessárias; `vector_insert_at` aceita índices entre `0` e
+`len`, inclusive, e rejeita índices fora do intervalo.
+`OrderedMap<K,V>` percorre chaves crescentes; `ordered_map_range_keys(map,
+start, end)` usa o intervalo semiaberto `[start, end)`. Atualizar uma chave
+substitui o valor associado. `PriorityQueue<T>` prioriza o maior valor por
+padrão; `priority_queue_new_min()` prioriza o menor. Empates não têm ordem
+estável. `peek` e `pop` retornam `Option<T>` vazio quando a fila não tem itens.
+
+`BitSet` guarda índices não negativos em palavras compactas `u64`; seu
+construtor com capacidade recebe quantidade de bits, e `count` retorna a
+cardinalidade. `DisjointSet` inicia com os IDs `0..size`; `add` devolve o novo
+ID, `union` retorna `true` apenas quando combina dois componentes e `find`
+retorna um representante que não é um identificador canônico.
+
+`HashSet<T>` uses value equality and does not promise snapshot order.
+`Vector<T>` stores elements contiguously and preserves sequence order. Indexed
+access is O(1), append/pop at the end are amortized O(1), and search or middle
+insertion/removal are O(n). Use `List<T>` when operations at both ends are
+needed; `vector_insert_at` accepts indexes from `0` through `len`, inclusive,
+and rejects out-of-range indexes.
+`OrderedMap<K,V>` visits keys in ascending order; `ordered_map_range_keys(map,
+start, end)` uses the half-open interval `[start, end)`. Setting an existing key
+replaces its value. `PriorityQueue<T>` returns the highest value by default;
+`priority_queue_new_min()` returns the lowest. Ties have no stable order.
+`peek` and `pop` return an empty `Option<T>` when the queue is empty.
+
+`BitSet` stores non-negative indexes in packed `u64` words; its capacity
+constructor takes a bit count, and `count` returns cardinality. `DisjointSet`
+starts with IDs `0..size`; `add` returns the new ID, `union` returns `true`
+only when it joins two components, and `find` returns a representative that
+is not a canonical ID.
+
+```spectra
+from std.collections import BitSet, DisjointSet, HashSet, OrderedMap, PriorityQueue, Vector
+import std.collections as collections
+
+let samples: Vector<float> = collections.vector_with_capacity(256)
+collections.vector_push(samples, 0.25)
+collections.vector_push(samples, 0.75)
+let first_sample = collections.vector_get(samples, 0)
+
+let visited: HashSet<string> = collections.hash_set_with_capacity(128)
+collections.hash_set_insert(visited, "node-a")
+
+let scores: OrderedMap<int, string> = collections.ordered_map_new()
+collections.ordered_map_set(scores, 10, "ten")
+let keys = collections.ordered_map_range_keys(scores, 0, 100)
+
+let next_job: PriorityQueue<int> = collections.priority_queue_new()
+collections.priority_queue_push(next_job, 5)
+
+let mask: BitSet = collections.bitset_with_capacity(256)
+collections.bitset_insert(mask, 63)
+
+let components: DisjointSet = collections.disjoint_set_new(10)
+collections.disjoint_set_union(components, 0, 1)
+```
 
 ### Funções de Alta Ordem / Higher-Order Functions
 

@@ -193,7 +193,10 @@ fn agent_async_fn(params: Vec<Type>, output: Type) -> ExportedFunction {
 /// JSON derive (plan adaptation 11).
 fn agent_record(members: &[(&str, TypeAnnotation)]) -> ExportedType {
     ExportedType {
-        members: members.iter().map(|(name, _)| (*name).to_string()).collect(),
+        members: members
+            .iter()
+            .map(|(name, _)| (*name).to_string())
+            .collect(),
         visibility: ExportVisibility::Public,
         is_enum: false,
         type_params: Vec::new(),
@@ -226,7 +229,9 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // ── types ────────────────────────────────────────────────────────────
     // Opaque generational handles owned by the runtime run/stream tables.
     exports.types.insert("Run".to_string(), public_type(&[]));
-    exports.types.insert("ChunkStream".to_string(), public_type(&[]));
+    exports
+        .types
+        .insert("ChunkStream".to_string(), public_type(&[]));
     exports.types.insert(
         "AgentSpec".to_string(),
         agent_record(&[
@@ -321,7 +326,10 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // ask_stream(run: Run, prompt: string) -> Result<ChunkStream, Error> (async)
     exports.functions.insert(
         "ask_stream".to_string(),
-        agent_async_fn(vec![run.clone(), Type::String], result_of(chunk_stream.clone())),
+        agent_async_fn(
+            vec![run.clone(), Type::String],
+            result_of(chunk_stream.clone()),
+        ),
     );
     // stream_next(stream: ChunkStream) -> Result<string, Error> (async; "" ends)
     exports.functions.insert(
@@ -466,10 +474,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // tools; `tools/call` executes through the governed dispatch.
     exports.functions.insert(
         "mcp_handle".to_string(),
-        pub_fn(
-            vec![run.clone(), Type::String],
-            result_of(Type::String),
-        ),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::String)),
     );
     // mcp_serve(run: Run, bind: string) -> Result<string, Error> (sync;
     // R-3218). Starts the in-process HTTP listener and returns the bound
@@ -483,10 +488,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // `#[agent_tool]` surface as skills.
     exports.functions.insert(
         "a2a_card".to_string(),
-        pub_fn(
-            vec![run.clone(), Type::String],
-            result_of(Type::String),
-        ),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::String)),
     );
     // a2a_handle(run: Run, request: string) -> Result<string, Error> (sync;
     // R-3219). Serves one A2A JSON-RPC request; `message/send` delegates a
@@ -494,10 +496,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // `tasks/get`/`tasks/cancel` read and close it from the journal.
     exports.functions.insert(
         "a2a_handle".to_string(),
-        pub_fn(
-            vec![run.clone(), Type::String],
-            result_of(Type::String),
-        ),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::String)),
     );
     // a2a_serve(run: Run, bind: string, description: string)
     // -> Result<string, Error> (sync; R-3219). Starts the in-process A2A
@@ -516,10 +515,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // capabilities.
     exports.functions.insert(
         "acp_handle".to_string(),
-        pub_fn(
-            vec![run.clone(), Type::String],
-            result_of(Type::String),
-        ),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::String)),
     );
     // acp_permission(run: Run, action: string) -> Result<bool, Error> (sync;
     // R-3219). Asks the attached ACP client through
@@ -527,10 +523,7 @@ pub(crate) fn make_std_agent() -> ModuleExports {
     // the approval primitive; false aborts the action.
     exports.functions.insert(
         "acp_permission".to_string(),
-        pub_fn(
-            vec![run.clone(), Type::String],
-            result_of(Type::Bool),
-        ),
+        pub_fn(vec![run.clone(), Type::String], result_of(Type::Bool)),
     );
 
     exports
@@ -647,6 +640,9 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     let list = Type::Struct {
         name: "List".to_string(),
     };
+    let vector = Type::Struct {
+        name: "Vector".to_string(),
+    };
     let map = Type::Struct {
         name: "Map".to_string(),
     };
@@ -674,10 +670,110 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     let queue = Type::Struct {
         name: "Queue".to_string(),
     };
+    let hash_set = Type::Struct {
+        name: "HashSet".to_string(),
+    };
+    let ordered_map = Type::Struct {
+        name: "OrderedMap".to_string(),
+    };
+    let priority_queue = Type::Struct {
+        name: "PriorityQueue".to_string(),
+    };
+    let bit_set = Type::Struct {
+        name: "BitSet".to_string(),
+    };
+    let disjoint_set = Type::Struct {
+        name: "DisjointSet".to_string(),
+    };
 
     exports
         .functions
         .insert("list_new".to_string(), pub_fn(vec![], list.clone()));
+    exports
+        .functions
+        .insert("vector_new".to_string(), pub_fn(vec![], vector.clone()));
+    exports.functions.insert(
+        "vector_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], vector.clone()),
+    );
+    exports.functions.insert(
+        "vector_capacity".to_string(),
+        pub_fn(vec![vector.clone()], Type::Int),
+    );
+    exports.functions.insert(
+        "vector_reserve".to_string(),
+        pub_fn(vec![vector.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "vector_push".to_string(),
+        pub_fn(vec![vector.clone(), element.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "vector_pop".to_string(),
+        pub_fn(vec![vector.clone()], option.clone()),
+    );
+    exports.functions.insert(
+        "vector_get".to_string(),
+        pub_fn(vec![vector.clone(), Type::Int], option.clone()),
+    );
+    exports.functions.insert(
+        "vector_set".to_string(),
+        pub_fn(
+            vec![vector.clone(), Type::Int, element.clone()],
+            Type::Unit,
+        ),
+    );
+    exports.functions.insert(
+        "vector_insert_at".to_string(),
+        pub_fn(
+            vec![vector.clone(), Type::Int, element.clone()],
+            Type::Unit,
+        ),
+    );
+    exports.functions.insert(
+        "vector_remove_at".to_string(),
+        pub_fn(vec![vector.clone(), Type::Int], option.clone()),
+    );
+    exports.functions.insert(
+        "vector_contains".to_string(),
+        pub_fn(vec![vector.clone(), element.clone()], Type::Bool),
+    );
+    exports.functions.insert(
+        "vector_index_of".to_string(),
+        pub_fn(vec![vector.clone(), element.clone()], Type::Int),
+    );
+    exports.functions.insert(
+        "vector_len".to_string(),
+        pub_fn(vec![vector.clone()], Type::Int),
+    );
+    exports.functions.insert(
+        "vector_is_empty".to_string(),
+        pub_fn(vec![vector.clone()], Type::Bool),
+    );
+    exports.functions.insert(
+        "vector_clear".to_string(),
+        pub_fn(vec![vector.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "vector_iter".to_string(),
+        pub_fn(vec![vector.clone()], iterator.clone()),
+    );
+    exports.functions.insert(
+        "vector_free".to_string(),
+        pub_fn(vec![vector.clone()], Type::Unit),
+    );
+    exports.functions.insert(
+        "list_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], list.clone()),
+    );
+    exports.functions.insert(
+        "list_reserve".to_string(),
+        pub_fn(vec![list.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "list_capacity".to_string(),
+        pub_fn(vec![list.clone()], Type::Int),
+    );
     exports.functions.insert(
         "list_push".to_string(),
         pub_fn(vec![list.clone(), element.clone()], Type::Unit),
@@ -787,6 +883,18 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         .functions
         .insert("map_new".to_string(), pub_fn(vec![], map.clone()));
     exports.functions.insert(
+        "map_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], map.clone()),
+    );
+    exports.functions.insert(
+        "map_reserve".to_string(),
+        pub_fn(vec![map.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "map_capacity".to_string(),
+        pub_fn(vec![map.clone()], Type::Int),
+    );
+    exports.functions.insert(
         "map_set".to_string(),
         pub_fn(vec![map.clone(), key.clone(), value.clone()], Type::Unit),
     );
@@ -808,7 +916,7 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     );
     exports.functions.insert(
         "map_remove_option".to_string(),
-        pub_fn(vec![map.clone(), key], option.clone()),
+        pub_fn(vec![map.clone(), key.clone()], option.clone()),
     );
     exports
         .functions
@@ -832,6 +940,18 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     exports
         .functions
         .insert("stack_new".to_string(), pub_fn(vec![], stack.clone()));
+    exports.functions.insert(
+        "stack_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], stack.clone()),
+    );
+    exports.functions.insert(
+        "stack_reserve".to_string(),
+        pub_fn(vec![stack.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "stack_capacity".to_string(),
+        pub_fn(vec![stack.clone()], Type::Int),
+    );
     exports.functions.insert(
         "stack_push".to_string(),
         pub_fn(vec![stack.clone(), element.clone()], Type::Unit),
@@ -872,6 +992,18 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         .functions
         .insert("queue_new".to_string(), pub_fn(vec![], queue.clone()));
     exports.functions.insert(
+        "queue_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], queue.clone()),
+    );
+    exports.functions.insert(
+        "queue_reserve".to_string(),
+        pub_fn(vec![queue.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "queue_capacity".to_string(),
+        pub_fn(vec![queue.clone()], Type::Int),
+    );
+    exports.functions.insert(
         "queue_enqueue".to_string(),
         pub_fn(vec![queue.clone(), element.clone()], Type::Unit),
     );
@@ -911,6 +1043,18 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     exports
         .functions
         .insert("set_new".to_string(), pub_fn(vec![], set.clone()));
+    exports.functions.insert(
+        "set_with_capacity".to_string(),
+        pub_fn(vec![Type::Int], set.clone()),
+    );
+    exports.functions.insert(
+        "set_reserve".to_string(),
+        pub_fn(vec![set.clone(), Type::Int], Type::Unit),
+    );
+    exports.functions.insert(
+        "set_capacity".to_string(),
+        pub_fn(vec![set.clone()], Type::Int),
+    );
     exports.functions.insert(
         "set_insert".to_string(),
         pub_fn(vec![set.clone(), element.clone()], Type::Bool),
@@ -990,14 +1134,185 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     );
     exports.functions.insert(
         "iterator_free".to_string(),
-        pub_fn(vec![iterator], Type::Unit),
+        pub_fn(vec![iterator.clone()], Type::Unit),
     );
+
+    // ── additional collection APIs (Phase 33) ────────────────────────────
+    let add_collection_fn =
+        |exports: &mut ModuleExports, name: &str, params: Vec<Type>, return_type: Type| {
+            exports
+                .functions
+                .insert(name.to_string(), pub_fn(params, return_type));
+        };
+    for (name, params, return_type) in [
+        ("hash_set_new", vec![], hash_set.clone()),
+        ("hash_set_with_capacity", vec![Type::Int], hash_set.clone()),
+        ("hash_set_capacity", vec![hash_set.clone()], Type::Int),
+        (
+            "hash_set_insert",
+            vec![hash_set.clone(), element.clone()],
+            Type::Bool,
+        ),
+        (
+            "hash_set_contains",
+            vec![hash_set.clone(), element.clone()],
+            Type::Bool,
+        ),
+        (
+            "hash_set_remove",
+            vec![hash_set.clone(), element.clone()],
+            Type::Bool,
+        ),
+        ("hash_set_len", vec![hash_set.clone()], Type::Int),
+        ("hash_set_clear", vec![hash_set.clone()], Type::Unit),
+        ("hash_set_iter", vec![hash_set.clone()], iterator.clone()),
+        ("hash_set_free", vec![hash_set.clone()], Type::Unit),
+        ("ordered_map_new", vec![], ordered_map.clone()),
+        (
+            "ordered_map_set",
+            vec![ordered_map.clone(), key.clone(), value.clone()],
+            Type::Unit,
+        ),
+        (
+            "ordered_map_get",
+            vec![ordered_map.clone(), key.clone()],
+            option.clone(),
+        ),
+        (
+            "ordered_map_contains",
+            vec![ordered_map.clone(), key.clone()],
+            Type::Bool,
+        ),
+        (
+            "ordered_map_remove",
+            vec![ordered_map.clone(), key.clone()],
+            option.clone(),
+        ),
+        ("ordered_map_len", vec![ordered_map.clone()], Type::Int),
+        (
+            "ordered_map_iter",
+            vec![ordered_map.clone()],
+            iterator.clone(),
+        ),
+        (
+            "ordered_map_range_keys",
+            vec![ordered_map.clone(), key.clone(), key.clone()],
+            iterator.clone(),
+        ),
+        ("ordered_map_free", vec![ordered_map.clone()], Type::Unit),
+        ("priority_queue_new", vec![], priority_queue.clone()),
+        ("priority_queue_new_min", vec![], priority_queue.clone()),
+        (
+            "priority_queue_with_capacity",
+            vec![Type::Int],
+            priority_queue.clone(),
+        ),
+        (
+            "priority_queue_capacity",
+            vec![priority_queue.clone()],
+            Type::Int,
+        ),
+        (
+            "priority_queue_push",
+            vec![priority_queue.clone(), element.clone()],
+            Type::Unit,
+        ),
+        (
+            "priority_queue_peek",
+            vec![priority_queue.clone()],
+            option.clone(),
+        ),
+        (
+            "priority_queue_pop",
+            vec![priority_queue.clone()],
+            option.clone(),
+        ),
+        (
+            "priority_queue_len",
+            vec![priority_queue.clone()],
+            Type::Int,
+        ),
+        (
+            "priority_queue_clear",
+            vec![priority_queue.clone()],
+            Type::Unit,
+        ),
+        (
+            "priority_queue_free",
+            vec![priority_queue.clone()],
+            Type::Unit,
+        ),
+        ("bitset_new", vec![], bit_set.clone()),
+        ("bitset_with_capacity", vec![Type::Int], bit_set.clone()),
+        ("bitset_capacity", vec![bit_set.clone()], Type::Int),
+        (
+            "bitset_insert",
+            vec![bit_set.clone(), Type::Int],
+            Type::Bool,
+        ),
+        (
+            "bitset_remove",
+            vec![bit_set.clone(), Type::Int],
+            Type::Bool,
+        ),
+        (
+            "bitset_contains",
+            vec![bit_set.clone(), Type::Int],
+            Type::Bool,
+        ),
+        ("bitset_count", vec![bit_set.clone()], Type::Int),
+        (
+            "bitset_union_with",
+            vec![bit_set.clone(), bit_set.clone()],
+            Type::Unit,
+        ),
+        (
+            "bitset_intersect_with",
+            vec![bit_set.clone(), bit_set.clone()],
+            Type::Unit,
+        ),
+        (
+            "bitset_difference_with",
+            vec![bit_set.clone(), bit_set.clone()],
+            Type::Unit,
+        ),
+        ("bitset_iter", vec![bit_set.clone()], iterator.clone()),
+        ("bitset_free", vec![bit_set.clone()], Type::Unit),
+        ("disjoint_set_new", vec![Type::Int], disjoint_set.clone()),
+        ("disjoint_set_add", vec![disjoint_set.clone()], Type::Int),
+        (
+            "disjoint_set_find",
+            vec![disjoint_set.clone(), Type::Int],
+            Type::Int,
+        ),
+        (
+            "disjoint_set_union",
+            vec![disjoint_set.clone(), Type::Int, Type::Int],
+            Type::Bool,
+        ),
+        (
+            "disjoint_set_connected",
+            vec![disjoint_set.clone(), Type::Int, Type::Int],
+            Type::Bool,
+        ),
+        ("disjoint_set_count", vec![disjoint_set.clone()], Type::Int),
+        ("disjoint_set_free", vec![disjoint_set.clone()], Type::Unit),
+    ] {
+        add_collection_fn(&mut exports, name, params, return_type);
+    }
 
     // type aliases
     exports.types.insert(
         "List".to_string(),
         ExportedType {
-            members: vec!["new".to_string(), "push".to_string(), "len".to_string()],
+            members: vec![
+                "new".to_string(),
+                "with_capacity".to_string(),
+                "reserve".to_string(),
+                "capacity".to_string(),
+                "push".to_string(),
+                "len".to_string(),
+            ],
             visibility: ExportVisibility::Public,
             is_enum: false,
             type_params: Vec::new(),
@@ -1010,7 +1325,14 @@ pub(crate) fn make_std_collections() -> ModuleExports {
     exports.types.insert(
         "Map".to_string(),
         ExportedType {
-            members: vec!["new".to_string(), "set".to_string(), "get".to_string()],
+            members: vec![
+                "new".to_string(),
+                "with_capacity".to_string(),
+                "reserve".to_string(),
+                "capacity".to_string(),
+                "set".to_string(),
+                "get".to_string(),
+            ],
             visibility: ExportVisibility::Public,
             is_enum: false,
             type_params: Vec::new(),
@@ -1021,13 +1343,136 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         },
     );
     for (name, members) in [
-        ("Stack", vec!["new", "push", "pop", "len"]),
-        ("Queue", vec!["new", "enqueue", "dequeue", "len"]),
+        (
+            "Vector",
+            vec![
+                "new",
+                "with_capacity",
+                "reserve",
+                "capacity",
+                "push",
+                "pop",
+                "get",
+                "set",
+                "insert_at",
+                "remove_at",
+                "contains",
+                "index_of",
+                "len",
+                "is_empty",
+                "clear",
+                "iter",
+            ],
+        ),
+        (
+            "Stack",
+            vec![
+                "new",
+                "with_capacity",
+                "reserve",
+                "capacity",
+                "push",
+                "pop",
+                "len",
+            ],
+        ),
+        (
+            "Queue",
+            vec![
+                "new",
+                "with_capacity",
+                "reserve",
+                "capacity",
+                "enqueue",
+                "dequeue",
+                "len",
+            ],
+        ),
     ] {
         exports.types.insert(
             name.to_string(),
             ExportedType {
-                members: members.into_iter().map(|member| member.to_string()).collect(),
+                members: members
+                    .into_iter()
+                    .map(|member| member.to_string())
+                    .collect(),
+                visibility: ExportVisibility::Public,
+                is_enum: false,
+                type_params: Vec::new(),
+                struct_field_visibility: None,
+                struct_fields: None,
+                enum_variants: None,
+                enum_struct_variants: None,
+            },
+        );
+    }
+    for (name, members) in [
+        (
+            "HashSet",
+            vec![
+                "new",
+                "with_capacity",
+                "insert",
+                "contains",
+                "remove",
+                "len",
+                "clear",
+                "iter",
+                "capacity",
+            ],
+        ),
+        (
+            "OrderedMap",
+            vec![
+                "new",
+                "set",
+                "get",
+                "contains",
+                "remove",
+                "len",
+                "iter",
+                "range_keys",
+            ],
+        ),
+        (
+            "PriorityQueue",
+            vec![
+                "new",
+                "new_min",
+                "with_capacity",
+                "capacity",
+                "push",
+                "peek",
+                "pop",
+                "len",
+                "clear",
+            ],
+        ),
+        (
+            "BitSet",
+            vec![
+                "new",
+                "with_capacity",
+                "insert",
+                "remove",
+                "contains",
+                "count",
+                "union_with",
+                "intersect_with",
+                "difference_with",
+                "iter",
+                "capacity",
+            ],
+        ),
+        (
+            "DisjointSet",
+            vec!["new", "add", "find", "union", "connected", "count"],
+        ),
+    ] {
+        exports.types.insert(
+            name.to_string(),
+            ExportedType {
+                members: members.into_iter().map(str::to_string).collect(),
                 visibility: ExportVisibility::Public,
                 is_enum: false,
                 type_params: Vec::new(),
@@ -1042,7 +1487,17 @@ pub(crate) fn make_std_collections() -> ModuleExports {
         exports.types.insert(
             name.to_string(),
             ExportedType {
-                members: vec!["new".to_string(), "len".to_string()],
+                members: if name == "Set" {
+                    vec![
+                        "new".to_string(),
+                        "with_capacity".to_string(),
+                        "reserve".to_string(),
+                        "capacity".to_string(),
+                        "len".to_string(),
+                    ]
+                } else {
+                    vec!["new".to_string(), "len".to_string()]
+                },
                 visibility: ExportVisibility::Public,
                 is_enum: false,
                 type_params: Vec::new(),

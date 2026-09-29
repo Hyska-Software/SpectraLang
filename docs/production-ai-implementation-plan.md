@@ -2665,3 +2665,201 @@ documentation, and `frontend` owns the diagnostic repair contract.
 - Conformance: `R-3221` is the agent platform certification gate; the phase
   cannot be marked complete while any capability-enforcement, journal-replay,
   taint, compensation or integrated-project assertion fails.
+
+## Phase 33: High-Performance General-Purpose Collections
+
+Expand `std.collections` with structures that cover materially different
+workloads while retaining current source compatibility. Use the existing
+performance suite and measured JIT/AOT baselines to choose representations and
+fast paths. Do not add a second surface that duplicates operations already
+provided by `List<T>` or `Queue<T>`.
+
+### Current implementation baseline
+
+The implementation audit found these public structures and runtime costs:
+
+| Structure | Current runtime representation and contract | Main cost profile |
+|---|---|---|
+| `array<T>` | Language-level contiguous array with a known literal/declared size; unsized array parameters carry a hidden length | O(1) indexed access and sequential storage; no append, reserve or dynamic resizing API |
+| `List<T>` | `VecDeque<SpectraHostValue>` behind a generational handle; indexed access and both-end push/pop | End operations are amortized O(1), indexed access O(1), search O(n), and middle insert/remove O(n) |
+| `Vector<T>` | `Vec<SpectraHostValue>` behind its own generational handle; contiguous growable sequence | Amortized O(1) append/pop, O(1) indexing, O(n) search and middle insert/remove; selected for medium/large workloads by the R-3301 storage probe |
+| `Map<K,V>` | `HashMap<CollectionKey, SpectraHostValue>`; scalar and string keys; deterministic key/value snapshots | Expected O(1) table lookup/update/remove plus key hashing; deterministic snapshots sort keys in O(n log n) and copy O(n) payloads |
+| `Set<T>` | `Vec<SpectraHostValue>` with insertion order | Membership, insertion and removal scan O(n); string equality also normalizes key contents; indexed read is O(1) |
+| `Stack<T>` | `Vec<SpectraHostValue>` with LIFO operations | Push/pop/peek are amortized O(1); iteration snapshots copy O(n) values |
+| `Queue<T>` | `VecDeque<SpectraHostValue>` with FIFO operations | Enqueue/dequeue/peek are amortized O(1); iteration snapshots copy O(n) values |
+| `Iterator<T>` | Snapshot-backed handle | Creation copies O(n) values so iteration does not retain a collection lock |
+
+These typed source contracts still cross the runtime ABI as opaque handles and
+64-bit `SpectraHostValue` payloads. Collection registries, host-call dispatch,
+and synchronization therefore contribute costs beyond the container
+algorithm. `Map<K,V>` already has a measured scalar fast path; its string-key
+path stays generic. Current string key normalization copies tracked bytes into
+an owned `String` before hashing/comparison. New hash structures must preserve
+content-based identity, never hash string pointers, and benchmark key length
+and normalization allocation separately from table-probe complexity.
+
+### Design decisions and performance rules
+
+1. Keep `Set<T>` insertion-ordered and source-compatible. Add `HashSet<T>` as
+   the explicit expected-O(1), unspecified-order choice instead of silently
+   changing existing iteration behavior.
+2. Keep `Map<K,V>` as the hash map with its existing deterministic snapshot
+   behavior. Add `OrderedMap<K,V>` for in-order traversal and range queries;
+   callers choose its O(log n) updates in exchange for ordered operations.
+3. Define supported `Eq`, `Hash`, and `Ord` types before exposing generic
+   operations. Start with built-in scalar types and strings whose runtime
+   representation has well-defined value semantics. Reject unsupported
+   aggregate keys until the compiler has explicit trait-backed semantics.
+   Floats need an explicit total-order contract for tree and heap operations.
+   Because the runtime ABI carries `i64` payloads, compiler lowering must pass
+   a type/order discriminator or select a type-specialized helper; tree and
+   heap inner loops must not invoke a Spectra comparator callback per element.
+4. Use packed or contiguous representations where they fit the operation:
+   `Vec`-backed binary heap, packed `u64` words for `BitSet`, and parent/size
+   arrays for `DisjointSet`. Capacity-aware creation and reservation avoid
+   predictable growth allocations.
+5. Preserve generational opaque handles and snapshot iterator safety. Every
+   new type gets a distinct handle kind, checked negative/overflowing sizes,
+   explicit empty-read behavior, and tests for released or stale handles.
+6. Treat host-call fast paths and per-container lock changes as measured
+   optimizations. Keep the general ABI as the fallback; only add or change a
+   fast path when release benchmarks show a repeatable gain on its named
+   workload and JIT/AOT behavior remains identical.
+7. Introduce each new source type as beta. Promote it to stable only after its
+   semantic contract, runtime behavior, generated surface, documentation, and
+   both JIT and AOT execution pass the Phase 33 release gate.
+8. Report hash-table complexity as expected O(1) probes plus the cost of
+  hashing/comparing the key; string operations are O(key length). Remove
+  per-operation string normalization allocations only through a separately
+  measured, allocation-safe borrowed-key design.
+
+### Source API
+
+- Capacity controls: `list_with_capacity`, `map_with_capacity`,
+  `set_with_capacity`, `stack_with_capacity`, and `queue_with_capacity`, with
+  matching `*_reserve` operations. `Vector<T>` adds `vector_new`,
+  `vector_with_capacity`, `vector_capacity`, and `vector_reserve`. Existing
+  zero-argument constructors remain unchanged.
+- `Vector<T>`: `vector_push`, `vector_pop`, `vector_get`, `vector_set`,
+  `vector_insert_at`, `vector_remove_at`, `vector_contains`, `vector_index_of`,
+  `vector_len`, `vector_is_empty`, `vector_clear`, `vector_iter`, and
+  `vector_free`. Iteration is a snapshot; middle insertion/removal are O(n).
+- `HashSet<T>`: `hash_set_new`, `hash_set_with_capacity`,
+  `hash_set_capacity`, `hash_set_insert`,
+  `hash_set_contains`, `hash_set_remove`, `hash_set_len`, `hash_set_clear`,
+  `hash_set_iter`, and `hash_set_free`. Iteration order is unspecified.
+- `OrderedMap<K,V>`: `ordered_map_new`, `ordered_map_set`, `ordered_map_get`,
+  `ordered_map_contains`, `ordered_map_remove`, `ordered_map_len`,
+  `ordered_map_iter`, `ordered_map_range_keys`, and `ordered_map_free`.
+  `ordered_map_range_keys` uses a documented half-open `[start, end)` key
+  range; values are retrieved with `ordered_map_get`, matching the current
+  separate key/value iterator convention without introducing pair ABI values.
+- `PriorityQueue<T>`: `priority_queue_new`, `priority_queue_new_min`,
+  `priority_queue_with_capacity`, `priority_queue_capacity`, `priority_queue_push`,
+  `priority_queue_peek`, `priority_queue_pop`, `priority_queue_len`,
+  `priority_queue_clear`, and `priority_queue_free`. Equal-priority pop order
+  is unspecified in the initial contract.
+- `BitSet`: `bitset_new`, `bitset_with_capacity`, `bitset_capacity`, `bitset_insert`,
+  `bitset_remove`, `bitset_contains`, `bitset_count`, `bitset_union_with`,
+  `bitset_intersect_with`, `bitset_difference_with`, `bitset_iter`, and
+  `bitset_free`.
+- `DisjointSet`: `disjoint_set_new(size)`, `disjoint_set_add`,
+  `disjoint_set_find`, `disjoint_set_union`, `disjoint_set_connected`,
+  `disjoint_set_count`, and `disjoint_set_free`. IDs are non-negative dense
+  integers; find returns a representative, not a stable canonical ID.
+
+Names, type constraints and error behavior are finalized in ADR 0020; the list
+above is the public API implemented for Phase 33.
+
+### Planned public expansion
+
+| Item | Public structure or capability | Intended complexity and use |
+|---|---|---|
+| `R-3301` | Contracts, accepted ADR 0020, current collection baseline | Reproducible release benchmarks and explicit ordering/equality semantics before implementation |
+| `R-3302` | Capacity-aware constructors, `reserve` and O(1) `capacity` queries for current collections | Avoid repeated backing-store growth and expose actual reserved capacity without changing default constructors |
+| `R-3303` | `HashSet<T>` | Expected O(1) table probes, plus key hashing cost; string hashing is O(key length); iteration order is unspecified |
+| `R-3304` | `OrderedMap<K,V>` | O(log n) updates and O(log n + k) range traversal with key-ordered iteration |
+| `R-3305` | `PriorityQueue<T>` | O(log n) push/pop and O(1) peek using a contiguous binary heap |
+| `R-3306` | `BitSet` | O(1) dense-index membership and O(words) bulk algebra with one bit per index |
+| `R-3307` | `DisjointSet` | Amortized O(alpha(n)) union/find on dense integer IDs |
+| `R-3309` | `Vector<T>` | Contiguous storage; O(1) indexing, amortized O(1) append/pop, O(n) middle edits |
+| `R-3308` | Integration, conformance and performance gate | Catalog, generated tables, semantic/runtime coverage, JIT/AOT parity and checked benchmark report |
+
+`List<T>` already supplies indexed access plus operations at both ends, so a
+separate `Deque<T>` would duplicate the current contract. `Queue<T>` already
+covers the pure FIFO case. The R-3301 storage probe qualified a `Vec`-backed
+`Vector<T>` at medium and large append-and-traverse sizes: all three independent
+groups exceeded the 10% speed threshold with equal backing bytes. The small
+sample did not meet the threshold. R-3309 implements the public type, and the
+R-3308 release gate measures the actual Spectra runtime against `List<T>`. After
+adding dedicated `VectorPush` and `VectorGet` fast ABI imports, release medians
+put `Vector<T>` within 0.5% to 3.2% of `List<T>` across small, medium and large
+workloads in JIT and AOT (about 0.3% to 3.1% lower median latency). The
+before/after, List-normalized estimate shows at least 34.78% lower Vector
+latency in every independent group and median; the
+checked-in pre-optimization observation explicitly records that the original
+binary metadata was not preserved.
+`LruCache`, `Trie`, `Rope`, `SmallVec`, and concurrent variants remain
+candidates for a later workload-driven phase; they need a demonstrated
+consumer and benchmark before taking on extra API and representation costs.
+Runtime internals already use Rust `HashSet`, `BTreeMap` and `BinaryHeap`, so
+the first implementation should benchmark the existing standard-library
+primitives before adding a dependency.
+
+### Execution order and acceptance
+
+- `R-3301` pins hash/equality/order rules, iteration guarantees, allocation and
+  handle behavior, and baseline workloads in ADR 0020. Benchmarks cover
+  existing collection operations at representative sizes, scalar and string
+  keys, both JIT and AOT, and correctness alongside median/p95 and throughput.
+- `R-3302` adds capacity controls to `List`, `Map`, `Set`, `Stack`, and
+  `Queue`; capacity errors must not wrap and allocation failures use the
+  documented runtime error path.
+- `R-3303` adds the unordered hash set without altering `Set<T>` behavior.
+  Its tests include collisions, equal-but-distinct string allocations,
+  duplicate insertion, removal/reinsertion, iteration, and stale handles.
+- `R-3304` adds `OrderedMap` with an explicit initial key domain and float
+  total-order policy. It must not compare raw string pointers or silently
+  broaden `Map<K,V>` constraints.
+- `R-3305` adds max-priority behavior by default plus an explicit min-priority
+  constructor. Empty reads return `Option<T>` and the documentation states
+  equal-priority behavior.
+- `R-3306` and `R-3307` cover packed dense membership and dense-ID connectivity
+  with overflow checks and property-style tests of their invariants.
+- `R-3308` updates `compiler/src/semantic/builtin_std_core.rs`, the runtime
+  registration and handle tables, `packages/spectra-contract/catalog/stdlib.toml`,
+  `scripts/stdlib_contract.toml`, generated lowering/host-call tables, and the
+  standard-library reference. Each public type has a `.spectra` regression
+  that runs in JIT and as an emitted AOT executable.
+- `R-3309` adds a separate `Vec`-backed runtime type, capacity operations,
+  checked indexed edits, value-aware search, a snapshot iterator, and a JIT/AOT
+  fixture. Its release measurements must distinguish prototype storage costs
+  from Spectra host-call, handle, and synchronization costs.
+
+The phase gate adds a collection-specific benchmark report to the existing
+cross-language performance workflow. The report records revision, build
+profile, platform, seed, median/p95, throughput and observable allocation or
+capacity data. It compares each operation with the R-3301 baseline, keeps
+claims workload-specific, and rejects regressions against thresholds chosen
+from that baseline. A fast ABI or lock strategy change requires repeatable
+release evidence of at least 10% improvement on its named workload and no
+correctness or AOT regression. Validation includes runtime crate tests,
+semantic fixtures, generated-table checks, normal `spectralang run`, AOT
+compile plus execution, and the registered phase validator. New collection
+types stay beta until this gate passes; no type is promoted to stable on
+compile-only evidence.
+
+### Cross-reference
+
+- Executable backlog: `docs/roadmap-backlog.md`, Phase 33.
+- Machine-readable tracker: `roadmap/roadmap.toml`, items `R-3301` to
+  `R-3309` in `phase_33`.
+- Architecture decision: `docs/adr/0020`, planned by `R-3301`.
+- The implementation is tracked by R-3301 through R-3309. The accepted ADR,
+  capacity APIs, six new structures, regression fixtures, generated surfaces
+  and release validator satisfy those acceptance gates. The R-3308 release
+  validator passes with 96 JIT scenarios, 96 AOT scenarios and 24 samples per
+  scenario. R-3301 through R-3309 are complete; new collection types remain
+  beta under the maturity policy. A broader runtime-suite failure in unrelated
+  `ml_disttcp` tests is recorded in the backlog; collection and affected
+  compiler/midend/backend gates pass.

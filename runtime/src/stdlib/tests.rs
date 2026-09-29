@@ -793,7 +793,10 @@ fn collection_fast_paths_preserve_values_and_handles() {
     assert_eq!(missing, crate::stdlib::list_get_fast(list, 100));
     assert_eq!(unsafe { tagged_result_parts(missing) }, (1, 0));
     let list_iterator = crate::stdlib::list_iter_fast(list);
-    assert_eq!(crate::stdlib::iterator_remaining_fast(list_iterator as usize), 2);
+    assert_eq!(
+        crate::stdlib::iterator_remaining_fast(list_iterator as usize),
+        2
+    );
     assert_eq!(
         crate::stdlib::iterator_next_unchecked_fast(list_iterator as usize),
         11
@@ -801,14 +804,20 @@ fn collection_fast_paths_preserve_values_and_handles() {
 
     let map = crate::stdlib::map_new_fast();
     assert_ne!(map, 0);
-    assert_eq!(crate::stdlib::map_set_fast(map as usize, 7, 70), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::map_set_fast(map as usize, 7, 70),
+        HOST_STATUS_SUCCESS
+    );
     assert_eq!(crate::stdlib::map_contains_fast(map as usize, 7), 1);
     assert_eq!(
         unsafe { tagged_result_parts(crate::stdlib::map_get_fast(map as usize, 7)) },
         (0, 70)
     );
     let map_iterator = crate::stdlib::map_iter_fast(map as usize);
-    assert_eq!(crate::stdlib::iterator_remaining_fast(map_iterator as usize), 1);
+    assert_eq!(
+        crate::stdlib::iterator_remaining_fast(map_iterator as usize),
+        1
+    );
     assert_eq!(
         crate::stdlib::iterator_next_unchecked_fast(map_iterator as usize),
         7
@@ -821,13 +830,19 @@ fn collection_fast_paths_preserve_values_and_handles() {
 
     let stack = crate::stdlib::stack_new_fast() as usize;
     assert_ne!(stack, 0);
-    assert_eq!(crate::stdlib::stack_push_fast(stack, 31), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::stack_push_fast(stack, 31),
+        HOST_STATUS_SUCCESS
+    );
     assert_eq!(
         unsafe { tagged_result_parts(crate::stdlib::stack_peek_fast(stack)) },
         (0, 31)
     );
     let stack_iterator = crate::stdlib::stack_iter_fast(stack);
-    assert_eq!(crate::stdlib::iterator_remaining_fast(stack_iterator as usize), 1);
+    assert_eq!(
+        crate::stdlib::iterator_remaining_fast(stack_iterator as usize),
+        1
+    );
     assert_eq!(
         crate::stdlib::iterator_next_unchecked_fast(stack_iterator as usize),
         31
@@ -835,13 +850,19 @@ fn collection_fast_paths_preserve_values_and_handles() {
 
     let queue = crate::stdlib::queue_new_fast() as usize;
     assert_ne!(queue, 0);
-    assert_eq!(crate::stdlib::queue_enqueue_fast(queue, 41), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::queue_enqueue_fast(queue, 41),
+        HOST_STATUS_SUCCESS
+    );
     assert_eq!(
         unsafe { tagged_result_parts(crate::stdlib::queue_dequeue_fast(queue)) },
         (0, 41)
     );
     let queue_iterator = crate::stdlib::queue_iter_fast(queue);
-    assert_eq!(crate::stdlib::iterator_remaining_fast(queue_iterator as usize), 0);
+    assert_eq!(
+        crate::stdlib::iterator_remaining_fast(queue_iterator as usize),
+        0
+    );
 
     let iterator = crate::stdlib::insert_iterator(vec![51, 52]).expect("iterator");
     assert_eq!(crate::stdlib::iterator_remaining_fast(iterator), 2);
@@ -877,7 +898,805 @@ fn collection_fast_paths_preserve_values_and_handles() {
         crate::stdlib::iterator_free_fast(queue_iterator as usize),
         HOST_STATUS_SUCCESS
     );
-    assert_eq!(crate::stdlib::iterator_free_fast(iterator), HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::iterator_free_fast(iterator),
+        HOST_STATUS_SUCCESS
+    );
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
+fn collection_capacity_apis_preserve_contents_reject_invalid_sizes_and_validate_handles() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    for constructor in [
+        LIST_WITH_CAPACITY,
+        MAP_WITH_CAPACITY,
+        SET_WITH_CAPACITY,
+        STACK_WITH_CAPACITY,
+        QUEUE_WITH_CAPACITY,
+    ] {
+        let (status, _) = call_host(constructor, &[-1]);
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT, "{constructor}");
+        let (status, _) = call_host(constructor, &[i64::MAX]);
+        assert_eq!(status, HOST_STATUS_INVALID_ARGUMENT, "{constructor}");
+    }
+
+    let (status, list) = call_host(LIST_WITH_CAPACITY, &[8]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        crate::stdlib::list_push_fast(list as usize, 10),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(LIST_RESERVE, &[list, 32]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(with_list_registry(|registry| {
+        let id = ListRegistry::id(list as usize).expect("list id");
+        let value = registry.lists.get(id).expect("list handle");
+        value.data.len() == 1 && value.data.capacity() >= 33
+    }));
+    let (capacity_status, capacity) = call_host(LIST_CAPACITY, &[list]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 33);
+    assert_eq!(
+        call_host_without_results(LIST_RESERVE, &[list, i64::MAX]),
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        call_host_without_results(LIST_FREE, &[list]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(LIST_RESERVE, &[list, 1]),
+        HOST_STATUS_NOT_FOUND
+    );
+    assert_eq!(call_host(LIST_CAPACITY, &[list]).0, HOST_STATUS_NOT_FOUND);
+
+    let (status, map) = call_host(MAP_WITH_CAPACITY, &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host_without_results(MAP_SET, &[map, 3, 30]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(MAP_RESERVE, &[map, 12]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(map_fast_get(map as usize).is_some_and(|map| {
+        let map = lock_unpoisoned(&map);
+        map.data.len() == 1 && map.data.capacity() >= 13
+    }));
+    let (capacity_status, capacity) = call_host(MAP_CAPACITY, &[map]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 13);
+    assert_eq!(
+        call_host_without_results(MAP_FREE, &[map]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(MAP_RESERVE, &[map, 1]),
+        HOST_STATUS_NOT_FOUND
+    );
+    assert_eq!(call_host(MAP_CAPACITY, &[map]).0, HOST_STATUS_NOT_FOUND);
+
+    let (status, set) = call_host(SET_WITH_CAPACITY, &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(call_host(SET_INSERT, &[set, 17]).0, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host_without_results(SET_RESERVE, &[set, 12]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(with_set_registry(|registry| {
+        let id = SetRegistry::id(set as usize).expect("set id");
+        let value = registry.sets.get(id).expect("set handle");
+        value.data.len() == 1 && value.data.capacity() >= 13
+    }));
+    let (capacity_status, capacity) = call_host(SET_CAPACITY, &[set]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 13);
+    assert_eq!(
+        call_host_without_results(SET_FREE, &[set]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(SET_RESERVE, &[set, 1]),
+        HOST_STATUS_NOT_FOUND
+    );
+    assert_eq!(call_host(SET_CAPACITY, &[set]).0, HOST_STATUS_NOT_FOUND);
+
+    let (status, stack) = call_host(STACK_WITH_CAPACITY, &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host_without_results(STACK_PUSH, &[stack, 21]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(STACK_RESERVE, &[stack, 12]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(with_stack_registry(|registry| {
+        let id = StackRegistry::id(stack as usize).expect("stack id");
+        let value = registry.stacks.get(id).expect("stack handle");
+        value.data.len() == 1 && value.data.capacity() >= 13
+    }));
+    let (capacity_status, capacity) = call_host(STACK_CAPACITY, &[stack]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 13);
+    assert_eq!(
+        call_host_without_results(STACK_FREE, &[stack]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(STACK_RESERVE, &[stack, 1]),
+        HOST_STATUS_NOT_FOUND
+    );
+    assert_eq!(call_host(STACK_CAPACITY, &[stack]).0, HOST_STATUS_NOT_FOUND);
+
+    let (status, queue) = call_host(QUEUE_WITH_CAPACITY, &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host_without_results(QUEUE_ENQUEUE, &[queue, 31]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(QUEUE_RESERVE, &[queue, 12]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(with_queue_registry(|registry| {
+        let id = QueueRegistry::id(queue as usize).expect("queue id");
+        let value = registry.queues.get(id).expect("queue handle");
+        value.data.len() == 1 && value.data.capacity() >= 13
+    }));
+    let (capacity_status, capacity) = call_host(QUEUE_CAPACITY, &[queue]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 13);
+    assert_eq!(
+        call_host_without_results(QUEUE_FREE, &[queue]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(QUEUE_RESERVE, &[queue, 1]),
+        HOST_STATUS_NOT_FOUND
+    );
+    assert_eq!(call_host(QUEUE_CAPACITY, &[queue]).0, HOST_STATUS_NOT_FOUND);
+
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
+fn vector_uses_contiguous_capacity_checked_indices_and_snapshot_iteration() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+
+    for size in [-1, i64::MAX] {
+        assert_eq!(
+            call_host("spectra.std.collections.vector_with_capacity", &[size]).0,
+            HOST_STATUS_INVALID_ARGUMENT
+        );
+    }
+
+    let (status, vector) = call_host("spectra.std.collections.vector_with_capacity", &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert!(call_host("spectra.std.collections.vector_capacity", &[vector]).1 >= 4);
+    assert_eq!(
+        call_host("spectra.std.collections.vector_is_empty", &[vector]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    for value in [10, 20, 30] {
+        assert_eq!(
+            call_host_without_results("spectra.std.collections.vector_push", &[vector, value]),
+            HOST_STATUS_SUCCESS
+        );
+    }
+    assert_eq!(
+        call_host("spectra.std.collections.vector_len", &[vector]),
+        (HOST_STATUS_SUCCESS, 3)
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host("spectra.std.collections.vector_get", &[vector, 1]).1,
+            )
+        },
+        (0, 20)
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host("spectra.std.collections.vector_get", &[vector, -1]).1,
+            )
+        },
+        (1, 0)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_set", &[vector, 1, 21]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.vector_contains", &[vector, 21]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.vector_index_of", &[vector, 21]),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_insert_at", &[vector, 1, 15]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.vector_insert_at",
+            &[vector, 99, 15]
+        ),
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host("spectra.std.collections.vector_remove_at", &[vector, 2]).1,
+            )
+        },
+        (0, 21)
+    );
+
+    let (iterator_status, iterator) =
+        call_host("spectra.std.collections.vector_iter", &[vector]);
+    assert_eq!(iterator_status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_push", &[vector, 40]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.iterator_remaining", &[iterator]),
+        (HOST_STATUS_SUCCESS, 3)
+    );
+    for expected in [10, 15, 30] {
+        assert_eq!(
+            unsafe {
+                tagged_result_parts(
+                    call_host("spectra.std.collections.iterator_next", &[iterator]).1,
+                )
+            },
+            (0, expected)
+        );
+    }
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host("spectra.std.collections.iterator_next", &[iterator]).1,
+            )
+        },
+        (1, 0)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.iterator_free", &[iterator]),
+        HOST_STATUS_SUCCESS
+    );
+
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_reserve", &[vector, 32]),
+        HOST_STATUS_SUCCESS
+    );
+    assert!(call_host("spectra.std.collections.vector_capacity", &[vector]).1 >= 35);
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_clear", &[vector]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(call_host("spectra.std.collections.vector_pop", &[vector]).1)
+        },
+        (1, 0)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_free", &[vector]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.vector_len", &[vector]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, strings) = call_host("spectra.std.collections.vector_new", &[]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let first = test_string("same text");
+    let second = test_string("same text");
+    assert_ne!(first, second);
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.vector_push",
+            &[strings, first]
+        ),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.vector_contains",
+            &[strings, second]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.vector_free", &[strings]),
+        HOST_STATUS_SUCCESS
+    );
+
+    crate::ffi::spectra_rt_manual_clear();
+}
+
+#[test]
+fn advanced_collections_preserve_ordering_set_algebra_and_union_find_invariants() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+    crate::ffi::spectra_rt_manual_clear();
+    use spectra_contract::collection_sort as sort;
+
+    let (status, hash_set) = call_host("spectra.std.collections.hash_set_with_capacity", &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (capacity_status, capacity) =
+        call_host("spectra.std.collections.hash_set_capacity", &[hash_set]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 4);
+    let first_text = test_string("same");
+    let second_text = test_string("same");
+    assert_ne!(first_text, second_text);
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.hash_set_insert",
+            &[hash_set, first_text, sort::STRING],
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.hash_set_insert",
+            &[hash_set, second_text, sort::STRING],
+        ),
+        (HOST_STATUS_SUCCESS, 0)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.hash_set_contains",
+            &[hash_set, second_text, sort::STRING],
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.hash_set_contains",
+            &[hash_set, 99, sort::INT],
+        )
+        .0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+
+    let (status, numeric_set) = call_host("spectra.std.collections.hash_set_with_capacity", &[8]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for value in 0..512_i64 {
+        assert_eq!(
+            call_host(
+                "spectra.std.collections.hash_set_insert",
+                &[numeric_set, value, sort::INT],
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+    }
+    for value in 0..512_i64 {
+        assert_eq!(
+            call_host(
+                "spectra.std.collections.hash_set_contains",
+                &[numeric_set, value, sort::INT],
+            ),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+    }
+    assert_eq!(
+        call_host("spectra.std.collections.hash_set_len", &[numeric_set]),
+        (HOST_STATUS_SUCCESS, 512)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.hash_set_free", &[numeric_set]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.hash_set_free", &[hash_set]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.hash_set_len", &[hash_set]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, ordered) = call_host("spectra.std.collections.ordered_map_new", &[]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for key in [5, 1, 4, 2, 3] {
+        assert_eq!(
+            call_host_without_results(
+                "spectra.std.collections.ordered_map_set",
+                &[ordered, key, key * 10, sort::INT],
+            ),
+            HOST_STATUS_SUCCESS
+        );
+    }
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.ordered_map_set",
+            &[ordered, 3, 333, sort::INT],
+        ),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host(
+                    "spectra.std.collections.ordered_map_get",
+                    &[ordered, 3, sort::INT],
+                )
+                .1,
+            )
+        },
+        (0, 333)
+    );
+    let (status, keys) = call_host(
+        "spectra.std.collections.ordered_map_range_keys",
+        &[ordered, 2, 5, sort::INT],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for expected in [2, 3, 4] {
+        let (status, next) = call_host("spectra.std.collections.iterator_next", &[keys]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(next) }, (0, expected));
+    }
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(call_host("spectra.std.collections.iterator_next", &[keys]).1)
+        },
+        (1, 0)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.iterator_free", &[keys]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host(
+                    "spectra.std.collections.ordered_map_remove",
+                    &[ordered, 5, sort::INT],
+                )
+                .1,
+            )
+        },
+        (0, 50)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.ordered_map_free", &[ordered]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.ordered_map_len", &[ordered]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, string_ordered) = call_host("spectra.std.collections.ordered_map_new", &[]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let alpha_inserted = test_string("alpha");
+    let alpha_lookup = test_string("alpha");
+    let beta_inserted = test_string("beta");
+    let range_start = test_string("alpha");
+    let range_end = test_string("gamma");
+    for (key, value) in [(beta_inserted, 2), (alpha_inserted, 1)] {
+        assert_eq!(
+            call_host_without_results(
+                "spectra.std.collections.ordered_map_set",
+                &[string_ordered, key, value, sort::STRING],
+            ),
+            HOST_STATUS_SUCCESS
+        );
+    }
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host(
+                    "spectra.std.collections.ordered_map_get",
+                    &[string_ordered, alpha_lookup, sort::STRING],
+                )
+                .1,
+            )
+        },
+        (0, 1)
+    );
+    let (status, string_keys) = call_host(
+        "spectra.std.collections.ordered_map_range_keys",
+        &[string_ordered, range_start, range_end, sort::STRING],
+    );
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for expected in [alpha_inserted, beta_inserted] {
+        let (status, next) = call_host("spectra.std.collections.iterator_next", &[string_keys]);
+        assert_eq!(status, HOST_STATUS_SUCCESS);
+        assert_eq!(unsafe { tagged_result_parts(next) }, (0, expected));
+    }
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.iterator_free", &[string_keys]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.ordered_map_free",
+            &[string_ordered]
+        ),
+        HOST_STATUS_SUCCESS
+    );
+
+    let (status, max_queue) =
+        call_host("spectra.std.collections.priority_queue_with_capacity", &[4]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (capacity_status, capacity) = call_host(
+        "spectra.std.collections.priority_queue_capacity",
+        &[max_queue],
+    );
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 4);
+    for value in [-0.0_f64, 0.0_f64, f64::NAN] {
+        assert_eq!(
+            call_host_without_results(
+                "spectra.std.collections.priority_queue_push",
+                &[max_queue, value.to_bits() as i64, sort::FLOAT],
+            ),
+            HOST_STATUS_SUCCESS
+        );
+    }
+    let (status, highest) = call_host("spectra.std.collections.priority_queue_pop", &[max_queue]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(unsafe { tagged_result_parts(highest) }.0, 0);
+    assert!(f64::from_bits(unsafe { tagged_result_parts(highest) }.1 as u64).is_nan());
+    let (status, positive_zero) =
+        call_host("spectra.std.collections.priority_queue_pop", &[max_queue]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        unsafe { tagged_result_parts(positive_zero) }.1 as u64,
+        0.0_f64.to_bits()
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.priority_queue_free", &[max_queue]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.priority_queue_len", &[max_queue]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, min_queue) = call_host("spectra.std.collections.priority_queue_new_min", &[]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for value in [7, -3, 4] {
+        assert_eq!(
+            call_host_without_results(
+                "spectra.std.collections.priority_queue_push",
+                &[min_queue, value, sort::INT],
+            ),
+            HOST_STATUS_SUCCESS
+        );
+    }
+    assert_eq!(
+        unsafe {
+            tagged_result_parts(
+                call_host("spectra.std.collections.priority_queue_pop", &[min_queue]).1,
+            )
+        },
+        (0, -3)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.priority_queue_free", &[min_queue]),
+        HOST_STATUS_SUCCESS
+    );
+    for (constructor, args) in [
+        ("spectra.std.collections.hash_set_with_capacity", vec![-1]),
+        (
+            "spectra.std.collections.priority_queue_with_capacity",
+            vec![-1],
+        ),
+        ("spectra.std.collections.bitset_with_capacity", vec![-1]),
+        ("spectra.std.collections.disjoint_set_new", vec![-1]),
+    ] {
+        assert_eq!(
+            call_host(constructor, &args).0,
+            HOST_STATUS_INVALID_ARGUMENT,
+            "{constructor}"
+        );
+    }
+
+    let (status, bits_left) = call_host("spectra.std.collections.bitset_with_capacity", &[65]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let (capacity_status, capacity) =
+        call_host("spectra.std.collections.bitset_capacity", &[bits_left]);
+    assert_eq!(capacity_status, HOST_STATUS_SUCCESS);
+    assert!(capacity >= 65);
+    let (status, bits_right) = call_host("spectra.std.collections.bitset_new", &[]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    for bit in [0, 63, 64, 65_535] {
+        assert_eq!(
+            call_host("spectra.std.collections.bitset_insert", &[bits_left, bit]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+    }
+    for bit in [63, 100] {
+        assert_eq!(
+            call_host("spectra.std.collections.bitset_insert", &[bits_right, bit]),
+            (HOST_STATUS_SUCCESS, 1)
+        );
+    }
+    assert_eq!(
+        call_host("spectra.std.collections.bitset_contains", &[bits_left, -1]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.bitset_union_with",
+            &[bits_left, bits_right]
+        ),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.bitset_count", &[bits_left]),
+        (HOST_STATUS_SUCCESS, 5)
+    );
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.bitset_intersect_with",
+            &[bits_left, bits_right]
+        ),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.bitset_count", &[bits_left]),
+        (HOST_STATUS_SUCCESS, 2)
+    );
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.bitset_difference_with",
+            &[bits_left, bits_right]
+        ),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.bitset_count", &[bits_left]),
+        (HOST_STATUS_SUCCESS, 0)
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.bitset_free", &[bits_left]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.bitset_free", &[bits_right]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.bitset_count", &[bits_left]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, groups) = call_host("spectra.std.collections.disjoint_set_new", &[6]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    assert_eq!(
+        call_host("spectra.std.collections.disjoint_set_count", &[groups]),
+        (HOST_STATUS_SUCCESS, 6)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.disjoint_set_union",
+            &[groups, 0, 1]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.disjoint_set_union",
+            &[groups, 1, 2]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.disjoint_set_union",
+            &[groups, 0, 2]
+        ),
+        (HOST_STATUS_SUCCESS, 0)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.disjoint_set_connected",
+            &[groups, 0, 2]
+        ),
+        (HOST_STATUS_SUCCESS, 1)
+    );
+    assert_eq!(
+        call_host(
+            "spectra.std.collections.disjoint_set_connected",
+            &[groups, 0, 3]
+        ),
+        (HOST_STATUS_SUCCESS, 0)
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.disjoint_set_count", &[groups]),
+        (HOST_STATUS_SUCCESS, 4)
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.disjoint_set_add", &[groups]),
+        (HOST_STATUS_SUCCESS, 6)
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.disjoint_set_find", &[groups, -1]).0,
+        HOST_STATUS_INVALID_ARGUMENT
+    );
+    assert_eq!(
+        call_host_without_results("spectra.std.collections.disjoint_set_free", &[groups]),
+        HOST_STATUS_SUCCESS
+    );
+    assert_eq!(
+        call_host("spectra.std.collections.disjoint_set_count", &[groups]).0,
+        HOST_STATUS_NOT_FOUND
+    );
+
+    let (status, randomized_groups) = call_host("spectra.std.collections.disjoint_set_new", &[32]);
+    assert_eq!(status, HOST_STATUS_SUCCESS);
+    let mut reference = (0..32).collect::<Vec<usize>>();
+    for step in 0..96_usize {
+        let left = (step.wrapping_mul(17).wrapping_add(3)) % reference.len();
+        let right = (step.wrapping_mul(29).wrapping_add(11)) % reference.len();
+        let left_component = reference[left];
+        let right_component = reference[right];
+        let merged = left_component != right_component;
+        assert_eq!(
+            call_host(
+                "spectra.std.collections.disjoint_set_union",
+                &[randomized_groups, left as i64, right as i64],
+            ),
+            (HOST_STATUS_SUCCESS, merged as i64)
+        );
+        if merged {
+            for component in &mut reference {
+                if *component == right_component {
+                    *component = left_component;
+                }
+            }
+        }
+        let expected_count = reference.iter().copied().collect::<HashSet<_>>().len() as i64;
+        assert_eq!(
+            call_host(
+                "spectra.std.collections.disjoint_set_count",
+                &[randomized_groups]
+            ),
+            (HOST_STATUS_SUCCESS, expected_count)
+        );
+        for i in 0..reference.len() {
+            for j in 0..reference.len() {
+                assert_eq!(
+                    call_host(
+                        "spectra.std.collections.disjoint_set_connected",
+                        &[randomized_groups, i as i64, j as i64],
+                    ),
+                    (HOST_STATUS_SUCCESS, (reference[i] == reference[j]) as i64)
+                );
+            }
+        }
+    }
+    assert_eq!(
+        call_host_without_results(
+            "spectra.std.collections.disjoint_set_free",
+            &[randomized_groups],
+        ),
+        HOST_STATUS_SUCCESS
+    );
+
     crate::ffi::spectra_rt_manual_clear();
 }
 
@@ -1430,12 +2249,8 @@ fn ml_cross_entropy_accepts_integral_float_class_labels() {
         call_host(TENSOR_REQUIRES_GRAD, &[logits, 1]).0,
         HOST_STATUS_SUCCESS
     );
-    let labels = tensor_alloc(
-        TensorDType::Float,
-        vec![2],
-        f64_values_to_host(&[0.0, 1.0]),
-    )
-    .expect("alloc float labels") as SpectraHostValue;
+    let labels = tensor_alloc(TensorDType::Float, vec![2], f64_values_to_host(&[0.0, 1.0]))
+        .expect("alloc float labels") as SpectraHostValue;
     let (status, loss) = call_host(ML_CROSS_ENTROPY_LOSS, &[logits, labels]);
     assert_eq!(status, HOST_STATUS_SUCCESS);
     assert_eq!(call_host(TENSOR_BACKWARD, &[loss]).0, HOST_STATUS_SUCCESS);
@@ -1445,12 +2260,9 @@ fn ml_cross_entropy_accepts_integral_float_class_labels() {
     assert_eq!(gradients.len(), 4);
     assert!(gradients.iter().all(|value| value.is_finite()));
 
-    let fractional_labels = tensor_alloc(
-        TensorDType::Float,
-        vec![2],
-        f64_values_to_host(&[0.5, 1.0]),
-    )
-    .expect("alloc fractional labels") as SpectraHostValue;
+    let fractional_labels =
+        tensor_alloc(TensorDType::Float, vec![2], f64_values_to_host(&[0.5, 1.0]))
+            .expect("alloc fractional labels") as SpectraHostValue;
     assert_eq!(
         call_host(ML_CROSS_ENTROPY_LOSS, &[logits, fractional_labels]).0,
         HOST_STATUS_INVALID_ARGUMENT
@@ -1465,12 +2277,9 @@ fn ml_cross_entropy_accepts_integral_float_class_labels() {
         call_host(ML_CROSS_ENTROPY_LOSS, &[logits, negative_labels]).0,
         HOST_STATUS_INVALID_ARGUMENT
     );
-    let out_of_range_labels = tensor_alloc(
-        TensorDType::Float,
-        vec![2],
-        f64_values_to_host(&[0.0, 2.0]),
-    )
-    .expect("alloc out-of-range labels") as SpectraHostValue;
+    let out_of_range_labels =
+        tensor_alloc(TensorDType::Float, vec![2], f64_values_to_host(&[0.0, 2.0]))
+            .expect("alloc out-of-range labels") as SpectraHostValue;
     assert_eq!(
         call_host(ML_CROSS_ENTROPY_LOSS, &[logits, out_of_range_labels]).0,
         HOST_STATUS_INVALID_ARGUMENT
@@ -7940,7 +8749,10 @@ fn concurrent_task_spawn_fn_inherits_the_spawning_run() {
     // so the worker can only observe the captured value.
     drop(inner);
     drop(outer);
-    assert_eq!(crate::agent::run_context::current_chain(), Vec::<u64>::new());
+    assert_eq!(
+        crate::agent::run_context::current_chain(),
+        Vec::<u64>::new()
+    );
 
     assert_eq!(
         call_host(CONCURRENT_TASK_JOIN, &[task]).0,

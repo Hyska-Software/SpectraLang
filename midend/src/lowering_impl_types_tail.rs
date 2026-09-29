@@ -86,10 +86,7 @@ impl ASTLowering {
     ///
     /// See [`Self::struct_fields_for_type`]. Returns `None` when the type is
     /// not an enum, so callers can keep their fallback chains.
-    pub(crate) fn enum_variants_for_type(
-        &self,
-        ty: &IRType,
-    ) -> Option<Vec<EnumVariantDefinition>> {
+    pub(crate) fn enum_variants_for_type(&self, ty: &IRType) -> Option<Vec<EnumVariantDefinition>> {
         match Self::ir_type_representation_static(ty) {
             IRType::Enum { name, variants } => {
                 if !variants.is_empty() {
@@ -178,6 +175,11 @@ impl ASTLowering {
                     // A project aggregate takes precedence over an opaque API
                     // handle with the same short name.
                     IRType::Int
+                } else if matches!(name.as_str(), "BitSet" | "DisjointSet") {
+                    IRType::Struct {
+                        name: name.clone(),
+                        fields: Vec::new(),
+                    }
                 } else {
                     IRType::Unknown
                 }

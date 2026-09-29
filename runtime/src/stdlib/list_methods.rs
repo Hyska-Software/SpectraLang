@@ -11,7 +11,7 @@ fn exact_sort_integer_width(kind: i64, base: i64) -> Option<u32> {
     }
 }
 
-fn is_supported_list_sort_kind(kind: i64) -> bool {
+pub(crate) fn is_supported_list_sort_kind(kind: i64) -> bool {
     use spectra_contract::collection_sort as sort_kind;
 
     matches!(
@@ -56,7 +56,7 @@ fn compare_spectra_strings(left: i64, right: i64) -> CmpOrdering {
     }
 }
 
-fn compare_list_sort_values(left: i64, right: i64, kind: i64) -> CmpOrdering {
+pub(crate) fn compare_list_sort_values(left: i64, right: i64, kind: i64) -> CmpOrdering {
     use spectra_contract::collection_sort as sort_kind;
 
     match kind {
@@ -101,11 +101,7 @@ impl ListRegistry {
         Ok(list.data.len())
     }
 
-    pub(crate) fn extend<I>(
-        &mut self,
-        handle: usize,
-        values: I,
-    ) -> Result<(), i32>
+    pub(crate) fn extend<I>(&mut self, handle: usize, values: I) -> Result<(), i32>
     where
         I: IntoIterator<Item = SpectraHostValue>,
     {

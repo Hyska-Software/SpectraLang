@@ -1,0 +1,14 @@
+module error_620_unsupported_aggregate_collection_key
+
+from std.collections import HashSet
+import std.collections as collections
+
+record Point {
+    public value: int,
+}
+
+public func main() returns int {
+    let points: HashSet<Point> = collections.hash_set_new()
+    collections.hash_set_insert(points, Point { value: 1 })
+    return 0
+}

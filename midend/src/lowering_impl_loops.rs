@@ -75,8 +75,7 @@ impl ASTLowering {
         self.builder.build_branch(ir_func, iterator_header);
         self.builder.set_current_block(iterator_header);
         let remaining = if let Some(slot) = remaining_slot {
-            self.builder
-                .build_load_typed(ir_func, slot, IRType::Int)
+            self.builder.build_load_typed(ir_func, slot, IRType::Int)
         } else {
             self.require_value(
                 self.builder.build_typed_host_call(
@@ -346,12 +345,8 @@ impl ASTLowering {
             .builder
             .build_load_typed(ir_func, current_ptr, IRType::Int);
         let at_end = self.builder.build_eq(ir_func, current, end);
-        self.builder.build_cond_branch(
-            ir_func,
-            at_end,
-            exit_block,
-            increment_block,
-        );
+        self.builder
+            .build_cond_branch(ir_func, at_end, exit_block, increment_block);
 
         self.builder.set_current_block(increment_block);
         let current = self
@@ -402,13 +397,7 @@ impl ASTLowering {
             } => {
                 let start = self.lower_expression(start, ir_func);
                 let end = self.lower_expression(end, ir_func);
-                self.lower_range_index_for_loop(
-                    for_stmt,
-                    start,
-                    end,
-                    *inclusive,
-                    ir_func,
-                );
+                self.lower_range_index_for_loop(for_stmt, start, end, *inclusive, ir_func);
                 return;
             }
             ExpressionKind::Identifier(name) => {
@@ -546,6 +535,27 @@ impl ASTLowering {
                     true,
                 )
             }
+            IRType::Generic { name, args, .. } if name == "Vector" => {
+                let Some(element_type) = args.first().cloned() else {
+                    self.error("cannot iterate Vector<T> without its element type");
+                    return;
+                };
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.vector_iter".to_string(),
+                            vec![iterable_value],
+                            iterator_type(&element_type),
+                            true,
+                        ),
+                        "vector.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
             IRType::Generic { name, args, .. } if name == "Set" => {
                 let Some(element_type) = args.first().cloned() else {
                     self.error("cannot iterate Set<T> without its element type");
@@ -561,6 +571,48 @@ impl ASTLowering {
                             true,
                         ),
                         "set.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
+            IRType::Generic { name, args, .. } if name == "HashSet" => {
+                let Some(element_type) = args.first().cloned() else {
+                    self.error("cannot iterate HashSet<T> without its element type");
+                    return;
+                };
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.hash_set_iter".to_string(),
+                            vec![iterable_value],
+                            iterator_type(&element_type),
+                            true,
+                        ),
+                        "hash_set.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
+            IRType::Generic { name, args, .. } if name == "OrderedMap" => {
+                let Some(element_type) = args.first().cloned() else {
+                    self.error("cannot iterate OrderedMap<K, V> without its key type");
+                    return;
+                };
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.ordered_map_iter".to_string(),
+                            vec![iterable_value],
+                            iterator_type(&element_type),
+                            true,
+                        ),
+                        "ordered_map.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,
@@ -659,6 +711,28 @@ impl ASTLowering {
                     true,
                 )
             }
+            IRType::Struct { name, .. } if name.starts_with("Vector_") => {
+                let suffix = &name["Vector_".len()..];
+                let element_type = mangle_type(suffix);
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.vector_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "vector.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
             IRType::Struct { name, .. } if name.starts_with("Set_") => {
                 let suffix = &name["Set_".len()..];
                 let element_type = mangle_type(suffix);
@@ -675,6 +749,28 @@ impl ASTLowering {
                             true,
                         ),
                         "set.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
+            IRType::Struct { name, .. } if name.starts_with("HashSet_") => {
+                let suffix = &name["HashSet_".len()..];
+                let element_type = mangle_type(suffix);
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.hash_set_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{suffix}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "hash_set.iter host call did not produce its declared iterator",
                     ),
                     element_type,
                     true,
@@ -751,6 +847,47 @@ impl ASTLowering {
                     true,
                 )
             }
+            IRType::Struct { name, .. } if name.starts_with("OrderedMap_") => {
+                let suffix = &name["OrderedMap_".len()..];
+                let Some((key, _value)) = suffix.split_once('_') else {
+                    self.error(format!("cannot resolve ordered map key type for {name}"));
+                    return;
+                };
+                let element_type = mangle_type(key);
+                (
+                    self.require_value(
+                        self.builder.build_typed_host_call(
+                            ir_func,
+                            "spectra.std.collections.ordered_map_iter".to_string(),
+                            vec![iterable_value],
+                            IRType::Struct {
+                                name: format!("Iterator_{key}"),
+                                fields: Vec::new(),
+                            },
+                            true,
+                        ),
+                        "ordered_map.iter host call did not produce its declared iterator",
+                    ),
+                    element_type,
+                    true,
+                    true,
+                )
+            }
+            IRType::Struct { name, .. } if name == "BitSet" => (
+                self.require_value(
+                    self.builder.build_typed_host_call(
+                        ir_func,
+                        "spectra.std.collections.bitset_iter".to_string(),
+                        vec![iterable_value],
+                        iterator_type(&IRType::Int),
+                        true,
+                    ),
+                    "bitset.iter host call did not produce its declared iterator",
+                ),
+                IRType::Int,
+                true,
+                true,
+            ),
             IRType::Struct { name, .. } if name.starts_with("Iterator_") => {
                 let suffix = &name["Iterator_".len()..];
                 (iterable_value, mangle_type(suffix), false, false)

@@ -196,7 +196,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 
 ### Namespaces
 
-51 namespace grants cover 1153 host calls.
+51 namespace grants cover 1233 host calls.
 
 | Namespace grant | Host calls |
 | --- | --- |
@@ -233,7 +233,7 @@ writing it fails `E3201`, and the diagnostic suggests the runtime name.
 | `spectra.api.websocket` | 24 |
 | `spectra.std.agent` | 29 |
 | `spectra.std.char` | 8 |
-| `spectra.std.collections` | 71 |
+| `spectra.std.collections` | 151 |
 | `spectra.std.concurrent` | 17 |
 | `spectra.std.convert` | 11 |
 | `spectra.std.env` | 6 |

@@ -1,6 +1,6 @@
 version = 1
 title = "SpectraLang Production AI Roadmap"
-updated_at = "2026-09-11"
+updated_at = "2026-09-28"
 status_scale = ["not_started", "in_progress", "blocked", "complete"]
 priority_scale = ["P0", "P1", "P2", "P3"]
 
@@ -5196,6 +5196,11 @@ id = "phase_32"
 name = "Agent Platform"
 goal = "Deliver `std.agent` as a production native surface: a governed model and tool runtime with capability enforcement at the host-call dispatch point, message-level taint with sensitive-sink gating, durable journaled runs with declared compensation, agent evaluation, and protocol interoperability, without adding a second native package, a second attribute, or any effect annotation."
 
+[[phases]]
+id = "phase_33"
+name = "High-Performance General-Purpose Collections"
+goal = "Expand std.collections with workload-driven hash, ordered, priority, bitset, and disjoint-set structures while preserving existing semantics and measuring JIT/AOT performance before adding fast paths."
+
 [[items]]
 id = "R-3201"
 title = "ADR and Invariants for Agent Governance"
@@ -5605,4 +5610,161 @@ acceptance = [
   "Compensations run through the governed dispatch (capability and taint decisions apply).",
   "Unknown literal tool names fail compilation with E3205; agent_end surfaces pending compensations.",
   "scripts/validate_r3224_agent_compensation.py passes and is registered in run_tests.ps1.",
+]
+
+[[items]]
+id = "R-3301"
+title = "Collection Semantics, Architecture Decision and Performance Baseline"
+phase = "phase_33"
+owner = "runtime"
+priority = "P0"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3007", "R-3101", "R-3206"]
+summary = "Record the current collection complexity and contracts, decide supported Eq/Hash/Ord types and iteration semantics, and establish reproducible JIT/AOT collection baselines before implementation."
+acceptance = [
+  "Accepted ADR 0020 records key/value equality, hashing and ordering rules, allocation errors, handle ownership, iteration order, snapshot semantics, and type-directed runtime dispatch without comparator callbacks in hot loops.",
+  "Release-mode JIT/AOT benchmarks cover current and added collection operations at small, medium and large sizes, including scalar and string keys of 8, 64 and 256 bytes, correctness checks, median/p95, throughput and observed capacity; fixed-array, Spectra List and VecDeque/Vec storage results decide Vector<T> only when all three independent storage groups show at least 10% append/traversal speedup and backing bytes are no more than 5% higher.",
+  "JIT and AOT baseline reports include the Spectra revision, build profile, host platform, workload seed and exact commands; performance claims stay scoped to measured workloads.",
+  "The decision documents why List already covers double-ended indexed storage and why Queue covers FIFO, preventing a redundant Deque surface in this phase.",
+]
+
+[[items]]
+id = "R-3302"
+title = "Capacity-Aware APIs for Existing Collections"
+phase = "phase_33"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3301"]
+summary = "Expose capacity-aware construction and reservation for List, Map, Set, Stack and Queue so callers can avoid repeated growth allocations without changing the existing default constructors."
+acceptance = [
+  "std.collections exposes typed with-capacity constructors, reserve operations and O(1) capacity queries for List, Map, Set, Stack and Queue while preserving each existing constructor and behavior.",
+  "Negative or overflowing capacities fail explicitly, allocation failure follows the documented runtime error path, and capacity arithmetic cannot wrap.",
+  "Runtime and .spectra coverage proves reserve and construction preserve contents, order, stale-handle checks and JIT/AOT behavior.",
+  "The release benchmark measures allocation-sensitive append, insert and enqueue workloads against the R-3301 baseline.",
+]
+
+[[items]]
+id = "R-3303"
+title = "HashSet<T> with Expected Constant-Time Membership"
+phase = "phase_33"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "high"
+dependencies = ["R-3301", "R-3302"]
+summary = "Add an explicitly unordered HashSet<T> for membership-heavy workloads, keeping the current insertion-ordered Set<T> contract intact."
+acceptance = [
+  "HashSet<T> provides insert, contains, remove, length, clear, capacity-aware construction, actual-capacity observation and iteration with expected O(1) table probes; key hashing and equality costs are reported separately.",
+  "String keys hash and compare by string contents rather than pointer address; benchmarks report O(key length) work and key-normalization allocations; unsupported aggregate key types receive a compile-time diagnostic until Eq and Hash semantics exist.",
+  "Release benchmarks show large scalar membership workloads improving over insertion-ordered Set<T>; string results are reported separately with normalization costs and no pointer-based shortcut.",
+  "Iteration order is explicitly unspecified, while iterator contents remain a safe snapshot; the existing Set<T> remains insertion-ordered and source-compatible.",
+  "Collision, duplicate, remove/reinsert, empty, string-equality and stale-handle cases pass runtime and .spectra JIT/AOT coverage.",
+]
+
+[[items]]
+id = "R-3304"
+title = "OrderedMap<K,V> with Range Operations"
+phase = "phase_33"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "high"
+dependencies = ["R-3301", "R-3302"]
+summary = "Add a balanced-tree map for ordered traversal and range queries, distinct from the expected O(1) hash-based Map<K,V>."
+acceptance = [
+  "OrderedMap<K,V> provides lookup, insert, remove and membership in O(log n), ordered iteration in O(n), and range traversal in O(log n + k).",
+  "Supported ordered key types and float total-order behavior are explicit; unsupported types are rejected during semantic analysis rather than ordered by raw pointer or unspecified ABI bits.",
+  "Map<K,V> keeps its existing hash lookup and deterministic snapshot contract; the new ordered map is additive and iterates in key order without sorting a fresh snapshot.",
+  "Boundary, duplicate-update, removal, range and string-key semantics pass runtime and .spectra JIT/AOT coverage.",
+]
+
+[[items]]
+id = "R-3305"
+title = "PriorityQueue<T> Backed by a Binary Heap"
+phase = "phase_33"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3301", "R-3302"]
+summary = "Expose a contiguous binary-heap priority queue for repeated highest- or lowest-priority selection."
+acceptance = [
+  "PriorityQueue<T> provides push and pop in O(log n), peek in O(1), capacity-aware construction and actual-capacity observation, clear and length, with max-priority behavior by default and an explicit min-priority constructor.",
+  "The initial ordered element set and float total-order contract are documented and checked by semantic analysis; equal-priority stability is stated explicitly.",
+  "Empty operations return Option<T>, snapshots do not hold runtime locks while invoking Spectra code, and heap invariants pass property-style runtime coverage.",
+  "Release benchmarks compare repeated push/pop/peek workloads with the R-3301 baseline, and language fixtures run identically in JIT and AOT.",
+]
+
+[[items]]
+id = "R-3306"
+title = "BitSet for Dense Integer Membership"
+phase = "phase_33"
+owner = "runtime"
+priority = "P2"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3301", "R-3302"]
+summary = "Add a packed-word BitSet for compact dense-index membership and bulk set operations used by masks, graph algorithms and work scheduling."
+acceptance = [
+  "BitSet stores indices in packed u64 words and provides insert, remove, contains, count, actual capacity in bit positions, iteration, union, intersection and difference.",
+  "Membership is O(1), bulk operations are O(number of words), and storage scales with the highest present index rather than one runtime handle per bit.",
+  "Negative indices, index-plus-one overflow and allocation failure are handled explicitly without oversized wrapped allocations.",
+  "Tests cover indices 0, 63, 64 and large boundaries, plus algebraic identities; benchmarks report memory and operation cost against a hash-based baseline.",
+]
+
+[[items]]
+id = "R-3307"
+title = "DisjointSet (Union-Find) for Dense IDs"
+phase = "phase_33"
+owner = "runtime"
+priority = "P2"
+status = "complete"
+risk = "low"
+dependencies = ["R-3301", "R-3302"]
+summary = "Add an array-backed disjoint-set structure for connectivity and clustering over dense integer IDs."
+acceptance = [
+  "DisjointSet supports construction with a size, adding elements, find, union, connected and set count using path halving and union by size.",
+  "Find and union have amortized O(alpha(n)) complexity; invalid indices and size overflow fail explicitly.",
+  "Deterministic property tests verify partition equivalence and component counts without assuming a particular representative ID.",
+  "A .spectra integration fixture demonstrates connectivity and runs through both JIT and AOT; benchmarks include randomized and repeated-union workloads.",
+]
+
+[[items]]
+id = "R-3308"
+title = "Collection Surface Integration, Performance and Release Gate"
+phase = "phase_33"
+owner = "ecosystem"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-3301", "R-3302", "R-3303", "R-3304", "R-3305", "R-3306", "R-3307", "R-3309"]
+summary = "Certify the expanded collection surface across semantic contracts, runtime safety, generated host-call tables, documentation, JIT/AOT execution and reproducible release benchmarks."
+acceptance = [
+  "Every new type and function is present in semantic exports, the stdlib contract and host-call catalog with synchronized generated lowering tables and documentation links.",
+  "Runtime tests cover complexity-sensitive invariants, errors and handle lifetimes; .spectra fixtures cover every public type and pass through spectralang run plus compile --emit-exe and execution of the produced binary.",
+  "The phase validator is registered in run_tests.ps1, checks catalog/generated-table drift and emits a machine-readable JIT/AOT performance report against R-3301.",
+  "A fast ABI or lock strategy change is accepted only with repeatable release benchmark evidence of at least 10% improvement on its named workload and no correctness or AOT regression.",
+  "New collection types remain beta until the phase gate passes; no type is promoted to stable on compile-only evidence.",
+  "All relevant crate and repository validation gates pass before R-3308 and Phase 33 are marked complete.",
+]
+
+[[items]]
+id = "R-3309"
+title = "Vector<T> Contiguous Dynamic Sequence"
+phase = "phase_33"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3301", "R-3302"]
+summary = "Add a Vec-backed typed sequence after the R-3301 storage benchmark qualified the medium and large append-and-traverse workloads."
+acceptance = [
+  "Vector<T> provides new, capacity-aware construction, reserve, actual capacity, push, pop, indexed get/set, insert/remove, contains/index_of, len, is_empty, clear, snapshot iteration and free.",
+  "Append/pop and indexed access are amortized O(1)/O(1); search and middle insertion/removal are O(n), and the contiguous representation remains distinct from the double-ended List<T> contract.",
+  "Capacity arithmetic and allocation are checked, handles are generational, stored values are escaped, optional reads represent absence, and stale handles fail safely.",
+  "Runtime conformance and a .spectra fixture cover content equality, ordering, bounds, snapshot semantics and both JIT and AOT execution.",
+  "The R-3308 release benchmark measures the implemented Vector<T> against List<T> and records capacity, checksums and operation latency without treating the isolated Rust storage probe as Spectra ABI evidence.",
 ]

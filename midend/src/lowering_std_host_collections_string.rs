@@ -26,6 +26,24 @@ pub(crate) fn lookup_std_host_group_collections_string(
             },
             returns_value: true,
         }),
+        ("collections", "map_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_with_capacity",
+            return_type: IRType::Struct {
+                name: "Map_int_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "map_reserve") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_reserve",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "map_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.map_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
         ("collections", "map_set") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.collections.map_set",
             return_type: IRType::Int,
@@ -96,6 +114,24 @@ pub(crate) fn lookup_std_host_group_collections_string(
                 name: "Set_int".to_string(),
                 fields: Vec::new(),
             },
+            returns_value: true,
+        }),
+        ("collections", "set_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.set_with_capacity",
+            return_type: IRType::Struct {
+                name: "Set_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "set_reserve") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.set_reserve",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "set_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.set_capacity",
+            return_type: IRType::Int,
             returns_value: true,
         }),
         ("collections", "set_insert") => Some(HostFunctionDescriptor {
@@ -170,6 +206,24 @@ pub(crate) fn lookup_std_host_group_collections_string(
             },
             returns_value: true,
         }),
+        ("collections", "stack_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_with_capacity",
+            return_type: IRType::Struct {
+                name: "Stack_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "stack_reserve") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_reserve",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "stack_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.stack_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
         ("collections", "stack_push") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.collections.stack_push",
             return_type: IRType::Void,
@@ -218,6 +272,24 @@ pub(crate) fn lookup_std_host_group_collections_string(
             },
             returns_value: true,
         }),
+        ("collections", "queue_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_with_capacity",
+            return_type: IRType::Struct {
+                name: "Queue_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "queue_reserve") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_reserve",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
+        ("collections", "queue_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.queue_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
         ("collections", "queue_enqueue") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.collections.queue_enqueue",
             return_type: IRType::Void,
@@ -258,6 +330,325 @@ pub(crate) fn lookup_std_host_group_collections_string(
             },
             returns_value: true,
         }),
+        // ── std.collections advanced structures (Phase 33) ───────────
+        ("collections", "hash_set_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_new",
+            return_type: IRType::Struct {
+                name: "HashSet_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "hash_set_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_with_capacity",
+            return_type: IRType::Struct {
+                name: "HashSet_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "hash_set_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "hash_set_insert") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_insert",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "hash_set_contains") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_contains",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "hash_set_remove") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_remove",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "hash_set_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "hash_set_clear") => {
+            Some(host_void("spectra.std.collections.hash_set_clear"))
+        }
+        ("collections", "hash_set_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.hash_set_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "hash_set_free") => {
+            Some(host_void("spectra.std.collections.hash_set_free"))
+        }
+        ("collections", "ordered_map_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_new",
+            return_type: IRType::Struct {
+                name: "OrderedMap_int_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_set") => {
+            Some(host_void("spectra.std.collections.ordered_map_set"))
+        }
+        ("collections", "ordered_map_get") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_get",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_contains") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_contains",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_remove") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_remove",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_range_keys") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.ordered_map_range_keys",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "ordered_map_free") => {
+            Some(host_void("spectra.std.collections.ordered_map_free"))
+        }
+        ("collections", "priority_queue_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_new",
+            return_type: IRType::Struct {
+                name: "PriorityQueue_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_new_min") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_new_min",
+            return_type: IRType::Struct {
+                name: "PriorityQueue_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_with_capacity",
+            return_type: IRType::Struct {
+                name: "PriorityQueue_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_push") => {
+            Some(host_void("spectra.std.collections.priority_queue_push"))
+        }
+        ("collections", "priority_queue_peek") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_peek",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_pop") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_pop",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.priority_queue_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "priority_queue_clear") => {
+            Some(host_void("spectra.std.collections.priority_queue_clear"))
+        }
+        ("collections", "priority_queue_free") => {
+            Some(host_void("spectra.std.collections.priority_queue_free"))
+        }
+        ("collections", "bitset_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_new",
+            return_type: IRType::Struct { name: "BitSet".to_string(), fields: Vec::new() },
+            returns_value: true,
+        }),
+        ("collections", "bitset_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_with_capacity",
+            return_type: IRType::Struct { name: "BitSet".to_string(), fields: Vec::new() },
+            returns_value: true,
+        }),
+        ("collections", "bitset_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "bitset_insert") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_insert",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "bitset_remove") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_remove",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "bitset_contains") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_contains",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "bitset_count") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_count",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "bitset_union_with") => {
+            Some(host_void("spectra.std.collections.bitset_union_with"))
+        }
+        ("collections", "bitset_intersect_with") => {
+            Some(host_void("spectra.std.collections.bitset_intersect_with"))
+        }
+        ("collections", "bitset_difference_with") => {
+            Some(host_void("spectra.std.collections.bitset_difference_with"))
+        }
+        ("collections", "bitset_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.bitset_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "bitset_free") => Some(host_void("spectra.std.collections.bitset_free")),
+        ("collections", "disjoint_set_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_new",
+            return_type: IRType::Struct { name: "DisjointSet".to_string(), fields: Vec::new() },
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_add") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_add",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_find") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_find",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_union") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_union",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_connected") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_connected",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_count") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.disjoint_set_count",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "disjoint_set_free") => {
+            Some(host_void("spectra.std.collections.disjoint_set_free"))
+        }
+        ("collections", "vector_new") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_new",
+            return_type: IRType::Struct {
+                name: "Vector_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "vector_with_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_with_capacity",
+            return_type: IRType::Struct {
+                name: "Vector_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "vector_capacity") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_capacity",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "vector_reserve") => {
+            Some(host_void("spectra.std.collections.vector_reserve"))
+        }
+        ("collections", "vector_push") => Some(host_void("spectra.std.collections.vector_push")),
+        ("collections", "vector_pop") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_pop",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "vector_get") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_get",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "vector_set") => Some(host_void("spectra.std.collections.vector_set")),
+        ("collections", "vector_insert_at") => {
+            Some(host_void("spectra.std.collections.vector_insert_at"))
+        }
+        ("collections", "vector_remove_at") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_remove_at",
+            return_type: IRType::Unknown,
+            returns_value: true,
+        }),
+        ("collections", "vector_contains") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_contains",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "vector_index_of") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_index_of",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "vector_len") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_len",
+            return_type: IRType::Int,
+            returns_value: true,
+        }),
+        ("collections", "vector_is_empty") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_is_empty",
+            return_type: IRType::Bool,
+            returns_value: true,
+        }),
+        ("collections", "vector_clear") => Some(host_void("spectra.std.collections.vector_clear")),
+        ("collections", "vector_iter") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.collections.vector_iter",
+            return_type: IRType::Struct {
+                name: "Iterator_int".to_string(),
+                fields: Vec::new(),
+            },
+            returns_value: true,
+        }),
+        ("collections", "vector_free") => Some(host_void("spectra.std.collections.vector_free")),
         // ── std.string ────────────────────────────────────────────────
         ("string", "len") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.string.len",

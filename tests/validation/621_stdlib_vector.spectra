@@ -1,0 +1,75 @@
+module validation_621_stdlib_vector
+
+from std.collections import Iterator, Vector
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let values: Vector<int> = collections.vector_with_capacity(4)
+    if collections.vector_capacity(values) < 4 or collections.vector_is_empty(values) != true {
+        return 1
+    }
+
+    collections.vector_push(values, 3)
+    collections.vector_push(values, 1)
+    collections.vector_push(values, 4)
+    let first_value = collections.vector_get(values, 0)
+    if collections.vector_len(values) != 3 or option.option_unwrap(first_value) != 3 {
+        return 2
+    }
+    if option.is_some(collections.vector_get(values, -1)) {
+        return 3
+    }
+    collections.vector_set(values, 1, 2)
+    if collections.vector_contains(values, 2) != true or collections.vector_index_of(values, 2) != 1 {
+        return 4
+    }
+    collections.vector_insert_at(values, 1, 7)
+    let removed_value = collections.vector_remove_at(values, 2)
+    if option.option_unwrap(removed_value) != 2 {
+        return 5
+    }
+
+    let snapshot: Iterator<int> = collections.vector_iter(values)
+    collections.vector_push(values, 9)
+    if collections.iterator_remaining(snapshot) != 3 {
+        return 6
+    }
+    if option.option_unwrap(collections.iterator_next(snapshot)) != 3 or
+        option.option_unwrap(collections.iterator_next(snapshot)) != 7 or
+        option.option_unwrap(collections.iterator_next(snapshot)) != 4 {
+        return 7
+    }
+    if option.is_some(collections.iterator_next(snapshot)) {
+        return 8
+    }
+    collections.iterator_free(snapshot)
+
+    let sum = 0
+    for value in values {
+        sum = sum + value
+    }
+    if sum != 23 {
+        return 9
+    }
+
+    collections.vector_clear(values)
+    if collections.vector_is_empty(values) != true or option.is_some(collections.vector_pop(values)) {
+        return 10
+    }
+    collections.vector_reserve(values, 32)
+    if collections.vector_capacity(values) < 32 {
+        return 11
+    }
+    collections.vector_free(values)
+
+    let words: Vector<string> = collections.vector_new()
+    collections.vector_push(words, "spectra")
+    let equal_word = string.concat("spec", "tra")
+    if collections.vector_contains(words, equal_word) != true {
+        return 12
+    }
+    collections.vector_free(words)
+    return 0
+}

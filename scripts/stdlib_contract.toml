@@ -628,6 +628,210 @@ owner = "runtime"
 roadmap = "R-2003"
 reason = "Internal math ABI helpers are retained for runtime lowering compatibility; the public math surface is covered by the stdlib probes."
 
+[[rule]]
+prefix = "std.collections.list_with_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.list_reserve"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.list_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.map_with_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.map_reserve"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.map_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.set_with_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.set_reserve"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.set_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.stack_with_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.stack_reserve"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.stack_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.queue_with_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.queue_reserve"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.queue_capacity"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3302"
+reason = "Capacity-aware collection APIs remain beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.HashSet"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3303"
+reason = "HashSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.hash_set_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3303"
+reason = "HashSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.OrderedMap"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3304"
+reason = "OrderedMap remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.ordered_map_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3304"
+reason = "OrderedMap remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.PriorityQueue"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3305"
+reason = "PriorityQueue remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.priority_queue_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3305"
+reason = "PriorityQueue remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.BitSet"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3306"
+reason = "BitSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.bitset_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3306"
+reason = "BitSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.DisjointSet"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3307"
+reason = "DisjointSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.disjoint_set_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3307"
+reason = "DisjointSet remains beta until the Phase 33 JIT/AOT and release performance gate passes."
+
+[[rule]]
+prefix = "std.collections.Vector"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3309"
+reason = "Vector remains beta until its contiguous storage contract passes the Phase 33 JIT/AOT and release performance gate."
+
+[[rule]]
+prefix = "std.collections.vector_"
+classification = "incomplete"
+owner = "runtime"
+roadmap = "R-3309"
+reason = "Vector operations remain beta until their contiguous storage, allocation, and JIT/AOT contracts pass the Phase 33 release gate."
+
+[[probe]]
+id = "phase33-collection-capacity"
+path = "tests/validation/619_stdlib_collection_capacity.spectra"
+covers = ["std.collections.list_with_capacity", "std.collections.list_reserve", "std.collections.list_capacity", "std.collections.map_with_capacity", "std.collections.map_reserve", "std.collections.map_capacity", "std.collections.set_with_capacity", "std.collections.set_reserve", "std.collections.set_capacity", "std.collections.stack_with_capacity", "std.collections.stack_reserve", "std.collections.stack_capacity", "std.collections.queue_with_capacity", "std.collections.queue_reserve", "std.collections.queue_capacity"]
+
+[[probe]]
+id = "phase33-advanced-collections"
+path = "tests/validation/620_stdlib_advanced_collections.spectra"
+covers = ["std.collections.HashSet", "std.collections.hash_set_*", "std.collections.OrderedMap", "std.collections.ordered_map_*", "std.collections.PriorityQueue", "std.collections.priority_queue_*", "std.collections.BitSet", "std.collections.bitset_*", "std.collections.DisjointSet", "std.collections.disjoint_set_*"]
+
+[[probe]]
+id = "phase33-vector"
+path = "tests/validation/621_stdlib_vector.spectra"
+covers = ["std.collections.Vector", "std.collections.vector_*"]
+
 [[follow_up]]
 prefix = "std.time"
 owner = "runtime"

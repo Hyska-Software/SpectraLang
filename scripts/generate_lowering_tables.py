@@ -72,6 +72,8 @@ SIMPLE_IR = {
     "void": "IRType::Void",
     "unknown": "IRType::Unknown",
     "range": "IRType::Range",
+    "BitSet": 'IRType::Struct { name: "BitSet".to_string(), fields: Vec::new() }',
+    "DisjointSet": 'IRType::Struct { name: "DisjointSet".to_string(), fields: Vec::new() }',
 }
 
 # Helper constructor -> the IR return type (and `returns_value`) it produces.
@@ -545,7 +547,7 @@ LAYOUT: tuple[FileLayout, ...] = (
             Group(
                 module='collections',
                 names=(
-                "list_new list_push list_len list_get list_set list_contains list_clear list_free "
+                "list_new list_with_capacity list_reserve list_capacity list_push list_len list_get list_set list_contains list_clear list_free "
                 "list_free_all"
                 ),
             ),
@@ -560,7 +562,7 @@ LAYOUT: tuple[FileLayout, ...] = (
             Group(
                 module='collections',
                 names=(
-                "map_new map_set map_get map_get_option map_contains map_remove map_remove_option map_len "
+                "map_new map_with_capacity map_reserve map_capacity map_set map_get map_get_option map_contains map_remove map_remove_option map_len "
                 "map_is_empty map_clear map_free map_free_all map_values_iter"
                 ),
                 comment='        // ── std.collections map ──────────────────────────────────────',
@@ -568,14 +570,36 @@ LAYOUT: tuple[FileLayout, ...] = (
             Group(
                 module='collections',
                 names=(
-                "set_new set_insert set_contains set_remove set_len set_get set_clear@host_void "
+                "set_new set_with_capacity set_reserve set_capacity set_insert set_contains set_remove set_len set_get set_clear@host_void "
                 "set_free@host_void list_iter set_iter map_iter iterator_next iterator_remaining "
-                "iterator_free@host_void stack_new stack_push stack_pop stack_peek stack_len "
+                "iterator_free@host_void stack_new stack_with_capacity stack_reserve stack_capacity stack_push stack_pop stack_peek stack_len "
                 "stack_is_empty stack_clear@host_void stack_free@host_void stack_free_all stack_iter "
-                "queue_new queue_enqueue queue_dequeue queue_peek queue_len queue_is_empty "
+                "queue_new queue_with_capacity queue_reserve queue_capacity queue_enqueue queue_dequeue queue_peek queue_len queue_is_empty "
                 "queue_clear@host_void queue_free@host_void queue_free_all queue_iter"
                 ),
                 comment='        // ── std.collections set/iterator ──────────────────────────────',
+            ),
+            Group(
+                module='collections',
+                names=(
+                    "hash_set_new hash_set_with_capacity hash_set_capacity hash_set_insert hash_set_contains hash_set_remove "
+                    "hash_set_len hash_set_clear@host_void hash_set_iter hash_set_free@host_void "
+                    "ordered_map_new ordered_map_set@host_void ordered_map_get ordered_map_contains "
+                    "ordered_map_remove ordered_map_len ordered_map_iter ordered_map_range_keys "
+                    "ordered_map_free@host_void priority_queue_new priority_queue_new_min "
+                    "priority_queue_with_capacity priority_queue_capacity priority_queue_push@host_void priority_queue_peek "
+                    "priority_queue_pop priority_queue_len priority_queue_clear@host_void "
+                    "priority_queue_free@host_void bitset_new bitset_with_capacity bitset_capacity bitset_insert "
+                    "bitset_remove bitset_contains bitset_count bitset_union_with@host_void "
+                    "bitset_intersect_with@host_void bitset_difference_with@host_void bitset_iter "
+                    "bitset_free@host_void disjoint_set_new disjoint_set_add disjoint_set_find "
+                    "disjoint_set_union disjoint_set_connected disjoint_set_count "
+                    "disjoint_set_free@host_void vector_new vector_with_capacity vector_capacity vector_reserve@host_void "
+                    "vector_push@host_void vector_pop vector_get vector_set@host_void "
+                    "vector_insert_at@host_void vector_remove_at vector_contains vector_index_of "
+                    "vector_len vector_is_empty vector_clear@host_void vector_iter vector_free@host_void"
+                ),
+                comment='        // ── std.collections advanced structures (Phase 33) ───────────',
             ),
             Group(
                 module='string',
@@ -841,7 +865,10 @@ def render_ir(ir_return: str, indent: int) -> list[str]:
             pad + "    ],",
             pad + "}",
         ]
-    if re.fullmatch(r"(List|Map|Set|Iterator|Stack|Queue)<.*>", ir_return):
+    if re.fullmatch(
+        r"(List|Vector|Map|Set|Iterator|Stack|Queue|HashSet|OrderedMap|PriorityQueue)<.*>",
+        ir_return,
+    ):
         name = re.sub(r"[<>,]", "_", ir_return).rstrip("_")
         return [
             pad + "IRType::Struct {",

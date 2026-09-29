@@ -53,6 +53,11 @@ class R3007ContractTests(unittest.TestCase):
         self.assertEqual(contract["classification"], "incomplete")
         self.assertEqual(contract["roadmap"], "R-3001")
 
+    def test_underscore_terminated_rules_cover_function_families(self) -> None:
+        contract = audit.classification_for("std.collections.vector_push", self.manifest)
+        self.assertEqual(contract["classification"], "incomplete")
+        self.assertEqual(contract["roadmap"], "R-3309")
+
     def test_cross_source_gaps_are_blocking(self) -> None:
         # The checked-in manifest carries broad follow_up prefixes (e.g.
         # "std.math") that would absorb every fabricated symbol below, so the

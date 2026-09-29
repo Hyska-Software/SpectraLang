@@ -170,12 +170,12 @@ impl SemanticAnalyzer {
                         // missing/inaccessible field does not degrade into a
                         // misleading E003 with an unknown target type.
                         let object_type = self.infer_expression_type(object);
-                        if matches!(
-                            object_type,
-                            Type::Struct { .. } | Type::Applied { .. }
-                        ) {
-                            let _ =
-                                self.check_field_access(&object_type, field, assign_stmt.target_span);
+                        if matches!(object_type, Type::Struct { .. } | Type::Applied { .. }) {
+                            let _ = self.check_field_access(
+                                &object_type,
+                                field,
+                                assign_stmt.target_span,
+                            );
                         }
                     }
                 }
@@ -227,7 +227,9 @@ impl SemanticAnalyzer {
                 let target_explained = matches!(target_type, Type::Unknown)
                     && self.has_error_at_span(assign_stmt.target_span);
 
-                if !target_explained && !self.inferred_binding_types_match(&value_type, &target_type) {
+                if !target_explained
+                    && !self.inferred_binding_types_match(&value_type, &target_type)
+                {
                     let hint = self.conversion_hint(&value_type, &target_type);
                     // Prefer the concrete conversion hint when one exists;
                     // otherwise point at the Option/Result handling forms.
@@ -317,6 +319,16 @@ impl SemanticAnalyzer {
                             Type::Unknown
                         })
                     }
+                    Type::Applied { name, args } if name == "Vector" => {
+                        args.first().cloned().unwrap_or_else(|| {
+                            self.error(
+                                "Vector<T> for-loop iterable is missing its element type"
+                                    .to_string(),
+                                for_loop.span,
+                            );
+                            Type::Unknown
+                        })
+                    }
                     Type::Applied { name, args } if name == "Set" => {
                         args.first().cloned().unwrap_or_else(|| {
                             self.error(
@@ -346,6 +358,16 @@ impl SemanticAnalyzer {
                             Type::Unknown
                         })
                     }
+                    Type::Applied { name, args } if name == "HashSet" => {
+                        args.first().cloned().unwrap_or_else(|| {
+                            self.error(
+                                "HashSet<T> for-loop iterable is missing its element type"
+                                    .to_string(),
+                                for_loop.span,
+                            );
+                            Type::Unknown
+                        })
+                    }
                     Type::Applied { name, args } if name == "Iterator" => {
                         args.first().cloned().unwrap_or_else(|| {
                             self.error(
@@ -365,11 +387,27 @@ impl SemanticAnalyzer {
                             Type::Unknown
                         })
                     }
+                    Type::Applied { name, args } if name == "OrderedMap" => {
+                        args.first().cloned().unwrap_or_else(|| {
+                            self.error(
+                                "OrderedMap<K, V> for-loop iterable is missing its key type"
+                                    .to_string(),
+                                for_loop.span,
+                            );
+                            Type::Unknown
+                        })
+                    }
                     Type::Struct { name } if name == "List" => Type::TypeParameter {
                         name: "T".to_string(),
                     },
                     Type::Struct { name } if name.starts_with("List_") => {
                         self.type_from_mangle_part(&name["List_".len()..])
+                    }
+                    Type::Struct { name } if name == "Vector" => Type::TypeParameter {
+                        name: "T".to_string(),
+                    },
+                    Type::Struct { name } if name.starts_with("Vector_") => {
+                        self.type_from_mangle_part(&name["Vector_".len()..])
                     }
                     Type::Struct { name } if name == "Set" => Type::TypeParameter {
                         name: "T".to_string(),
@@ -389,6 +427,23 @@ impl SemanticAnalyzer {
                     Type::Struct { name } if name.starts_with("Queue_") => {
                         self.type_from_mangle_part(&name["Queue_".len()..])
                     }
+                    Type::Struct { name } if name == "HashSet" => Type::TypeParameter {
+                        name: "T".to_string(),
+                    },
+                    Type::Struct { name } if name.starts_with("HashSet_") => {
+                        self.type_from_mangle_part(&name["HashSet_".len()..])
+                    }
+                    Type::Struct { name } if name == "OrderedMap" => Type::TypeParameter {
+                        name: "K".to_string(),
+                    },
+                    Type::Struct { name } if name.starts_with("OrderedMap_") => {
+                        let key = name["OrderedMap_".len()..]
+                            .split('_')
+                            .next()
+                            .unwrap_or("unknown");
+                        self.type_from_mangle_part(key)
+                    }
+                    Type::Struct { name } if name == "BitSet" => Type::Int,
                     Type::Struct { name } if name == "Iterator" => Type::TypeParameter {
                         name: "T".to_string(),
                     },
@@ -407,7 +462,7 @@ impl SemanticAnalyzer {
                             self.error_with_hint(
                                 "Cannot determine the type of the for-loop iterable",
                                 for_loop.iterable.span,
-                                "Use a typed array, Range, List<T>, Set<T>, Stack<T>, Queue<T>, Map<K,V>, or Iterator<T>; unresolved expressions cannot reach lowering.",
+                                "Use a typed array, Range, List<T>, Vector<T>, Set<T>, HashSet<T>, Stack<T>, Queue<T>, Map<K,V>, OrderedMap<K,V>, BitSet, or Iterator<T>; unresolved expressions cannot reach lowering.",
                             );
                         }
                         Type::Unknown
@@ -415,7 +470,7 @@ impl SemanticAnalyzer {
                     other => {
                         self.error(
                             format!(
-                                "For-loop iterable must be an array, Range, List<T>, Set<T>, Stack<T>, Queue<T>, Map<K,V>, or Iterator<T>, found {}",
+                                "For-loop iterable must be an array, Range, List<T>, Vector<T>, Set<T>, HashSet<T>, Stack<T>, Queue<T>, Map<K,V>, OrderedMap<K,V>, BitSet, or Iterator<T>, found {}",
                                 type_name(&other)
                             ),
                             for_loop.span,
@@ -650,27 +705,42 @@ impl SemanticAnalyzer {
             return false;
         }
 
-        ["List", "Map", "Set", "Iterator", "Stack", "Queue"]
-            .iter()
-            .any(|base| {
-                let actual_is_base = actual_name == *base;
-                let actual_is_application = actual_name.starts_with(&format!("{base}_"));
-                let expected_is_base = expected_name == *base;
-                let expected_is_application = expected_name.starts_with(&format!("{base}_"));
-                (actual_is_base && (expected_is_base || expected_is_application))
-                    || (expected_is_base && actual_is_application)
-            })
+        [
+            "List",
+            "Vector",
+            "Map",
+            "Set",
+            "Iterator",
+            "Stack",
+            "Queue",
+            "HashSet",
+            "OrderedMap",
+            "PriorityQueue",
+        ]
+        .iter()
+        .any(|base| {
+            let actual_is_base = actual_name == *base;
+            let actual_is_application = actual_name.starts_with(&format!("{base}_"));
+            let expected_is_base = expected_name == *base;
+            let expected_is_application = expected_name.starts_with(&format!("{base}_"));
+            (actual_is_base && (expected_is_base || expected_is_application))
+                || (expected_is_base && actual_is_application)
+        })
     }
 
     fn collection_type_arguments(&self, ty: &Type) -> Option<(&'static str, Vec<Type>)> {
         if let Type::Applied { name, args } = ty {
             return match name.as_str() {
                 "List" if args.len() == 1 => Some(("List", args.clone())),
+                "Vector" if args.len() == 1 => Some(("Vector", args.clone())),
                 "Map" if args.len() == 2 => Some(("Map", args.clone())),
                 "Set" if args.len() == 1 => Some(("Set", args.clone())),
                 "Iterator" if args.len() == 1 => Some(("Iterator", args.clone())),
                 "Stack" if args.len() == 1 => Some(("Stack", args.clone())),
                 "Queue" if args.len() == 1 => Some(("Queue", args.clone())),
+                "HashSet" if args.len() == 1 => Some(("HashSet", args.clone())),
+                "OrderedMap" if args.len() == 2 => Some(("OrderedMap", args.clone())),
+                "PriorityQueue" if args.len() == 1 => Some(("PriorityQueue", args.clone())),
                 _ => None,
             };
         }
@@ -682,6 +752,12 @@ impl SemanticAnalyzer {
         }
         if let Some(suffix) = name.strip_prefix("List_") {
             return Some(("List", vec![self.type_from_mangle_part(suffix)]));
+        }
+        if name == "Vector" {
+            return Some(("Vector", vec![Type::Int]));
+        }
+        if let Some(suffix) = name.strip_prefix("Vector_") {
+            return Some(("Vector", vec![self.type_from_mangle_part(suffix)]));
         }
         if name == "Map" {
             return Some(("Map", vec![Type::Int, Type::Int]));
@@ -725,6 +801,34 @@ impl SemanticAnalyzer {
                 name.strip_prefix("Queue_")
                     .map(|suffix| ("Queue", vec![self.type_from_mangle_part(suffix)]))
             })
+            .or_else(|| {
+                if name == "HashSet" {
+                    return Some(("HashSet", vec![Type::Int]));
+                }
+                name.strip_prefix("HashSet_")
+                    .map(|suffix| ("HashSet", vec![self.type_from_mangle_part(suffix)]))
+            })
+            .or_else(|| {
+                if name == "PriorityQueue" {
+                    return Some(("PriorityQueue", vec![Type::Int]));
+                }
+                name.strip_prefix("PriorityQueue_")
+                    .map(|suffix| ("PriorityQueue", vec![self.type_from_mangle_part(suffix)]))
+            })
+            .or_else(|| {
+                if name == "OrderedMap" {
+                    return Some(("OrderedMap", vec![Type::Int, Type::Int]));
+                }
+                let suffix = name.strip_prefix("OrderedMap_")?;
+                let (key, value) = suffix.split_once('_')?;
+                Some((
+                    "OrderedMap",
+                    vec![
+                        self.type_from_mangle_part(key),
+                        self.type_from_mangle_part(value),
+                    ],
+                ))
+            })
     }
 
     pub(crate) fn specialize_std_call_signature(
@@ -741,6 +845,9 @@ impl SemanticAnalyzer {
                 Some(("List", values)) if values.len() == 1 => {
                     substitutions.insert("T".to_string(), values[0].clone());
                 }
+                Some(("Vector", values)) if values.len() == 1 => {
+                    substitutions.insert("T".to_string(), values[0].clone());
+                }
                 Some(("Map", values)) if values.len() == 2 => {
                     substitutions.insert("K".to_string(), values[0].clone());
                     substitutions.insert("V".to_string(), values[1].clone());
@@ -753,7 +860,56 @@ impl SemanticAnalyzer {
                 {
                     substitutions.insert("T".to_string(), values[0].clone());
                 }
+                Some(("HashSet", values)) | Some(("PriorityQueue", values))
+                    if values.len() == 1 =>
+                {
+                    substitutions.insert("T".to_string(), values[0].clone());
+                }
+                Some(("OrderedMap", values)) if values.len() == 2 => {
+                    substitutions.insert("K".to_string(), values[0].clone());
+                    substitutions.insert("V".to_string(), values[1].clone());
+                }
                 _ => {}
+            }
+        }
+
+        let ordered_collection_value = matches!(
+            operation,
+            "hash_set_insert"
+                | "hash_set_contains"
+                | "hash_set_remove"
+                | "ordered_map_set"
+                | "ordered_map_get"
+                | "ordered_map_contains"
+                | "ordered_map_remove"
+                | "ordered_map_range_keys"
+                | "priority_queue_push"
+        );
+        if ordered_collection_value {
+            if let Some(argument) = arguments.get(1) {
+                let argument_type = self.infer_expression_type(argument);
+                let supported = matches!(
+                    argument_type,
+                    Type::Int
+                        | Type::Float
+                        | Type::Bool
+                        | Type::String
+                        | Type::Char
+                        | Type::ExactInt { .. }
+                        | Type::ExactFloat { .. }
+                );
+                if !supported
+                    && argument_type != Type::Unknown
+                    && !self.has_error_at_span(argument.span)
+                {
+                    self.error(
+                        format!(
+                            "std.collections.{operation} supports only int, exact integers, float, bool, string, and char values; found {}",
+                            type_name(&argument_type)
+                        ),
+                        argument.span,
+                    );
+                }
             }
         }
 
@@ -785,35 +941,72 @@ impl SemanticAnalyzer {
         // the deterministic default for unannotated source.
         if matches!(
             operation,
-            "list_new" | "map_new" | "set_new" | "stack_new" | "queue_new"
+            "list_new"
+                | "list_with_capacity"
+                | "vector_new"
+                | "vector_with_capacity"
+                | "map_new"
+                | "map_with_capacity"
+                | "set_new"
+                | "set_with_capacity"
+                | "stack_new"
+                | "stack_with_capacity"
+                | "queue_new"
+                | "queue_with_capacity"
+                | "hash_set_new"
+                | "hash_set_with_capacity"
+                | "ordered_map_new"
+                | "priority_queue_new"
+                | "priority_queue_new_min"
+                | "priority_queue_with_capacity"
         ) {
             if let Some(expected) = self.current_expected_type.clone() {
                 if self.collection_type_arguments(&expected).is_some() {
                     specialized.return_type = expected;
                 }
-            } else if operation == "list_new" {
+            } else if matches!(operation, "list_new" | "list_with_capacity") {
                 specialized.return_type = Type::Applied {
                     name: "List".to_string(),
                     args: vec![Type::Int],
                 };
-            } else if operation == "map_new" {
+            } else if matches!(operation, "vector_new" | "vector_with_capacity") {
+                specialized.return_type = Type::Applied {
+                    name: "Vector".to_string(),
+                    args: vec![Type::Int],
+                };
+            } else if matches!(operation, "map_new" | "map_with_capacity") {
                 specialized.return_type = Type::Applied {
                     name: "Map".to_string(),
                     args: vec![Type::Int, Type::Int],
                 };
-            } else if operation == "set_new" {
+            } else if matches!(operation, "set_new" | "set_with_capacity") {
                 specialized.return_type = Type::Applied {
                     name: "Set".to_string(),
                     args: vec![Type::Int],
                 };
-            } else if operation == "stack_new" {
+            } else if matches!(operation, "stack_new" | "stack_with_capacity") {
                 specialized.return_type = Type::Applied {
                     name: "Stack".to_string(),
                     args: vec![Type::Int],
                 };
-            } else {
+            } else if matches!(operation, "queue_new" | "queue_with_capacity") {
                 specialized.return_type = Type::Applied {
                     name: "Queue".to_string(),
+                    args: vec![Type::Int],
+                };
+            } else if matches!(operation, "hash_set_new" | "hash_set_with_capacity") {
+                specialized.return_type = Type::Applied {
+                    name: "HashSet".to_string(),
+                    args: vec![Type::Int],
+                };
+            } else if operation == "ordered_map_new" {
+                specialized.return_type = Type::Applied {
+                    name: "OrderedMap".to_string(),
+                    args: vec![Type::Int, Type::Int],
+                };
+            } else {
+                specialized.return_type = Type::Applied {
+                    name: "PriorityQueue".to_string(),
                     args: vec![Type::Int],
                 };
             }
@@ -843,7 +1036,8 @@ impl SemanticAnalyzer {
                     args: vec![Type::Int],
                 };
             }
-            "list_iter" | "set_iter" | "stack_iter" | "queue_iter" => {
+            "list_iter" | "vector_iter" | "set_iter" | "stack_iter" | "queue_iter"
+            | "hash_set_iter" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
                         specialized.return_type = Type::Applied {
@@ -852,6 +1046,22 @@ impl SemanticAnalyzer {
                         };
                     }
                 }
+            }
+            "ordered_map_iter" | "ordered_map_range_keys" => {
+                if let Some(("OrderedMap", values)) = first_collection.as_ref() {
+                    if let Some(key) = values.first() {
+                        specialized.return_type = Type::Applied {
+                            name: "Iterator".to_string(),
+                            args: vec![key.clone()],
+                        };
+                    }
+                }
+            }
+            "bitset_iter" => {
+                specialized.return_type = Type::Applied {
+                    name: "Iterator".to_string(),
+                    args: vec![Type::Int],
+                };
             }
             "map_iter" | "map_values_iter" => {
                 if let Some(("Map", values)) = first_collection.as_ref() {
@@ -868,8 +1078,9 @@ impl SemanticAnalyzer {
                     }
                 }
             }
-            "list_get" | "list_pop" | "list_pop_front" | "list_remove_at" | "set_get"
-            | "stack_pop" | "stack_peek" | "queue_dequeue" | "queue_peek" | "iterator_next" => {
+            "list_get" | "list_pop" | "list_pop_front" | "list_remove_at" | "vector_get"
+            | "vector_pop" | "vector_remove_at" | "set_get" | "stack_pop" | "stack_peek"
+            | "queue_dequeue" | "queue_peek" | "iterator_next" => {
                 if let Some((_, values)) = first_collection.as_ref() {
                     if let Some(element) = values.first() {
                         specialized.return_type = option_type(self, element.clone());
@@ -880,6 +1091,20 @@ impl SemanticAnalyzer {
                 if let Some(("Map", values)) = first_collection.as_ref() {
                     if let Some(value) = values.get(1) {
                         specialized.return_type = option_type(self, value.clone());
+                    }
+                }
+            }
+            "ordered_map_get" | "ordered_map_remove" => {
+                if let Some(("OrderedMap", values)) = first_collection.as_ref() {
+                    if let Some(value) = values.get(1) {
+                        specialized.return_type = option_type(self, value.clone());
+                    }
+                }
+            }
+            "priority_queue_peek" | "priority_queue_pop" => {
+                if let Some(("PriorityQueue", values)) = first_collection.as_ref() {
+                    if let Some(element) = values.first() {
+                        specialized.return_type = option_type(self, element.clone());
                     }
                 }
             }
@@ -1022,9 +1247,7 @@ mod assignment_repair_field_tests {
         let error = errors
             .iter()
             .find_map(|error| match error {
-                CompilerError::Semantic(semantic)
-                    if semantic.code.as_deref() == Some("E003") =>
-                {
+                CompilerError::Semantic(semantic) if semantic.code.as_deref() == Some("E003") => {
                     Some(semantic)
                 }
                 _ => None,

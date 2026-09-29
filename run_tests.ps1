@@ -83,6 +83,12 @@ if ($Phase -contains "stability_release") {
     exit $LASTEXITCODE
 }
 
+if ($Phase -contains "phase33_collections") {
+    Write-Host "--- Phase 33 high-performance collections release gate ---" -ForegroundColor Yellow
+    & python scripts\validate_r3308_collections.py
+    exit $LASTEXITCODE
+}
+
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "   SPECTRALANG - SUITE DE TESTES" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
@@ -3392,6 +3398,19 @@ if ($r3221AgentConformance.Status -eq "PASSOU") {
     $totalFailed++
 }
 $results += [PSCustomObject]@{ Diretorio = "phase32-agent-platform"; Teste = "validate_r3221_agent_conformance"; Status = $r3221AgentConformance.Status; Detalhe = $r3221AgentConformance.Detail }
+
+# ---------------------------------------------------------------------------
+# Grupo 10.4: Phase 33 high-performance general-purpose collections
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "--- R-3308 collections surface, JIT/AOT and release performance gate ---" -ForegroundColor Yellow
+$r3308Collections = Invoke-HostCommand -name "validate_r3308_collections" -fileName "python" -arguments @("scripts\validate_r3308_collections.py") -workingDir (Get-Location).Path -timeoutSeconds 7200
+if ($r3308Collections.Status -eq "PASSOU") {
+    $totalPassed++
+} else {
+    $totalFailed++
+}
+$results += [PSCustomObject]@{ Diretorio = "phase33-collections"; Teste = "validate_r3308_collections"; Status = $r3308Collections.Status; Detalhe = $r3308Collections.Detail }
 
 # ---------------------------------------------------------------------------
 # Resumo

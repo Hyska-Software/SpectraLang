@@ -42,6 +42,7 @@ const UAF_DIRECT_FREE_FUNCTIONS: &[&str] = &[
     "builder_free",
     "iterator_free",
     "list_free",
+    "vector_free",
     "map_free",
     "set_free",
     "stack_free",
@@ -81,10 +82,8 @@ impl UafFrame {
                 (family == "List" && (name == "List" || name.starts_with("List_")))
                     || (family == "Map" && (name == "Map" || name.starts_with("Map_")))
                     || (family == "Set" && (name == "Set" || name.starts_with("Set_")))
-                    || (family == "Stack"
-                        && (name == "Stack" || name.starts_with("Stack_")))
-                    || (family == "Queue"
-                        && (name == "Queue" || name.starts_with("Queue_")))
+                    || (family == "Stack" && (name == "Stack" || name.starts_with("Stack_")))
+                    || (family == "Queue" && (name == "Queue" || name.starts_with("Queue_")))
                     || (family == "Iterator"
                         && (name == "Iterator" || name.starts_with("Iterator_")))
             }

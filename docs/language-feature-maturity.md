@@ -134,6 +134,9 @@ This file is the source of truth for language maturity labels. Documentation, ex
 
 ### Beta
 
+- Phase 33 `std.collections` capacity APIs and `Vector<T>`, `HashSet<T>`,
+  `OrderedMap<K,V>`, `PriorityQueue<T>`, `BitSet`, and `DisjointSet`; the JIT/AOT and release
+  performance gate is `run_tests.ps1 -Phase phase33_collections`
 - typed `List<T>`/`Map<K,V>` collections, including higher-order operations;
   legacy sentinel accessors remain available only under `std.compat.collections`
 - absence-safe `std.env.env_get`/`env_arg` returning `Option<string>`; legacy
