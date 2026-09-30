@@ -1,0 +1,25 @@
+module core_if_unless_expression_values
+
+func choose(flag: bool, value: int) returns int {
+    let if_value = if flag {
+        value + 10
+    } else {
+        value - 10
+    }
+    let unless_value = unless flag {
+        value + 100
+    } else {
+        value + 200
+    }
+    return if_value + unless_value
+}
+
+public func main() returns int {
+    if choose(true, 2) != 214 {
+        return 1
+    }
+    if choose(false, 3) != 96 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,25 @@
+module core_bindings_mutation_scope
+
+func update_and_shadow(seed: int) returns int {
+    let mut value = seed
+    value = value + 2
+
+    if value == 5 {
+        let value = value * 3
+        if value != 15 {
+            return 1
+        }
+    }
+
+    if value != 5 {
+        return 2
+    }
+    return value
+}
+
+public func main() returns int {
+    if update_and_shadow(3) != 5 {
+        return 3
+    }
+    return 0
+}

@@ -1,0 +1,34 @@
+module core_do_while_continue_edges
+
+func skip_until_three() returns int {
+    let index = 0
+    let accepted = 0
+
+    do {
+        index = index + 1
+        if index < 3 {
+            continue
+        }
+        accepted = accepted + 1
+    } while index < 3
+
+    return index * 10 + accepted
+}
+
+func executes_once() returns int {
+    let visits = 0
+    do {
+        visits = visits + 1
+    } while false
+    return visits
+}
+
+public func main() returns int {
+    if skip_until_three() != 31 {
+        return 1
+    }
+    if executes_once() != 1 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,29 @@
+module core_loop_break_continue_paths
+
+func odd_sum(limit: int) returns int {
+    let index = 0
+    let total = 0
+
+    loop {
+        index = index + 1
+        if index > limit {
+            break
+        }
+        if index % 2 == 0 {
+            continue
+        }
+        total = total + index
+    }
+
+    return total * 10 + index
+}
+
+public func main() returns int {
+    if odd_sum(7) != 168 {
+        return 1
+    }
+    if odd_sum(0) != 1 {
+        return 2
+    }
+    return 0
+}

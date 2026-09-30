@@ -10,9 +10,34 @@ impl ASTLowering {
         slot
     }
 
+    /// Bind a value to the innermost mutable slot when one exists. A promoted
+    /// variable name can also be shadowed in a nested scope, so do not let a
+    /// child binding reuse the parent's stack slot.
+    pub(crate) fn bind_scoped_value(
+        &mut self,
+        func: &mut IRFunction,
+        name: &str,
+        ty: &IRType,
+        value: Value,
+    ) {
+        if self.alloca_map.get(name).is_some() && self.alloca_map.get_current(name).is_none() {
+            let slot_type = match ty {
+                IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char => {
+                    ty.clone()
+                }
+                _ => IRType::Int,
+            };
+            self.allocate_slot(func, name, slot_type);
+        }
+
+        if let Some(slot) = self.alloca_map.get(name) {
+            self.builder.build_store(func, slot, value);
+        }
+    }
+
     /// Load the current value of a promoted local at its declared width.
     pub(crate) fn load_slot(&mut self, name: &str, ir_func: &mut IRFunction) -> Option<Value> {
-        let alloca_ptr = *self.alloca_map.get(name)?;
+        let alloca_ptr = self.alloca_map.get(name)?;
         let ty = self
             .alloca_slot_types
             .get(&alloca_ptr.id)
@@ -182,7 +207,7 @@ impl ASTLowering {
         // slot; seed it with the incoming argument value so reads before the
         // first assignment do not observe uninitialized stack memory.
         for (idx, param) in ast_func.params.iter().enumerate() {
-            if let Some(&slot) = self.alloca_map.get(&param.name) {
+            if let Some(slot) = self.alloca_map.get(&param.name) {
                 self.builder
                     .build_store(&mut ir_func, slot, Value { id: idx });
             }
@@ -428,7 +453,7 @@ impl ASTLowering {
         // Seed promoted parameter slots with the incoming argument values
         // (see the equivalent step in `lower_function`).
         for (idx, param) in method.params.iter().enumerate() {
-            if let Some(&slot) = self.alloca_map.get(&param.name) {
+            if let Some(slot) = self.alloca_map.get(&param.name) {
                 self.builder
                     .build_store(&mut ir_func, slot, Value { id: idx });
             }
@@ -571,7 +596,7 @@ impl ASTLowering {
         // --- Save outer function state ---
         let saved_value_map = self.value_map.clone();
         let saved_variable_types = self.variable_types.clone();
-        let saved_alloca_map = std::mem::take(&mut self.alloca_map);
+        let saved_alloca_map = std::mem::replace(&mut self.alloca_map, ScopeStack::new());
         let saved_alloca_slot_types = std::mem::take(&mut self.alloca_slot_types);
         let saved_array_map = self.array_map.clone();
         let saved_async_output = self.current_async_output_type.clone();
@@ -585,7 +610,7 @@ impl ASTLowering {
         // --- Reset state for lambda body ---
         self.value_map.clear();
         self.variable_types.clear();
-        self.alloca_map = HashMap::new();
+        self.alloca_map = ScopeStack::new();
         self.alloca_slot_types = HashMap::new();
         self.array_map.clear();
         self.range_map.clear();

@@ -45,7 +45,7 @@ impl ASTLowering {
             resolved_expression_types: HashMap::new(),
             value_map: ScopeStack::new(),
             variable_types: TypeScopeStack::new(),
-            alloca_map: HashMap::new(),
+            alloca_map: ScopeStack::new(),
             alloca_slot_types: HashMap::new(),
             array_map: ArrayScopeStack::new(),
             range_map: RangeScopeStack::new(),

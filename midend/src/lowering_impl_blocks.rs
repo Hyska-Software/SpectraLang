@@ -375,7 +375,7 @@ impl ASTLowering {
                 if self.type_has_drop(&ty) {
                     // A reassigned record local's slot holds the pointer that is
                     // currently live; drop that rather than a stale map entry.
-                    let target = if self.alloca_map.contains_key(&name) {
+                    let target = if self.alloca_map.get(&name).is_some() {
                         self.load_slot(&name, ir_func).unwrap_or(value)
                     } else {
                         value
@@ -437,6 +437,7 @@ impl ASTLowering {
     ) {
         if create_scope {
             self.value_map.push_scope();
+            self.alloca_map.push_scope();
             self.variable_types.push_scope();
             self.array_map.push_scope();
             self.range_map.push_scope();
@@ -456,6 +457,7 @@ impl ASTLowering {
                 self.array_map.pop_scope();
                 self.range_map.pop_scope();
                 self.variable_types.pop_scope();
+                self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
                 return;
             }
@@ -466,6 +468,7 @@ impl ASTLowering {
             self.array_map.pop_scope();
             self.range_map.pop_scope();
             self.variable_types.pop_scope();
+            self.alloca_map.pop_scope();
             self.value_map.pop_scope();
         }
     }
@@ -1010,6 +1013,7 @@ impl ASTLowering {
         entry_block: usize,
     ) -> (Option<Value>, usize, bool) {
         self.value_map.push_scope();
+        self.alloca_map.push_scope();
         self.variable_types.push_scope();
         self.array_map.push_scope();
         self.range_map.push_scope();
@@ -1048,6 +1052,7 @@ impl ASTLowering {
         self.array_map.pop_scope();
         self.range_map.pop_scope();
         self.variable_types.pop_scope();
+        self.alloca_map.pop_scope();
         self.value_map.pop_scope();
 
         (produced_value, current_block_id, has_terminator)

@@ -27,7 +27,7 @@ impl ASTLowering {
                     if let Some((struct_ptr, struct_name)) = self
                         .struct_var_map
                         .get(name)
-                        .filter(|_| !self.alloca_map.contains_key(name))
+                        .filter(|_| self.alloca_map.get(name).is_none())
                     {
                         // Buscar definição do struct
                         if let Some(field_defs) = self.struct_definitions.get(&struct_name) {

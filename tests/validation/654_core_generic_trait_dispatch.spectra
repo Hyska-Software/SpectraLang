@@ -1,0 +1,40 @@
+module core_generic_trait_dispatch
+
+trait Score {
+    func score(&self) returns int
+}
+
+record FixedScore {
+    public value: int,
+}
+
+record WeightedScore {
+    public value: int,
+    public weight: int,
+}
+
+impl Score for FixedScore {
+    func score(&self) returns int {
+        self.value
+    }
+}
+
+impl Score for WeightedScore {
+    func score(&self) returns int {
+        self.value * self.weight
+    }
+}
+
+func evaluate<T: Score>(item: T) returns int {
+    return item.score()
+}
+
+public func main() returns int {
+    if evaluate(FixedScore { value: 6 }) != 6 {
+        return 1
+    }
+    if evaluate(WeightedScore { value: 6, weight: 4 }) != 24 {
+        return 2
+    }
+    return 0
+}

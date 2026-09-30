@@ -99,6 +99,7 @@ impl ASTLowering {
             exit_block: iterator_exit,
         });
         self.value_map.push_scope();
+        self.alloca_map.push_scope();
         self.variable_types.push_scope();
         self.array_map.push_scope();
         self.range_map.push_scope();
@@ -114,6 +115,7 @@ impl ASTLowering {
             ),
             "iterator.next_unchecked host call did not produce its declared element",
         );
+        self.bind_scoped_value(ir_func, &for_stmt.iterator, &element_type, element_value);
         self.value_map
             .insert(for_stmt.iterator.clone(), element_value);
         self.variable_types
@@ -137,6 +139,7 @@ impl ASTLowering {
         self.range_map.pop_scope();
         self.array_map.pop_scope();
         self.variable_types.pop_scope();
+        self.alloca_map.pop_scope();
         self.value_map.pop_scope();
         self.loop_stack.pop();
 
@@ -222,6 +225,7 @@ impl ASTLowering {
             exit_block,
         });
         self.value_map.push_scope();
+        self.alloca_map.push_scope();
         self.variable_types.push_scope();
         self.array_map.push_scope();
         self.range_map.push_scope();
@@ -233,6 +237,7 @@ impl ASTLowering {
         let element_value =
             self.builder
                 .build_load_typed(ir_func, element_ptr, element_type.clone());
+        self.bind_scoped_value(ir_func, &for_stmt.iterator, &element_type, element_value);
         self.value_map
             .insert(for_stmt.iterator.clone(), element_value);
         self.variable_types
@@ -255,6 +260,7 @@ impl ASTLowering {
         self.range_map.pop_scope();
         self.array_map.pop_scope();
         self.variable_types.pop_scope();
+        self.alloca_map.pop_scope();
         self.value_map.pop_scope();
         self.loop_stack.pop();
 
@@ -311,6 +317,7 @@ impl ASTLowering {
             exit_block,
         });
         self.value_map.push_scope();
+        self.alloca_map.push_scope();
         self.variable_types.push_scope();
         self.array_map.push_scope();
         self.range_map.push_scope();
@@ -319,6 +326,7 @@ impl ASTLowering {
         let element_value = self
             .builder
             .build_load_typed(ir_func, current_ptr, IRType::Int);
+        self.bind_scoped_value(ir_func, &for_stmt.iterator, &IRType::Int, element_value);
         self.value_map
             .insert(for_stmt.iterator.clone(), element_value);
         self.variable_types
@@ -337,6 +345,7 @@ impl ASTLowering {
         self.range_map.pop_scope();
         self.array_map.pop_scope();
         self.variable_types.pop_scope();
+        self.alloca_map.pop_scope();
         self.value_map.pop_scope();
         self.loop_stack.pop();
 

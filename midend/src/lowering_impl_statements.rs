@@ -68,6 +68,12 @@ impl ASTLowering {
                     };
                     self.current_expected_annotation = saved_expected_annotation;
 
+                    if let Some(name) = binding_name.as_ref() {
+                        if let Some(ty) = binding_type.as_ref().or(inferred_type.as_ref()) {
+                            self.bind_scoped_value(ir_func, name, ty, value);
+                        }
+                    }
+
                     // Register in closure_var_map when the value bound is a lambda
                     if let Some(name) = binding_name.as_ref().filter(|_| is_lambda_binding) {
                         if let Some(IRType::Function {
@@ -170,11 +176,6 @@ impl ASTLowering {
                             self.struct_var_map
                                 .insert(name.clone(), (value, actual_name.clone()));
                             self.value_map.insert(name.clone(), value);
-                            // A reassigned record local's slot holds its current
-                            // pointer; initialize it with the literal's address.
-                            if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
-                                self.builder.build_store(ir_func, alloca_ptr, value);
-                            }
                         }
                         _ => {
                             if let Some(ref type_ann) = let_stmt.ty {
@@ -190,12 +191,7 @@ impl ASTLowering {
                                     self.struct_var_map
                                         .insert(name.clone(), (value, struct_type_name));
                                     self.value_map.insert(name.clone(), value);
-                                    if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
-                                        self.builder.build_store(ir_func, alloca_ptr, value);
-                                    }
-                                } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
-                                    self.builder.build_store(ir_func, alloca_ptr, value);
-                                } else {
+                                } else if self.alloca_map.get(&name).is_none() {
                                     self.value_map.insert(name.clone(), value);
                                 }
                             } else if let Some(IRType::Struct {
@@ -208,12 +204,7 @@ impl ASTLowering {
                                 self.struct_var_map
                                     .insert(name.clone(), (value, struct_type_name.clone()));
                                 self.value_map.insert(name.clone(), value);
-                                if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
-                                    self.builder.build_store(ir_func, alloca_ptr, value);
-                                }
-                            } else if let Some(&alloca_ptr) = self.alloca_map.get(&name) {
-                                self.builder.build_store(ir_func, alloca_ptr, value);
-                            } else {
+                            } else if self.alloca_map.get(&name).is_none() {
                                 self.value_map.insert(name.clone(), value);
                             }
                         }
@@ -255,7 +246,7 @@ impl ASTLowering {
                         }
 
                         // Assignment to simple variable (uses memory)
-                        if let Some(&alloca_ptr) = self.alloca_map.get(name) {
+                        if let Some(alloca_ptr) = self.alloca_map.get(name) {
                             let value = self
                                 .variable_types
                                 .get(name)
@@ -711,6 +702,7 @@ impl ASTLowering {
                 self.builder.set_current_block(then_blk);
                 // Push an inner scope for the pattern bindings
                 self.value_map.push_scope();
+                self.alloca_map.push_scope();
                 self.variable_types.push_scope();
                 self.array_map.push_scope();
                 self.range_map.push_scope();
@@ -730,6 +722,7 @@ impl ASTLowering {
                 self.array_map.pop_scope();
                 self.range_map.pop_scope();
                 self.variable_types.pop_scope();
+                self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
 
                 let cur = self.builder.get_current_block().unwrap_or(then_blk);
@@ -803,6 +796,7 @@ impl ASTLowering {
 
                 // Push scope for pattern bindings (visible to all statements in the body)
                 self.value_map.push_scope();
+                self.alloca_map.push_scope();
                 self.variable_types.push_scope();
                 self.array_map.push_scope();
                 self.range_map.push_scope();
@@ -823,6 +817,7 @@ impl ASTLowering {
                 self.array_map.pop_scope();
                 self.range_map.pop_scope();
                 self.variable_types.pop_scope();
+                self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
 
                 self.loop_stack.pop();

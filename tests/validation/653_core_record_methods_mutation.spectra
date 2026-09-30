@@ -1,0 +1,33 @@
+module core_record_methods_mutation
+
+record Counter {
+    public value: int,
+}
+
+impl Counter {
+    public func add(&mut self, amount: int) {
+        self.value = self.value + amount
+    }
+
+    public func current(&self) returns int {
+        self.value
+    }
+
+    public func scaled(&self, factor: int) returns int {
+        self.current() * factor
+    }
+}
+
+public func main() returns int {
+    let counter = Counter { value: 4 }
+    counter.add(3)
+    if counter.current() != 7 {
+        return 1
+    }
+
+    counter.value = counter.value + 2
+    if counter.scaled(2) != 18 {
+        return 2
+    }
+    return 0
+}

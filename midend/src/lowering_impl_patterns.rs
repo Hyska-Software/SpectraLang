@@ -19,6 +19,8 @@ impl ASTLowering {
             Pattern::Identifier(name, _) => {
                 // Criar variável local para o identifier binding
                 // Usar value_map (valores diretos, não precisam de alloca/load)
+                let binding_type = scrutinee_type.cloned().unwrap_or(IRType::Int);
+                self.bind_scoped_value(ir_func, name, &binding_type, scrutinee);
                 self.value_map.insert(name.clone(), scrutinee);
                 if let Some(ty) = scrutinee_type {
                     self.variable_types.insert(name.clone(), ty.clone());

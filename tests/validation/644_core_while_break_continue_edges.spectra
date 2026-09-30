@@ -1,0 +1,29 @@
+module core_while_break_continue_edges
+
+func count_until(limit: int) returns int {
+    let total = 0
+    let index = 0
+
+    while index < limit {
+        index = index + 1
+        if index == 2 {
+            continue
+        }
+        if index == 5 {
+            break
+        }
+        total = total + index
+    }
+
+    return total * 10 + index
+}
+
+public func main() returns int {
+    if count_until(0) != 0 {
+        return 1
+    }
+    if count_until(8) != 85 {
+        return 2
+    }
+    return 0
+}

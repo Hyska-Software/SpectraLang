@@ -1,0 +1,41 @@
+module core_while_let_pattern_shadowing
+
+enum Step {
+    More(int),
+    Stop,
+}
+
+func next_step(value: int) returns Step {
+    if value > 0 {
+        return Step::More(value)
+    }
+    return Step::Stop
+}
+
+func sum_steps(start: int) returns int {
+    let marker = 77
+    marker = marker + 1
+    let cursor = start
+    let total = 0
+
+    while let Step::More(marker) = next_step(cursor) {
+        total = total + marker
+        marker = marker + 100
+        cursor = cursor - 1
+    }
+
+    if marker != 78 {
+        return -1
+    }
+    return total
+}
+
+public func main() returns int {
+    if sum_steps(3) != 6 {
+        return 1
+    }
+    if sum_steps(0) != 0 {
+        return 2
+    }
+    return 0
+}

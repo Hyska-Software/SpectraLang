@@ -114,6 +114,7 @@ impl ASTLowering {
 
                     // Create the pattern bindings before running the body.
                     self.value_map.push_scope();
+                    self.alloca_map.push_scope();
                     self.variable_types.push_scope();
                     self.array_map.push_scope();
                     self.range_map.push_scope();
@@ -166,6 +167,7 @@ impl ASTLowering {
                     self.array_map.pop_scope();
                     self.range_map.pop_scope();
                     self.variable_types.pop_scope();
+                    self.alloca_map.pop_scope();
                     self.value_map.pop_scope();
                 }
 

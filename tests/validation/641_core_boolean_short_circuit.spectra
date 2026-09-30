@@ -1,0 +1,28 @@
+module core_boolean_short_circuit
+
+func divide_is_nonnegative(value: int) returns bool {
+    return 1 / value >= 0
+}
+
+public func main() returns int {
+    let skipped_and_word = false and divide_is_nonnegative(0)
+    let skipped_and_symbol = false && divide_is_nonnegative(0)
+    let skipped_or_word = true or divide_is_nonnegative(0)
+    let skipped_or_symbol = true || divide_is_nonnegative(0)
+
+    if skipped_and_word or skipped_and_symbol {
+        return 1
+    }
+    if not skipped_or_word or not skipped_or_symbol {
+        return 2
+    }
+
+    if not (true and divide_is_nonnegative(2)) {
+        return 3
+    }
+    if not (false || divide_is_nonnegative(2)) {
+        return 4
+    }
+
+    return 0
+}

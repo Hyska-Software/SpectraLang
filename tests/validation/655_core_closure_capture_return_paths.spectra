@@ -1,0 +1,43 @@
+module core_closure_capture_return_paths
+
+func make_affine(offset: int, scale: int) returns func(int) returns int {
+    return | value: int | value * scale + offset
+}
+
+func apply(value: int, transform: func(int) returns int) returns int {
+    return transform(value)
+}
+
+func recursive_sum(value: int) returns int {
+    if value <= 0 {
+        return 0
+    }
+    return value + recursive_sum(value - 1)
+}
+
+func choose(flag: bool, value: int, transform: func(int) returns int) returns int {
+    if flag {
+        return apply(value, transform)
+    }
+    if value == 0 {
+        return 0
+    }
+    return recursive_sum(value)
+}
+
+public func main() returns int {
+    let transform = make_affine(3, 2)
+    if apply(5, transform) != 13 {
+        return 1
+    }
+    if choose(true, 4, transform) != 11 {
+        return 2
+    }
+    if choose(false, 5, transform) != 15 {
+        return 3
+    }
+    if choose(false, 0, transform) != 0 {
+        return 4
+    }
+    return 0
+}

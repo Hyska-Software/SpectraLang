@@ -104,6 +104,10 @@ impl ScopeStack {
         None
     }
 
+    fn get_current(&self, name: &str) -> Option<Value> {
+        self.scopes.last()?.get(name).copied()
+    }
+
     fn clear(&mut self) {
         self.scopes.clear();
         self.scopes.push(HashMap::new());
@@ -449,8 +453,8 @@ pub struct ASTLowering {
     resolved_expression_types: HashMap<Span, ASTType>,
     value_map: ScopeStack,
     variable_types: TypeScopeStack,
-    /// Maps variable names to their allocated memory locations (for mutable variables)
-    alloca_map: HashMap<String, Value>,
+    /// Scoped map of promoted mutable bindings to their allocated stack slots.
+    alloca_map: ScopeStack,
     /// Pointee type of each promoted stack slot, keyed by the alloca pointer
     /// value id. Loads from a slot must read at the declared width; defaulting
     /// to `Int` corrupts bool/float/char locals once scalar replacement cannot

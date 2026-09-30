@@ -1,0 +1,36 @@
+module core_match_enum_guards
+
+enum Message {
+    Data { value: int },
+    Retry(int),
+    Stop,
+}
+
+func classify(message: Message, limit: int) returns int {
+    return match message {
+        when Message::Data { value } if value > limit then value + 1,
+        when Message::Data { value } then value - 1,
+        when Message::Retry(count) if count > 0 then count * 10,
+        when Message::Retry(_) then 0,
+        when Message::Stop then -1
+    }
+}
+
+public func main() returns int {
+    if classify(Message::Data { value: 4 }, 3) != 5 {
+        return 1
+    }
+    if classify(Message::Data { value: 4 }, 4) != 3 {
+        return 2
+    }
+    if classify(Message::Retry(2), 0) != 20 {
+        return 3
+    }
+    if classify(Message::Retry(0), 0) != 0 {
+        return 4
+    }
+    if classify(Message::Stop, 0) != -1 {
+        return 5
+    }
+    return 0
+}

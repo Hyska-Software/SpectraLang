@@ -1,0 +1,36 @@
+module core_switch_dispatch_default
+
+func classify(value: int) returns int {
+    let result = 0
+    switch value {
+        case 0: {
+            result = 10
+        }
+        case 1: {
+            result = 20
+        }
+        case 2: {
+            result = 30
+        }
+        else: {
+            result = 40
+        }
+    }
+    return result
+}
+
+public func main() returns int {
+    if classify(0) != 10 {
+        return 1
+    }
+    if classify(1) != 20 {
+        return 2
+    }
+    if classify(2) != 30 {
+        return 3
+    }
+    if classify(9) != 40 {
+        return 4
+    }
+    return 0
+}
