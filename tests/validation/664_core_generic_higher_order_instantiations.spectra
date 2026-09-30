@@ -1,0 +1,22 @@
+module core_generic_higher_order_instantiations
+
+func transform<T, U>(value: T, mapper: func(T) returns U) returns U {
+    return mapper(value)
+}
+
+public func main() returns int {
+    let doubled   = transform(4, | value: int | value * 2)
+    let positive  = transform(-1, | value: int | value > 0)
+    let unchanged = transform( true, | value: bool | value)
+
+    if doubled != 8 {
+        return 1
+    }
+    if positive {
+        return 2
+    }
+    if not unchanged {
+        return 3
+    }
+    return 0
+}

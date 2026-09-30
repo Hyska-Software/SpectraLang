@@ -1,0 +1,48 @@
+module core_shadowed_promoted_scalar_types
+
+func verify_scopes() returns int {
+    let mut outer_int = 10
+    outer_int = outer_int + 1
+
+    let mut outer_float = 1.25
+    outer_float = outer_float + 0.5
+
+    let mut outer_flag = false
+    outer_flag = outer_flag or true
+
+    if outer_flag {
+        let mut outer_int = 40
+        outer_int = outer_int + 2
+
+        let mut outer_float = 2.0
+        outer_float = outer_float * 3.0
+
+        let mut outer_flag = true
+        outer_flag = not outer_flag
+
+        if outer_int != 42 {
+            return 1
+        }
+        if outer_float != 6.0 {
+            return 2
+        }
+        if outer_flag {
+            return 3
+        }
+    }
+
+    if outer_int != 11 {
+        return 4
+    }
+    if outer_float != 1.75 {
+        return 5
+    }
+    if not outer_flag {
+        return 6
+    }
+    return 0
+}
+
+public func main() returns int {
+    return verify_scopes()
+}

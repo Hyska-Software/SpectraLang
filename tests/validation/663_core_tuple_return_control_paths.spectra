@@ -1,0 +1,32 @@
+module core_tuple_return_control_paths
+
+func bounds(value: int, mode: int) returns(int, int) {
+    if mode == 0 {
+        return(value, value + 1)
+    }
+    if mode == 1 {
+        return(value * 2, value * 3)
+    }
+    if mode < 0 {
+        return(-value, value)
+    }
+    return(0, 0)
+}
+
+public func main() returns int {
+    let(first_low, first_high) = bounds(6, 0)
+    if first_low != 6 or first_high != 7 {
+        return 1
+    }
+
+    let(second_low, second_high) = bounds(6, 1)
+    if second_low != 12 or second_high != 18 {
+        return 2
+    }
+
+    let(fallback_low, fallback_high) = bounds(6, 9)
+    if fallback_low != 0 or fallback_high != 0 {
+        return 3
+    }
+    return 0
+}

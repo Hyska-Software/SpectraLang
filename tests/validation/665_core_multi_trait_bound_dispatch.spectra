@@ -1,0 +1,38 @@
+module core_multi_trait_bound_dispatch
+
+trait PrimaryScore {
+    func primary( & self) returns int
+}
+
+trait BonusScore {
+    func bonus( & self) returns int
+}
+
+record Entry {
+    public value: int,
+}
+
+impl PrimaryScore for Entry {
+    func primary( & self) returns int {
+        self.value
+    }
+}
+
+impl BonusScore for Entry {
+    func bonus( & self) returns int {
+        self.value + 10
+    }
+}
+
+func combine<T: PrimaryScore + BonusScore>(entry: T) returns int {
+    let primary = entry.primary()
+    let bonus   = entry.bonus()
+    return primary * 100 + bonus
+}
+
+public func main() returns int {
+    if combine(Entry { value: 3 }) != 313 {
+        return 1
+    }
+    return 0
+}

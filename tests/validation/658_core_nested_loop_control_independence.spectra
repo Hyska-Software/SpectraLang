@@ -1,0 +1,39 @@
+module core_nested_loop_control_independence
+
+func nested_total() returns int {
+    let outer = 0
+    let total = 0
+
+    while outer < 3 {
+        outer = outer + 1
+        let inner = 0
+
+        loop {
+            inner = inner + 1
+            if inner > 4 {
+                break
+            }
+            if inner == 2 {
+                continue
+            }
+            if outer == 2 and inner == 4 {
+                break
+            }
+            total = total + outer * 10 + inner
+        }
+
+        if outer == 2 {
+            continue
+        }
+        total = total + outer
+    }
+
+    return total * 10 + outer
+}
+
+public func main() returns int {
+    if nested_total() != 1843 {
+        return 1
+    }
+    return 0
+}

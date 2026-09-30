@@ -1,0 +1,35 @@
+module core_nested_enum_record_patterns
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+enum Envelope {
+    Located { position: Point, code: int },
+    Missing,
+}
+
+func classify(envelope: Envelope) returns int {
+    return match envelope {
+        when Envelope::Located { position: Point { x: 0, y }, code } if code == 200 then 200 + y,
+        when Envelope::Located { position: Point { x, y }, code } then code + x + y,
+        when Envelope::Missing then -1
+    }
+}
+
+public func main() returns int {
+    if classify(Envelope::Located { position: Point { x: 0, y: 4 }, code: 200 }) != 204 {
+        return 1
+    }
+    if classify(Envelope::Located { position: Point { x: 3, y: 4 }, code: 200 }) != 207 {
+        return 2
+    }
+    if classify(Envelope::Located { position: Point { x: 3, y: 4 }, code: 404 }) != 411 {
+        return 3
+    }
+    if classify(Envelope::Missing) != -1 {
+        return 4
+    }
+    return 0
+}

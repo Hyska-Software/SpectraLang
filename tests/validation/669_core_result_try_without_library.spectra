@@ -1,0 +1,29 @@
+module core_result_try_without_library
+
+func add(value: Result<int, string>, amount: int) returns Result<int, string> {
+    let number = value?
+    return Result::Ok(number + amount)
+}
+
+func add_twice(value: Result<int, string>) returns Result<int, string> {
+    let first = add(value, 2) ?
+    return add(Result::Ok(first), 3)
+}
+
+func score(value: Result<int, string>) returns int {
+    return match add_twice(value) {
+        when Result::Ok(number) then number,
+        when Result::Err(message) if message == "halt" then -1,
+        when Result::Err(_) then -2
+    }
+}
+
+public func main() returns int {
+    if score(Result::Ok(4)) != 9 {
+        return 1
+    }
+    if score(Result::Err("halt")) != -1 {
+        return 2
+    }
+    return 0
+}

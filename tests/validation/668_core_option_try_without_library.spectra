@@ -1,0 +1,28 @@
+module core_option_try_without_library
+
+func increment(value: Option<int>) returns Option<int> {
+    let number = value?
+    return Option::Some(number + 1)
+}
+
+func increment_twice(value: Option<int>) returns Option<int> {
+    let first = increment(value) ?
+    return increment(Option::Some(first))
+}
+
+func score(value: Option<int>) returns int {
+    return match increment_twice(value) {
+        when Option::Some(result) then result,
+        when Option::None then -1
+    }
+}
+
+public func main() returns int {
+    if score(Option::Some(4)) != 6 {
+        return 1
+    }
+    if score(Option::None) != -1 {
+        return 2
+    }
+    return 0
+}

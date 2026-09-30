@@ -1,0 +1,15 @@
+module core_nested_array_mutation
+
+public func main() returns int {
+    let grid = [[1, 2, 3], [4, 5, 6]]
+    grid[0] [1] = 8
+    grid[1] [2] = 9
+
+    if grid[0] [0] != 1 or grid[0] [1] != 8 or grid[0] [2] != 3 {
+        return 1
+    }
+    if grid[1] [0] != 4 or grid[1] [1] != 5 or grid[1] [2] != 9 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,20 @@
+module core_nested_closure_handle_capture
+
+func make_pipeline(offset: int) returns func(int) returns int {
+    let base                         = offset + 3
+    let shift: func(int) returns int = | value: int | value + base
+    return | value: int | shift(value) + offset
+}
+
+public func main() returns int {
+    let first  = make_pipeline(4)
+    let second = make_pipeline(-2)
+
+    if first(5) != 16 {
+        return 1
+    }
+    if second(3) != 2 {
+        return 2
+    }
+    return 0
+}

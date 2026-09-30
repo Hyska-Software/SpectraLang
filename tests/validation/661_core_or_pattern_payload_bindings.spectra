@@ -1,0 +1,28 @@
+module core_or_pattern_payload_bindings
+
+enum Transition {
+    Opened(int),
+    Resumed(int),
+    Closed,
+}
+
+func score(transition: Transition) returns int {
+    return match transition {
+        when Transition::Opened(amount) | Transition::Resumed(amount) if amount > 0 then amount * 2,
+        when Transition::Opened(amount) | Transition::Resumed(amount) then -amount,
+        when Transition::Closed then 0
+    }
+}
+
+public func main() returns int {
+    if score(Transition::Opened(5)) != 10 {
+        return 1
+    }
+    if score(Transition::Resumed(-4)) != 4 {
+        return 2
+    }
+    if score(Transition::Closed) != 0 {
+        return 3
+    }
+    return 0
+}

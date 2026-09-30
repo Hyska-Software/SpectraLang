@@ -1,0 +1,33 @@
+module core_temporary_method_chain
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+impl Point {
+    public func shifted( & self, dx: int, dy: int) returns Point {
+        return Point { x: self.x + dx, y: self.y + dy }
+    }
+
+    public func scaled( & self, factor: int) returns Point {
+        return Point { x: self.x * factor, y: self.y * factor }
+    }
+
+    public func checksum( & self) returns int {
+        return self.x * 10 + self.y
+    }
+}
+
+public func main() returns int {
+    let origin      = Point { x: 1, y: 2 }
+    let transformed = origin.shifted(3, 4) .scaled(2)
+
+    if transformed.checksum() != 92 {
+        return 1
+    }
+    if origin.checksum() != 12 {
+        return 2
+    }
+    return 0
+}

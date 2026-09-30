@@ -264,11 +264,11 @@ impl ASTLowering {
         match pattern {
             Pattern::Wildcard(_) => {
                 // Wildcard sempre match
-                self.builder.build_const_int(ir_func, 1)
+                self.builder.build_const_bool(ir_func, true)
             }
             Pattern::Identifier(_name, _) => {
                 // Binding sempre match
-                self.builder.build_const_int(ir_func, 1)
+                self.builder.build_const_bool(ir_func, true)
             }
             Pattern::Literal(expr) => {
                 // Comparar scrutinee com o valor literal
@@ -288,7 +288,7 @@ impl ASTLowering {
                     elements: tuple_types,
                 }) = scrutinee_type
                 {
-                    let mut result = self.builder.build_const_int(ir_func, 1);
+                    let mut result = self.builder.build_const_bool(ir_func, true);
                     let tuple_layout = layout::layout_of(tuple_types.iter());
                     for (idx, pattern) in elements.iter().enumerate() {
                         if let Some(field_ty) = tuple_types.get(idx) {
@@ -312,7 +312,7 @@ impl ASTLowering {
                     }
                     result
                 } else {
-                    self.builder.build_const_int(ir_func, 0)
+                    self.builder.build_const_bool(ir_func, false)
                 }
             }
             Pattern::Struct { fields, .. } => {
@@ -326,7 +326,7 @@ impl ASTLowering {
                         .enumerate()
                         .map(|(idx, (name, ty))| (name, (idx, ty)))
                         .collect();
-                    let mut result = self.builder.build_const_int(ir_func, 1);
+                    let mut result = self.builder.build_const_bool(ir_func, true);
                     let struct_layout = layout::layout_of(struct_fields.iter().map(|(_, ty)| ty));
                     for (field_name, pattern) in fields {
                         if let Some((idx, field_ty)) = field_map.get(field_name) {
@@ -350,15 +350,15 @@ impl ASTLowering {
                     }
                     result
                 } else {
-                    self.builder.build_const_int(ir_func, 0)
+                    self.builder.build_const_bool(ir_func, false)
                 }
             }
             Pattern::EnumVariant {
                 enum_name,
                 type_args,
                 variant_name,
-                data: _,
-                struct_data: _,
+                data,
+                struct_data,
                 ..
             } => {
                 let mut variants = self
@@ -387,7 +387,6 @@ impl ASTLowering {
                     if let Some((_, expected_tag, variant_types)) =
                         variants.iter().find(|(name, _, _)| name == variant_name)
                     {
-                        // Para qualquer variant (unit ou com dados), extrair tag do ponteiro
                         let zero_index = self.builder.build_const_int(ir_func, 0);
                         let tag_ptr = self.builder.build_getelementptr(
                             ir_func,
@@ -398,14 +397,101 @@ impl ASTLowering {
                         let tag_value = self.builder.build_load(ir_func, tag_ptr);
                         let expected_tag_value =
                             self.builder.build_const_int(ir_func, *expected_tag as i64);
-                        let _ = variant_types; // mantido para futuros guards
+                        let tag_matches =
+                            self.builder
+                                .build_eq(ir_func, tag_value, expected_tag_value);
+
+                        let ordered_patterns: Vec<&spectra_compiler::ast::Pattern> =
+                            if let Some(patterns) = data {
+                                patterns.iter().collect()
+                            } else if let Some(named_patterns) = struct_data {
+                                self.reorder_named_variant_patterns(
+                                    scrutinee_enum.unwrap_or(enum_name),
+                                    variant_name,
+                                    named_patterns,
+                                )
+                                .unwrap_or_else(|| {
+                                    named_patterns.iter().map(|(_, pattern)| pattern).collect()
+                                })
+                            } else {
+                                Vec::new()
+                            };
+
+                        if ordered_patterns.is_empty() {
+                            return tag_matches;
+                        }
+                        let Some(payload_types) = variant_types.as_ref() else {
+                            return self.builder.build_const_bool(ir_func, false);
+                        };
+
+                        // Check the tag before reading the shared enum payload:
+                        // another variant may store a shorter or differently
+                        // shaped value in the same bytes.
+                        let result_slot = self.builder.build_alloca(ir_func, IRType::Bool);
+                        let no_match = self.builder.build_const_bool(ir_func, false);
+                        self.builder.build_store(ir_func, result_slot, no_match);
+
+                        let payload_check_block = ir_func.add_block("match_payload_check");
+                        let payload_check_end = ir_func.add_block("match_payload_end");
+                        self.builder.build_cond_branch(
+                            ir_func,
+                            tag_matches,
+                            payload_check_block,
+                            payload_check_end,
+                        );
+                        self.builder.set_current_block(payload_check_block);
+
+                        let payload_layout = layout::layout_of(payload_types.iter());
+                        let mut payload_matches = self.builder.build_const_bool(ir_func, true);
+                        for (idx, sub_pattern) in ordered_patterns.iter().enumerate() {
+                            let Some(sub_type) = payload_types.get(idx) else {
+                                continue;
+                            };
+                            let payload_offset = 8 + payload_layout.offsets[idx] as i64;
+                            let payload_ptr =
+                                self.builder
+                                    .build_field_ptr(ir_func, scrutinee, payload_offset);
+                            let payload_value = self.builder.build_load_typed(
+                                ir_func,
+                                payload_ptr,
+                                sub_type.clone(),
+                            );
+                            let nested_enum = match Self::ir_type_representation_static(sub_type) {
+                                IRType::Enum { name, .. } => Some(name.as_str()),
+                                _ => None,
+                            };
+                            let sub_matches = self.lower_pattern_check(
+                                sub_pattern,
+                                payload_value,
+                                nested_enum,
+                                Some(sub_type),
+                                ir_func,
+                            );
+                            payload_matches =
+                                self.builder
+                                    .build_and(ir_func, payload_matches, sub_matches);
+                        }
+                        self.builder
+                            .build_store(ir_func, result_slot, payload_matches);
+                        let current_block = self
+                            .builder
+                            .get_current_block()
+                            .unwrap_or(payload_check_block);
+                        if !ir_func
+                            .get_block(current_block)
+                            .is_some_and(|block| block.terminator.is_some())
+                        {
+                            self.builder.build_branch(ir_func, payload_check_end);
+                        }
+
+                        self.builder.set_current_block(payload_check_end);
                         return self
                             .builder
-                            .build_eq(ir_func, tag_value, expected_tag_value);
+                            .build_load_typed(ir_func, result_slot, IRType::Bool);
                     }
                 }
                 // Fallback: sempre false
-                self.builder.build_const_int(ir_func, 0)
+                self.builder.build_const_bool(ir_func, false)
             }
             Pattern::Or(patterns) => {
                 let mut branches = patterns.iter();
@@ -429,7 +515,7 @@ impl ASTLowering {
                     }
                     result
                 } else {
-                    self.builder.build_const_int(ir_func, 0)
+                    self.builder.build_const_bool(ir_func, false)
                 }
             }
         }

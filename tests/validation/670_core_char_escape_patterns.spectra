@@ -1,0 +1,27 @@
+module core_char_escape_patterns
+
+func classify(value: char) returns int {
+    return match value {
+        when '\n' then 1,
+        when '\t' then 2,
+        when '\\' then 3,
+        when 'x' then 4,
+        otherwise then 0
+    }
+}
+
+public func main() returns int {
+    if classify('\n') != 1 {
+        return 1
+    }
+    if classify('\t') != 2 {
+        return 2
+    }
+    if classify('\\') != 3 {
+        return 3
+    }
+    if classify('x') != 4 {
+        return 4
+    }
+    return 0
+}

@@ -2996,6 +2996,96 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/656_core_shadowed_promoted_scalar_types.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/657_core_nested_closure_handle_capture.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/658_core_nested_loop_control_independence.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/659_core_if_let_else_scope.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/660_core_nested_tuple_match_patterns.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/661_core_or_pattern_payload_bindings.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/662_core_nested_enum_record_patterns.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/663_core_tuple_return_control_paths.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/664_core_generic_higher_order_instantiations.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/665_core_multi_trait_bound_dispatch.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/666_core_temporary_method_chain.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/667_core_nested_array_mutation.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/668_core_option_try_without_library.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/669_core_result_try_without_library.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/670_core_char_escape_patterns.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/65_closure_completion_surface.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,

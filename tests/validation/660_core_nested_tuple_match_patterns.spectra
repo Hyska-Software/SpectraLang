@@ -1,0 +1,26 @@
+module core_nested_tuple_match_patterns
+
+func classify(value: ((int, int), int)) returns int {
+    return match value {
+        when((0, 0), tail) then tail + 1000,
+        when((left, right), 0) then left * 10 + right,
+        when((left, right), tail) if tail > 0 then left + right + tail * 100,
+        otherwise then -1
+    }
+}
+
+public func main() returns int {
+    if classify(((0, 0), 5)) != 1005 {
+        return 1
+    }
+    if classify(((3, 4), 0)) != 34 {
+        return 2
+    }
+    if classify(((3, 4), 2)) != 207 {
+        return 3
+    }
+    if classify(((3, 4), -2)) != -1 {
+        return 4
+    }
+    return 0
+}

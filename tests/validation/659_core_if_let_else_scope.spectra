@@ -1,0 +1,42 @@
+module core_if_let_else_scope
+
+enum Probe {
+    Hit(int),
+    Miss,
+}
+
+func probe(value: int) returns Probe {
+    if value >= 0 {
+        return Probe::Hit(value)
+    }
+    return Probe::Miss
+}
+
+func check_scope(value: int) returns int {
+    let mut payload = value + 100
+    payload = payload + 1
+
+    if let Probe::Hit(payload) = probe(value) {
+        payload = payload + 5
+        if payload != value + 5 {
+            return-1
+        }
+    } else {
+        let payload = 700
+        if payload != 700 {
+            return-2
+        }
+    }
+
+    return payload
+}
+
+public func main() returns int {
+    if check_scope(4) != 105 {
+        return 1
+    }
+    if check_scope(-2) != 99 {
+        return 2
+    }
+    return 0
+}
