@@ -1514,13 +1514,14 @@ std.random.random_seed(42)
 
 #### `random_int(min: int, max: int) -> int`
 
-**PT-BR:** Retorna um inteiro aleatório em `[min, max]` (inclusivo).  
-**EN-US:** Returns a random integer in `[min, max]` (inclusive).
+**PT-BR:** Retorna um inteiro aleatório em `[min, max)` (inclui `min` e exclui `max`). Se `min >= max`, retorna `min`.
+
+**EN-US:** Returns a random integer in `[min, max)` (includes `min` and excludes `max`). If `min >= max`, returns `min`.
 
 ```spectra
-let dado = std.random.random_int(1, 6)
+let dado = std.random.random_int(1, 7)
     // 1 a 6
-let moeda = std.random.random_int(0, 1)
+let moeda = std.random.random_int(0, 2)
    // 0 ou 1
 ```
 

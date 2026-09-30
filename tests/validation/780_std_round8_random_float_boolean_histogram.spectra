@@ -1,0 +1,57 @@
+module std_round8_random_float_boolean_histogram
+
+import std.convert as convert
+import std.random as random
+
+func build_histogram(histogram: [int], classify: func(int) returns int, count: int) returns int {
+    let mut accepted = 0
+    for index in 0 .. count {
+        let bucket = classify(index)
+        if bucket < 0 or bucket >= 16 {
+            return-1
+        }
+        histogram[bucket] = histogram[bucket] + 1
+        accepted = accepted + 1
+    }
+    return accepted
+}
+
+public func main() returns int {
+    let classify: func(int) returns int = | index: int | {
+        if index < 0 {
+            return-1
+        }
+        let sample = random.random_float()
+        if sample < 0.0 or sample >= 1.0 {
+            return-1
+        }
+        let bin = convert.float_to_int(sample * 8.0)
+        if random.random_bool() {
+            return bin
+        }
+        return bin + 8
+    }
+    let mut first: [int]  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut replay: [int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    random.random_seed(7802026)
+    if build_histogram(first, classify, 128) != 128 {
+        return 1
+    }
+    random.random_seed(7802026)
+    if build_histogram(replay, classify, 128) != 128 {
+        return 2
+    }
+
+    let mut total = 0
+    for index in 0 .. 16 {
+        if first[index] != replay[index] {
+            return index + 3
+        }
+        total = total + first[index]
+    }
+    if total != 128 {
+        return 20
+    }
+    return 0
+}

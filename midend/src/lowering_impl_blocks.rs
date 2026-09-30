@@ -636,7 +636,13 @@ impl ASTLowering {
         value: &Expression,
     ) -> Option<IRType> {
         let scalar = |ty: IRType| match ty {
-            IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char => Some(ty),
+            IRType::Int
+            | IRType::Float
+            | IRType::ExactInt { .. }
+            | IRType::ExactFloat { .. }
+            | IRType::Bool
+            | IRType::String
+            | IRType::Char => Some(ty),
             _ => None,
         };
         if let Some(annotation) = annotation {

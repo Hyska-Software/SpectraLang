@@ -3860,13 +3860,103 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/779_std_round8_random_full_range_callback.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/77_concurrency_pipeline.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/780_std_round8_random_float_boolean_histogram.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/781_std_round8_numeric_checked_cast_edges.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/782_std_round8_numeric_checked_loop_closures.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/783_std_round8_numeric_checked_f32_exact_loop.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/784_std_round8_range_io_break_continue.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/785_std_round8_range_io_function_argument.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/786_std_round8_range_io_iterator_while_let.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/787_std_round8_range_io_reverse_indexed_loop.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/788_std_round8_range_io_closure_capture.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/789_std_round8_error_code_matrix.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/78_serving_foundations.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/790_std_round8_error_generic_result_try.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/791_std_round8_error_inline_result_map.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/792_std_round8_serve_input_error_adapter.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/793_std_round8_serve_output_error_result.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",

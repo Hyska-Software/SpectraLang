@@ -22,7 +22,21 @@ impl ASTLowering {
                 ) {
                     let mut call_args = Vec::new();
                     for arg in arguments {
-                        call_args.push(self.lower_expression(arg, ir_func));
+                        // A surrounding annotation describes the host call's
+                        // result, not its arguments. Do not let that context
+                        // choose the representation of an argument (notably
+                        // the zero in a negated float literal). This path has
+                        // no public parameter types available here, so lower
+                        // each argument without an inherited expectation and
+                        // restore the caller's context before moving on.
+                        let saved_expected_ir_type = self.current_expected_ir_type.clone();
+                        let saved_expected_annotation = self.current_expected_annotation.clone();
+                        self.current_expected_ir_type = None;
+                        self.current_expected_annotation = None;
+                        let value = self.lower_expression(arg, ir_func);
+                        self.current_expected_ir_type = saved_expected_ir_type;
+                        self.current_expected_annotation = saved_expected_annotation;
+                        call_args.push(value);
                     }
                     let call_args = self.host_call_arguments(
                         &desc.runtime_name,

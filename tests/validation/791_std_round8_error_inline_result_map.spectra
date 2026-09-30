@@ -1,0 +1,31 @@
+module std_round8_error_inline_result_map
+
+from std.error import Error, ErrorCode
+import std.error as error
+import std.result as result
+
+public func main() returns int {
+    let failure = error.new(
+        ErrorCode::Io,
+        "write failed",
+        "fs_write",
+        "cache/entry",
+        "round7",
+        true,
+    )
+    let rejected: Result<int, Error> = Result::Err(failure)
+    let described = result.result_map_err(
+        rejected,
+        | problem: Error | error.operation(problem) + "|" + error.context(problem) + "|" + error.message(problem)
+    )
+    if result.is_ok(described) or result.result_unwrap_err(described) != "fs_write|cache/entry|write failed" {
+        return 1
+    }
+
+    let accepted: Result<int, Error> = Result::Ok(23)
+    let unchanged = result.result_map_err(accepted, | problem: Error | error.message(problem))
+    if result.is_err(unchanged) or result.result_unwrap(unchanged) != 23 {
+        return 2
+    }
+    return 0
+}

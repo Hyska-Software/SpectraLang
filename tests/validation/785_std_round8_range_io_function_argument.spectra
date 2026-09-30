@@ -1,0 +1,35 @@
+module std_round8_range_io_function_argument
+
+import std.io as io
+import std.range as range
+
+func emit_scaled(values: Range, factor: int) returns int {
+    let total = 0
+    for value in values {
+        let scaled = value * factor
+        io.println(scaled)
+        total = total + scaled
+    }
+    return total
+}
+
+public func main() returns int {
+    let source: Range = range.create(-2, 2, false)
+    if range.len(source) != 4 or range.start(source) != -2 or
+    range.end(source) != 2 or range.is_inclusive(source) != false {
+        return 1
+    }
+    if range.at(source, 0) != -2 or range.at(source, 3) != 1 {
+        return 2
+    }
+    if emit_scaled(source, 3) != -6 {
+        return 3
+    }
+
+    let descending: Range = range.create(4, 1, true)
+    if range.len(descending) != 0 or emit_scaled(descending, 9) != 0 {
+        return 4
+    }
+    io.println("complete")
+    return 0
+}

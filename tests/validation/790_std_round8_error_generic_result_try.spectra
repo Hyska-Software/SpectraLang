@@ -1,0 +1,42 @@
+module std_round8_error_generic_result_try
+
+from std.error import Error, ErrorCode
+import std.error as error
+import std.result as result
+
+func preserve<T>(value: Result<T, Error>) returns Result<T, Error> {
+    let payload = value?
+    return Result::Ok(payload)
+}
+
+func forward<T>(value: Result<T, Error>) returns Result<T, Error> {
+    let payload = preserve(value) ?
+    return Result::Ok(payload)
+}
+
+public func main() returns int {
+    let failure = error.new(
+        ErrorCode::NotFound,
+        "registro ausente",
+        "lookup",
+        "key=17",
+        "round7",
+        true,
+    )
+    let rejected: Result<int, Error> = Result::Err(failure)
+    let forwarded                    = forward(rejected)
+    if result.is_ok(forwarded) {
+        return 1
+    }
+    let carried = result.result_unwrap_err(forwarded)
+    if error.code(carried) != 1 or error.operation(carried) != "lookup" or error.context(carried) != "key=17" {
+        return 2
+    }
+
+    let accepted: Result<string, Error> = Result::Ok("héllo")
+    let returned                        = forward(accepted)
+    if result.is_err(returned) or result.result_unwrap(returned) != "héllo" {
+        return 3
+    }
+    return 0
+}

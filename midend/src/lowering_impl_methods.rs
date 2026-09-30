@@ -22,9 +22,13 @@ impl ASTLowering {
     ) {
         if self.alloca_map.get(name).is_some() && self.alloca_map.get_current(name).is_none() {
             let slot_type = match ty {
-                IRType::Int | IRType::Float | IRType::Bool | IRType::String | IRType::Char => {
-                    ty.clone()
-                }
+                IRType::Int
+                | IRType::Float
+                | IRType::ExactInt { .. }
+                | IRType::ExactFloat { .. }
+                | IRType::Bool
+                | IRType::String
+                | IRType::Char => ty.clone(),
                 _ => IRType::Int,
             };
             self.allocate_slot(func, name, slot_type);

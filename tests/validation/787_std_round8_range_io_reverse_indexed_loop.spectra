@@ -1,0 +1,45 @@
+module std_round8_range_io_reverse_indexed_loop
+
+import std.io as io
+import std.range as range
+
+public func main() returns int {
+    let values: Range = range.create(-2, 2, true)
+    if range.len(values) != 5 or range.at(values, 0) != -2 or range.at(values, 4) != 2 {
+        return 1
+    }
+
+    io.print("reverse:")
+    let index  = range.len(values) - 1
+    let visits = 0
+    let total  = 0
+    loop {
+        if index < 0 {
+            break
+        }
+        if visits > 0 {
+            io.print(",")
+        }
+        let value = range.at(values, index)
+        io.print(value)
+        total = total + value
+        visits = visits + 1
+        index = index - 1
+    }
+    io.println("")
+
+    let empty: Range = range.create(5, 1, false)
+    let empty_index  = range.len(empty) - 1
+    let empty_visits = 0
+    loop {
+        if empty_index < 0 {
+            break
+        }
+        empty_visits = empty_visits + 1
+        empty_index = empty_index - 1
+    }
+    if visits != 5 or total != 0 or index != -1 or empty_visits != 0 {
+        return 2
+    }
+    return 0
+}

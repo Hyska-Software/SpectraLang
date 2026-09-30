@@ -1,0 +1,47 @@
+module std_round8_numeric_checked_cast_edges
+
+import std.numeric as numeric
+
+public func main() returns int {
+    let signed_min_i8: i8   = numeric.checked_i8(-128)
+    let signed_max_i8: i8   = numeric.checked_i8(127)
+    let signed_min_i16: i16 = numeric.checked_i16(-32768)
+    let signed_max_i16: i16 = numeric.checked_i16(32767)
+    let signed_min_i32: i32 = numeric.checked_i32(-2147483648)
+    let signed_max_i32: i32 = numeric.checked_i32(2147483647)
+    let signed_min_i64: i64 = numeric.checked_i64(-9223372036854775807 - 1)
+    let signed_max_i64: i64 = numeric.checked_i64(9223372036854775807)
+    if signed_min_i8 as int != -128 or signed_max_i8 as int != 127 or
+    signed_min_i16 as int != -32768 or signed_max_i16 as int != 32767 {
+        return 1
+    }
+    if signed_min_i32 as int != -2147483648 or signed_max_i32 as int != 2147483647 or
+    signed_min_i64 as int != -9223372036854775807 - 1 or signed_max_i64 as int != 9223372036854775807 {
+        return 2
+    }
+
+    let unsigned_max_u8: u8   = numeric.checked_u8(255)
+    let unsigned_max_u16: u16 = numeric.checked_u16(65535)
+    let unsigned_max_u32: u32 = numeric.checked_u32(4294967295)
+    let unsigned_max_u64: u64 = numeric.checked_u64(9223372036854775807)
+    if unsigned_max_u8 as int != 255 or unsigned_max_u16 as int != 65535 or
+    unsigned_max_u32 as int != 4294967295 or unsigned_max_u64 as u64 != 9223372036854775807 as u64 {
+        return 3
+    }
+
+    let float_i16: i16 = numeric.checked_float_i16(-32768.0)
+    let float_i32: i32 = numeric.checked_float_i32(2147483647.0)
+    let float_i64: i64 = numeric.checked_float_i64(-9223372036854775808.0)
+    let float_u16: u16 = numeric.checked_float_u16(65535.0)
+    let float_u32: u32 = numeric.checked_float_u32(4294967295.0)
+    let float_u64: u64 = numeric.checked_float_u64(9223372036854774784.0)
+    if float_i16 as int != -32768 or float_i32 as int != 2147483647 or
+    float_i64 as int != -9223372036854775807 - 1 {
+        return 4
+    }
+    if float_u16 as int != 65535 or float_u32 as int != 4294967295 or
+    float_u64 != 9223372036854774784 as u64 {
+        return 5
+    }
+    return 0
+}

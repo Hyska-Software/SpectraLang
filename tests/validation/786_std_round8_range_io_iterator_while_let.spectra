@@ -1,0 +1,48 @@
+module std_round8_range_io_iterator_while_let
+
+from std.collections import Iterator
+import std.collections as collections
+import std.io as io
+import std.option as option
+import std.range as range
+
+public func main() returns int {
+    let values: Range         = range.create(0, 6, false)
+    let cursor: Iterator<int> = range.iter(values)
+    if collections.iterator_remaining(cursor) != 6 {
+        return 1
+    }
+
+    let reads = 0
+    let total = 0
+    while let Option::Some(value) = collections.iterator_next(cursor) {
+        reads = reads + 1
+        if value == 1 {
+            continue
+        }
+        if value == 2 {
+            io.println("pause")
+            break
+        }
+        io.println(value)
+        total = total + value
+    }
+    if reads != 3 or total != 0 or collections.iterator_remaining(cursor) != 3 {
+        return 2
+    }
+
+    while let Option::Some(value) = collections.iterator_next(cursor) {
+        reads = reads + 1
+        io.println(value)
+        total = total + value
+    }
+    if reads != 6 or total != 12 or collections.iterator_remaining(cursor) != 0 {
+        return 3
+    }
+    if option.is_some(collections.iterator_next(cursor)) {
+        return 4
+    }
+    collections.iterator_free(cursor)
+    io.println("done")
+    return 0
+}

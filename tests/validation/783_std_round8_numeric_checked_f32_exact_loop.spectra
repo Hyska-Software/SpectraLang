@@ -1,0 +1,30 @@
+module std_round8_numeric_checked_f32_exact_loop
+
+import std.numeric as numeric
+
+func narrow_exact(value: f64) returns f64 {
+    let narrowed: f32 = numeric.checked_f32(value)
+    return narrowed as f64
+}
+
+public func main() returns int {
+    let values: [f64]  = [0.0, -2.25, 16777216.0, 16777218.0, -16777216.0, 0.5]
+    let mut total: f64 = 0.0
+    for index in 0 .. 6 {
+        let value = values[index]
+        if narrow_exact(value) != value {
+            return index + 1
+        }
+        total = total + narrow_exact(value)
+    }
+    if total != 16777216.25 {
+        return 7
+    }
+
+    let exact_subnormal: f64    = 1.401298464324817e-45
+    let narrowed_subnormal: f32 = numeric.checked_f32(exact_subnormal)
+    if narrowed_subnormal as f64 != exact_subnormal {
+        return 8
+    }
+    return 0
+}

@@ -1,0 +1,25 @@
+module std_round8_range_io_closure_capture
+
+import std.io as io
+
+public func main() returns int {
+    let prefix                        = "square:"
+    let emitted                       = 0
+    let squares                       = 0
+    let render: func(int) returns int = | value: int | {
+        io.print(prefix)
+        io.println(value * value)
+        return value * value
+    }
+
+    for value in 1 ..= 4 {
+        emitted = emitted + 1
+        squares = squares + render(value)
+    }
+    if emitted != 4 or squares != 30 {
+        return 1
+    }
+    io.print("squares=")
+    io.println(squares)
+    return 0
+}

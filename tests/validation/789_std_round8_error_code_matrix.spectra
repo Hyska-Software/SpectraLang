@@ -1,0 +1,63 @@
+module std_round8_error_code_matrix
+
+from std.error import Error, ErrorCode
+import std.error as error
+
+func matches(problem: Error, expected: int, should_retry: bool) returns bool {
+    return error.code(problem) == expected and problem.code == expected and
+    error.retryable(problem) == should_retry and problem.retryable == should_retry
+}
+
+public func main() returns int {
+    let invalid = error.new(
+        ErrorCode::InvalidArgument,
+        "entrada inválida: ação",
+        "parse",
+        "índice=0",
+        "round7",
+        false,
+    )
+    let missing = error.new(ErrorCode::NotFound, "ausente", "read", "dados/α", "round7", true)
+    let denied = error.new(
+        ErrorCode::PermissionDenied,
+        "negado",
+        "open",
+        "segredo",
+        "round7",
+        false,
+    )
+    let io_error = error.new(ErrorCode::Io, "falha de E/S", "write", "saída", "round7", true)
+    let internal_problem = error.new(
+        ErrorCode::Internal,
+        "interno",
+        "dispatch",
+        "worker",
+        "round7",
+        true,
+    )
+    let unsupported_problem = error.new(
+        ErrorCode::Unsupported,
+        "não suportado",
+        "convert",
+        "tipo",
+        "round7",
+        false,
+    )
+
+    if not matches(invalid, 0, false) or not matches(missing, 1, true) {
+        return 1
+    }
+    if not matches(denied, 2, false) or not matches(io_error, 3, true) {
+        return 2
+    }
+    if not matches(internal_problem, 4, true) or not matches(unsupported_problem, 5, false) {
+        return 3
+    }
+    if error.message(invalid) != "entrada inválida: ação" or error.context(missing) != "dados/α" {
+        return 4
+    }
+    if error.operation(denied) != "open" or error.origin(io_error) != "round7" {
+        return 5
+    }
+    return 0
+}

@@ -1,0 +1,36 @@
+module std_round8_random_full_range_callback
+
+import std.random as random
+
+func fill_samples(values: [int], draw: func(int) returns int, count: int) {
+    for index in 0 .. count {
+        values[index] = draw(index)
+    }
+}
+
+public func main() returns int {
+    let minimum                     = -9223372036854775807 - 1
+    let maximum                     = 9223372036854775807
+    let draw: func(int) returns int = | index: int | {
+        if index % 2 == 0 {
+            return random.random_int(minimum, maximum)
+        }
+        return random.random_int(-17, 29)
+    }
+    let mut first: [int]  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut replay: [int] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+    random.random_seed(-556677)
+    fill_samples(first, draw, 16)
+    random.random_seed(-556677)
+    fill_samples(replay, draw, 16)
+
+    for index in 0 .. 16 {
+        let lower = if index % 2 == 0 { minimum} else {-17}
+        let upper = if index % 2 == 0 { maximum} else { 29}
+        if first[index] != replay[index] or first[index] < lower or first[index] >= upper {
+            return index + 1
+        }
+    }
+    return 0
+}

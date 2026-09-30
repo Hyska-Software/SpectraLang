@@ -1,0 +1,55 @@
+module std_round8_numeric_checked_loop_closures
+
+import std.numeric as numeric
+
+func repeat_i8(value: i8, step: func(i8) returns i8, count: int) returns i8 {
+    let mut current = value
+    for _ in 0 .. count {
+        current = step(current)
+    }
+    return current
+}
+
+func repeat_i16(value: i16, step: func(i16) returns i16, count: int) returns i16 {
+    let mut current = value
+    for _ in 0 .. count {
+        current = step(current)
+    }
+    return current
+}
+
+func repeat_i32(value: i32, step: func(i32) returns i32, count: int) returns i32 {
+    let mut current = value
+    for _ in 0 .. count {
+        current = step(current)
+    }
+    return current
+}
+
+public func main() returns int {
+    let add_one: func(i8) returns i8 = | value: i8 | numeric.checked_add_i8(value, 1 as i8)
+    let subtract_three: func(i16) returns i16 = | value: i16 | numeric.checked_sub_i16(value, 3 as i16)
+    let multiply_two: func(i32) returns i32 = | value: i32 | numeric.checked_mul_i32(value, 2 as i32)
+
+    if repeat_i8(100 as i8, add_one, 27) as int != 127 {
+        return 1
+    }
+    if repeat_i16(100 as i16, subtract_three, 30) as int != 10 {
+        return 2
+    }
+    if repeat_i32(3 as i32, multiply_two, 10) as int != 3072 {
+        return 3
+    }
+
+    let checked_unsigned_step: func(u16) returns u16 = | value: u16 | numeric.checked_add_u16(value, 5 as u16)
+    let mut unsigned = 200 as u16
+    let mut iteration = 0
+    while iteration < 11 {
+        unsigned = checked_unsigned_step(unsigned)
+        iteration = iteration + 1
+    }
+    if unsigned as int != 255 or iteration != 11 {
+        return 4
+    }
+    return 0
+}

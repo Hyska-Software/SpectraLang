@@ -1,0 +1,48 @@
+module std_round8_serve_input_error_adapter
+
+from std.error import Error, ErrorCode
+import std.convert as convert
+import std.error as error
+import std.result as result
+import std.serve as serve
+import std.string as string
+
+public func main() returns int {
+    serve.reset()
+    let server = serve.server_new(792)
+    if not serve.server_set_fallback(server, -792) or not serve.server_set_input_policy(server, 0, 10) {
+        return 1
+    }
+    if not serve.server_warmup(server) {
+        return 2
+    }
+
+    let blocked    = serve.server_enqueue(server, 11)
+    let diagnostic = serve.server_last_diagnostic(server)
+    if serve.server_result(server, blocked) != -792 or serve.server_pending(server) != 0 {
+        return 3
+    }
+    if not string.contains(diagnostic, "input") or not string.contains(diagnostic, "range") {
+        return 4
+    }
+
+    let problem = error.new(
+        ErrorCode::InvalidArgument,
+        "serving input was rejected",
+        "server_enqueue",
+        diagnostic,
+        "std.serve",
+        false
+    )
+    let mapped_input: Result<int, Error> = Result::Err(problem)
+    let label = result.result_map_err(
+        mapped_input,
+        | issue: Error | error.operation(issue) + ":" + convert.int_to_string(error.code(issue)) +
+            ":" + convert.bool_to_string(string.contains(error.context(issue), "range"))
+    )
+    if result.is_ok(label) or result.result_unwrap_err(label) != "server_enqueue:0:true" {
+        return 5
+    }
+    serve.reset()
+    return 0
+}

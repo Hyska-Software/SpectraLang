@@ -1112,6 +1112,145 @@ mod tests {
         );
     }
 
+    #[test]
+    fn promoted_mutable_exact_numeric_locals_keep_their_slot_types() {
+        let ir = lower_source(
+            r#"
+            module promoted_mutable_exact_numeric_locals
+
+            func repeat_i8(value: i8) returns i8 {
+                let mut current = value
+                for _ in 0 .. 2 {
+                    current = current + 1 as i8
+                }
+                return current
+            }
+
+            public func main() returns int {
+                let mut total: f64 = 0.0
+                for index in 0 .. 2 {
+                    total = total + index as f64
+                }
+
+                let mut shadow: i16 = 0 as i16
+                if true {
+                    let mut shadow: i16 = 1 as i16
+                    shadow = shadow + 1 as i16
+                }
+                return repeat_i8(1 as i8) as int + total as int + shadow as int
+            }
+            "#,
+        );
+
+        let mut saw_i8_slot = false;
+        let mut saw_f64_slot = false;
+        let mut i16_slots = 0;
+        for function in &ir.functions {
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    let crate::ir::InstructionKind::Alloca { ty, .. } = &instruction.kind else {
+                        continue;
+                    };
+                    match ty {
+                        IRType::ExactInt {
+                            signed: true,
+                            width: crate::ir::IntWidth::I8,
+                        } => saw_i8_slot = true,
+                        IRType::ExactInt {
+                            signed: true,
+                            width: crate::ir::IntWidth::I16,
+                        } => i16_slots += 1,
+                        IRType::ExactFloat {
+                            width: crate::ir::FloatWidth::F64,
+                        } => saw_f64_slot = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_i8_slot,
+            "promoted i8 local did not get an i8 slot:\n{}",
+            crate::ir::pretty::format_module(&ir)
+        );
+        assert!(
+            saw_f64_slot,
+            "promoted f64 local did not get an f64 slot:\n{}",
+            crate::ir::pretty::format_module(&ir)
+        );
+        assert!(
+            i16_slots >= 2,
+            "shadowed mutable i16 locals need distinct typed slots, found {i16_slots}:\n{}",
+            crate::ir::pretty::format_module(&ir)
+        );
+    }
+
+    #[test]
+    fn qualified_stdlib_arguments_do_not_inherit_the_result_annotation() {
+        let ir = lower_source(
+            r#"
+            module qualified_stdlib_argument_context
+            import std.numeric as numeric
+
+            public func main() returns int {
+                let narrow: i16 = numeric.checked_float_i16(-1.0)
+                let wide: i64 = numeric.checked_float_i64(-2.0)
+                return narrow as int + wide as int
+            }
+            "#,
+        );
+
+        let pretty = crate::ir::pretty::format_module(&ir);
+        assert!(
+            pretty.contains("spectra.std.numeric.checked_float_i16"),
+            "the i16 checked-float host call must remain in the IR:\n{pretty}"
+        );
+        assert!(
+            pretty.contains("spectra.std.numeric.checked_float_i64"),
+            "the i64 checked-float host call must remain in the IR:\n{pretty}"
+        );
+
+        let main = ir
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main must be lowered");
+        let is_float_constant = |value: crate::ir::Value| {
+            main.blocks
+                .iter()
+                .flat_map(|block| block.instructions.iter())
+                .any(|producer| {
+                    matches!(
+                        &producer.kind,
+                        crate::ir::InstructionKind::ConstFloat { result, .. }
+                            | crate::ir::InstructionKind::ConstFloatTyped { result, .. }
+                            if result.id == value.id
+                    )
+                })
+        };
+        let mut negated_float_count = 0;
+        for instruction in main
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+        {
+            let crate::ir::InstructionKind::Sub { lhs, rhs, .. } = &instruction.kind else {
+                continue;
+            };
+            if is_float_constant(*rhs) {
+                assert!(
+                    is_float_constant(*lhs),
+                    "float literal negation must use a float zero, not an integer zero:\n{pretty}"
+                );
+                negated_float_count += 1;
+            }
+        }
+        assert_eq!(
+            negated_float_count, 2,
+            "each negative float argument must lower with float operands:\n{pretty}"
+        );
+    }
+
     /// The per-category lowering helpers used to `unreachable!`-panic on an
     /// out-of-category AST node. They must record a `MidendError` (through
     /// `ASTLowering::error`/`invalid_value`) and hand back the internal

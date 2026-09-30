@@ -1,0 +1,39 @@
+module std_round8_range_io_break_continue
+
+import std.io as io
+import std.range as range
+
+public func main() returns int {
+    let candidates = 1 ..= 9
+    if range.len(candidates) != 9 or range.start(candidates) != 1 or
+    range.end(candidates) != 9 or range.is_inclusive(candidates) != true {
+        return 1
+    }
+
+    io.print("odd:")
+    io.flush()
+    let visits  = 0
+    let emitted = 0
+    let total   = 0
+    for value in candidates {
+        visits = visits + 1
+        if value % 2 == 0 {
+            continue
+        }
+        if emitted > 0 {
+            io.print(",")
+        }
+        io.print(value)
+        emitted = emitted + 1
+        total = total + value
+        if value == 7 {
+            break
+        }
+    }
+    io.println("!")
+
+    if visits != 7 or emitted != 4 or total != 16 {
+        return 2
+    }
+    return 0
+}
