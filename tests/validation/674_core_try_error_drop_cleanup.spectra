@@ -1,0 +1,47 @@
+module core_try_error_drop_cleanup
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+enum Fault {
+    Denied(int),
+}
+
+func add_one(value: Result<int, Fault>) returns Result<int, Fault> {
+    let token  = Token { id: 1 }
+    let number = value?
+    return Result::Ok(number + 1)
+}
+
+public func main() returns int {
+    DROPS = 0
+    let rejected      = add_one(Result::Err(Fault::Denied(17)))
+    let rejected_code = match rejected {
+        when Result::Err(Fault::Denied(code)) then code,
+        when Result::Ok(_) then -1,
+        when Result::Err(_) then -2
+    }
+    if rejected_code != 17 or DROPS != 1 {
+        return 1
+    }
+
+    DROPS = 0
+    let accepted       = add_one(Result::Ok(8))
+    let accepted_value = match accepted {
+        when Result::Ok(number) then number,
+        when Result::Err(_) then -1
+    }
+    if accepted_value != 9 or DROPS != 1 {
+        return 2
+    }
+    return 0
+}

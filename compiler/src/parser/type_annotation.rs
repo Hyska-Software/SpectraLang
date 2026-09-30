@@ -224,7 +224,7 @@ impl Parser {
     ///
     /// Heuristic: scan forward to find the matching `>`, then check that the
     /// token immediately after it is one that can legally follow a type annotation
-    /// (`{`, `}`, `=`, `,`, `)`, `]`, `;`, `->`, or EOF).
+    /// (`{`, `}`, `=`, `,`, `)`, `]`, `|`, `;`, `->`, or EOF).
     fn looks_like_type_args_in_annotation(&self) -> bool {
         if !self.check_symbol('<') {
             return false;
@@ -249,6 +249,7 @@ impl Parser {
                             | TokenKind::Symbol('=')    // let binding
                             | TokenKind::Symbol(',')    // parameter / field separator
                             | TokenKind::Symbol(')')    // end of parameter list / tuple
+                            | TokenKind::Symbol('|')    // end of closure parameter list
                             | TokenKind::Symbol(']')    // array element type
                             | TokenKind::Symbol(';')    // statement terminator
                             | TokenKind::Symbol('[') // array index after type

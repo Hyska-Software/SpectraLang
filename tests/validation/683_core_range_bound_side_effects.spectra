@@ -1,0 +1,34 @@
+module core_range_bound_side_effects
+
+static START_CALLS: int = 0
+static END_CALLS: int = 0
+
+func range_start() returns int {
+    START_CALLS = START_CALLS + 1
+    return 2
+}
+
+func range_end() returns int {
+    END_CALLS = END_CALLS + 1
+    return 5
+}
+
+func sum_range() returns int {
+    let total = 0
+    for value in range_start() .. range_end() {
+        total = total + value
+    }
+    return total
+}
+
+public func main() returns int {
+    START_CALLS = 0
+    END_CALLS = 0
+    if sum_range() != 9 {
+        return 1
+    }
+    if START_CALLS != 1 or END_CALLS != 1 {
+        return 2
+    }
+    return 0
+}

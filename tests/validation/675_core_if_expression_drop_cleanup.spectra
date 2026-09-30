@@ -1,0 +1,34 @@
+module core_if_expression_drop_cleanup
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+func choose(flag: bool) returns int {
+    return if flag {
+        let token = Token { id: 1 }
+        11
+    } else {
+        let token = Token { id: 2 }
+        22
+    }
+}
+
+public func main() returns int {
+    DROPS = 0
+    if choose( true) != 11 or DROPS != 1 {
+        return 1
+    }
+    if choose( false) != 22 or DROPS != 2 {
+        return 2
+    }
+    return 0
+}

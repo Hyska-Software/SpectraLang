@@ -330,6 +330,7 @@ impl StructScopeStack {
 struct LoopContext {
     header_block: usize,
     exit_block: usize,
+    scope_depth: usize,
 }
 
 #[derive(Clone)]

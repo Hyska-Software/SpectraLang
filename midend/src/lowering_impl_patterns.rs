@@ -1,6 +1,213 @@
 use super::*;
 
 impl ASTLowering {
+    fn lower_named_variant_or_pattern_bindings(
+        &mut self,
+        patterns: &[spectra_compiler::ast::Pattern],
+        scrutinee: Value,
+        scrutinee_enum: Option<&str>,
+        scrutinee_type: Option<&IRType>,
+        ir_func: &mut IRFunction,
+    ) -> bool {
+        use spectra_compiler::ast::Pattern;
+
+        if patterns.len() < 2 {
+            return false;
+        }
+
+        let enum_name =
+            scrutinee_enum.or_else(|| scrutinee_type.and_then(|ty| self.ir_nominal_name(ty)));
+        let Some(enum_name) = enum_name else {
+            return false;
+        };
+
+        let variants = self
+            .enum_variants_from_ir_type(scrutinee_type)
+            .or_else(|| self.enum_definitions.get(enum_name).cloned());
+        let Some(variants) = variants else {
+            return false;
+        };
+
+        let mut alternatives = Vec::with_capacity(patterns.len());
+        let mut seen_tags = HashSet::new();
+        for pattern in patterns {
+            let Pattern::EnumVariant {
+                variant_name,
+                data: None,
+                struct_data: Some(named_patterns),
+                ..
+            } = pattern
+            else {
+                return false;
+            };
+            let Some((_, tag, Some(_))) = variants.iter().find(|(name, _, _)| name == variant_name)
+            else {
+                return false;
+            };
+            if !seen_tags.insert(*tag)
+                || self
+                    .reorder_named_variant_patterns(enum_name, variant_name, named_patterns)
+                    .is_none()
+            {
+                // A variant tag identifies one alternative only when every
+                // alternative has a distinct, known named-payload layout.
+                return false;
+            }
+            alternatives.push((pattern, *tag as i64));
+        }
+
+        fn collect_binding_names(pattern: &Pattern, names: &mut Vec<String>) {
+            match pattern {
+                Pattern::Identifier(name, _) => {
+                    if !names.contains(name) {
+                        names.push(name.clone());
+                    }
+                }
+                Pattern::Tuple(elements) => {
+                    for element in elements {
+                        collect_binding_names(element, names);
+                    }
+                }
+                Pattern::Struct { fields, .. } => {
+                    for (_, field_pattern) in fields {
+                        collect_binding_names(field_pattern, names);
+                    }
+                }
+                Pattern::EnumVariant {
+                    data, struct_data, ..
+                } => {
+                    if let Some(patterns) = data {
+                        for pattern in patterns {
+                            collect_binding_names(pattern, names);
+                        }
+                    }
+                    if let Some(fields) = struct_data {
+                        for (_, pattern) in fields {
+                            collect_binding_names(pattern, names);
+                        }
+                    }
+                }
+                Pattern::Or(patterns) => {
+                    if let Some(first) = patterns.first() {
+                        collect_binding_names(first, names);
+                    }
+                }
+                Pattern::Wildcard(_) | Pattern::Literal(_) => {}
+            }
+        }
+
+        let mut binding_names = Vec::new();
+        collect_binding_names(alternatives[0].0, &mut binding_names);
+        if binding_names.is_empty() {
+            return false;
+        }
+
+        let zero = self.builder.build_const_int(ir_func, 0);
+        let tag_ptr = self
+            .builder
+            .build_getelementptr(ir_func, scrutinee, zero, IRType::Int);
+        let tag_value = self.builder.build_load(ir_func, tag_ptr);
+        let merge_block = ir_func.add_block("or_pattern.bindings.merge");
+        let mut incoming: Vec<Vec<(Value, usize, IRType)>> =
+            binding_names.iter().map(|_| Vec::new()).collect();
+        let mut next_check = None;
+
+        for (index, (pattern, expected_tag)) in alternatives.iter().enumerate() {
+            let binding_block = ir_func.add_block(format!("or_pattern.bindings.{index}"));
+            if index + 1 < alternatives.len() {
+                let next_block =
+                    ir_func.add_block(format!("or_pattern.bindings.check.{}", index + 1));
+                let expected_tag_value = self.builder.build_const_int(ir_func, *expected_tag);
+                let matches_tag = self
+                    .builder
+                    .build_eq(ir_func, tag_value, expected_tag_value);
+                self.builder
+                    .build_cond_branch(ir_func, matches_tag, binding_block, next_block);
+                next_check = Some(next_block);
+            } else {
+                self.builder.build_branch(ir_func, binding_block);
+            }
+
+            self.builder.set_current_block(binding_block);
+            self.value_map.push_scope();
+            self.alloca_map.push_scope();
+            self.variable_types.push_scope();
+            self.array_map.push_scope();
+            self.range_map.push_scope();
+            self.struct_var_map.push_scope();
+
+            self.lower_pattern_bindings(
+                pattern,
+                scrutinee,
+                Some(enum_name),
+                scrutinee_type,
+                ir_func,
+            );
+
+            let binding_exit = self.builder.get_current_block().unwrap_or(binding_block);
+            for (binding_index, name) in binding_names.iter().enumerate() {
+                match (
+                    self.value_map.get_current(name),
+                    self.variable_types.get(name),
+                ) {
+                    (Some(value), Some(ty)) => {
+                        incoming[binding_index].push((value, binding_exit, ty))
+                    }
+                    _ => self.error(format!(
+                        "OR-pattern alternative did not lower binding '{}'",
+                        name
+                    )),
+                }
+            }
+
+            self.builder.build_branch(ir_func, merge_block);
+            self.struct_var_map.pop_scope();
+            self.range_map.pop_scope();
+            self.array_map.pop_scope();
+            self.variable_types.pop_scope();
+            self.alloca_map.pop_scope();
+            self.value_map.pop_scope();
+
+            if let Some(next_check) = next_check.take() {
+                self.builder.set_current_block(next_check);
+            }
+        }
+
+        self.builder.set_current_block(merge_block);
+        for (name, alternatives) in binding_names.into_iter().zip(incoming) {
+            let Some((first_value, _, binding_type)) = alternatives.first().cloned() else {
+                continue;
+            };
+            if alternatives
+                .iter()
+                .any(|(_, _, alternative_type)| alternative_type != &binding_type)
+            {
+                self.error(format!(
+                    "OR-pattern binding '{}' has incompatible types across variants",
+                    name
+                ));
+                continue;
+            }
+
+            let value = if alternatives.len() == 1 {
+                first_value
+            } else {
+                self.builder.build_phi(
+                    ir_func,
+                    alternatives
+                        .iter()
+                        .map(|(value, block, _)| (*value, *block))
+                        .collect(),
+                )
+            };
+            self.bind_scoped_value(ir_func, &name, &binding_type, value);
+            self.value_map.insert(name.clone(), value);
+            self.variable_types.insert(name, binding_type);
+        }
+
+        true
+    }
+
     /// Extrai valores do scrutinee e cria bindings locais de acordo com o pattern
     pub(crate) fn lower_pattern_bindings(
         &mut self,
@@ -178,6 +385,15 @@ impl ASTLowering {
                 }
             }
             Pattern::Or(patterns) => {
+                if self.lower_named_variant_or_pattern_bindings(
+                    patterns,
+                    scrutinee,
+                    scrutinee_enum,
+                    scrutinee_type,
+                    ir_func,
+                ) {
+                    return;
+                }
                 if let Some(first) = patterns.first() {
                     self.lower_pattern_bindings(
                         first,

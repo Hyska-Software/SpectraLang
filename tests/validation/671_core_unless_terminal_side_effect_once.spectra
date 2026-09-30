@@ -1,0 +1,43 @@
+module core_unless_terminal_side_effect_once
+
+static COUNTER: int = 0
+
+func next_value() returns int {
+    COUNTER = COUNTER + 1
+    COUNTER
+}
+
+func early_return_unless(condition: bool) returns int {
+    return unless condition {
+        return 31
+    } else {
+        42
+    }
+}
+
+public func main() returns int {
+    COUNTER = 0
+
+    let then_value = unless false {
+        next_value()
+    } else {
+        99
+    }
+    if then_value != 1 or COUNTER != 1 {
+        return 1
+    }
+
+    let else_value = unless true {
+        99
+    } else {
+        next_value()
+    }
+    if else_value != 2 or COUNTER != 2 {
+        return 2
+    }
+    if early_return_unless( true) != 42 or early_return_unless( false) != 31 {
+        return 3
+    }
+
+    return 0
+}

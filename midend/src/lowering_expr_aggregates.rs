@@ -35,6 +35,7 @@ impl ASTLowering {
 
                 let mut phi_inputs: Vec<(Value, usize)> = Vec::new();
                 let mut merge_has_predecessor = first_false_bb == merge_bb;
+                let mut merge_predecessor_count = if first_false_bb == merge_bb { 1 } else { 0 };
 
                 self.builder.set_current_block(then_bb);
                 let (then_value, then_final_block, then_has_terminator) =
@@ -49,6 +50,7 @@ impl ASTLowering {
                 if !then_has_terminator {
                     self.builder.build_branch(ir_func, merge_bb);
                     merge_has_predecessor = true;
+                    merge_predecessor_count += 1;
                 }
 
                 let mut current_false_block = first_false_bb;
@@ -75,6 +77,7 @@ impl ASTLowering {
 
                     if next_false_block == merge_bb {
                         merge_has_predecessor = true;
+                        merge_predecessor_count += 1;
                     }
 
                     self.builder.set_current_block(elif_body_block);
@@ -90,6 +93,7 @@ impl ASTLowering {
                     if !elif_has_terminator {
                         self.builder.build_branch(ir_func, merge_bb);
                         merge_has_predecessor = true;
+                        merge_predecessor_count += 1;
                     }
 
                     current_false_block = next_false_block;
@@ -109,17 +113,21 @@ impl ASTLowering {
                     if !else_has_terminator {
                         self.builder.build_branch(ir_func, merge_bb);
                         merge_has_predecessor = true;
+                        merge_predecessor_count += 1;
                     }
                 } else if current_false_block != merge_bb {
                     self.builder.set_current_block(current_false_block);
                     self.builder.build_branch(ir_func, merge_bb);
                     merge_has_predecessor = true;
+                    merge_predecessor_count += 1;
                 }
 
                 if merge_has_predecessor {
                     self.builder.set_current_block(merge_bb);
                     if phi_inputs.len() >= 2 {
                         self.builder.build_phi(ir_func, phi_inputs)
+                    } else if phi_inputs.len() == 1 && merge_predecessor_count == 1 {
+                        phi_inputs[0].0
                     } else {
                         self.builder.build_const_int(ir_func, 0)
                     }
@@ -148,86 +156,50 @@ impl ASTLowering {
                 self.builder
                     .build_cond_branch(ir_func, cond_value, unless_else_bb, unless_then_bb);
 
-                // Unless body (executes when condition is false)
+                // Unless body (executes when condition is false).
                 self.builder.set_current_block(unless_then_bb);
-                let mut unless_value = None;
-                self.lower_block(&then_block.statements, ir_func);
-                if let Some(Statement {
-                    kind: StatementKind::Expression(expr),
-                    ..
-                }) = then_block.statements.last()
-                {
-                    unless_value = Some(self.lower_expression(expr, ir_func));
-                }
-                let unless_then_final = self.builder.get_current_block().unwrap_or(unless_then_bb);
-
-                // Only add branch if block doesn't have terminator
-                if let Some(block) = ir_func.get_block_mut(unless_then_final) {
-                    if block.terminator.is_none() {
-                        self.builder.build_branch(ir_func, unless_merge_bb);
-                    }
+                let (unless_value, unless_then_final, then_has_terminator) =
+                    self.lower_branch_block_result(then_block, ir_func, unless_then_bb);
+                if !then_has_terminator {
+                    self.builder.build_branch(ir_func, unless_merge_bb);
                 }
 
-                // Else branch (executes when condition is true)
+                // Else branch (executes when the condition is true).
                 self.builder.set_current_block(unless_else_bb);
-                let mut unless_else_value = None;
-                if let Some(else_body) = else_block {
-                    self.lower_block(&else_body.statements, ir_func);
-                    if let Some(Statement {
-                        kind: StatementKind::Expression(expr),
-                        ..
-                    }) = else_body.statements.last()
-                    {
-                        unless_else_value = Some(self.lower_expression(expr, ir_func));
-                    }
-                }
-                let unless_else_final = self.builder.get_current_block().unwrap_or(unless_else_bb);
-
-                // Check if else block has terminator
-                let else_has_terminator = if let Some(block) = ir_func.get_block(unless_else_final)
-                {
-                    block.terminator.is_some()
-                } else {
-                    false
-                };
-
-                // Only add branch if block doesn't have terminator
-                if !else_has_terminator {
-                    if let Some(block) = ir_func.get_block_mut(unless_else_final) {
-                        if block.terminator.is_none() {
-                            self.builder.build_branch(ir_func, unless_merge_bb);
-                        }
-                    }
-                }
-
-                // Check if then block has terminator
-                let then_has_terminator = if let Some(block) = ir_func.get_block(unless_then_final)
-                {
-                    block.terminator.is_some()
-                } else {
-                    false
-                };
-
-                // Only use merge block if at least one branch reaches it
-                if !then_has_terminator || !else_has_terminator {
-                    // Merge block with PHI node
-                    self.builder.set_current_block(unless_merge_bb);
-
-                    // If both branches produce values, create PHI node
-                    if let (Some(then_val), Some(else_val)) = (unless_value, unless_else_value) {
-                        self.builder.build_phi(
-                            ir_func,
-                            vec![(then_val, unless_then_final), (else_val, unless_else_final)],
-                        )
+                let (unless_else_value, unless_else_final, else_has_terminator) =
+                    if let Some(else_body) = else_block {
+                        self.lower_branch_block_result(else_body, ir_func, unless_else_bb)
                     } else {
-                        // No value produced (void)
-                        self.builder.build_const_int(ir_func, 0)
-                    }
-                } else {
-                    // Both branches have terminators (returns), merge block is unreachable.
+                        (None, unless_else_bb, false)
+                    };
+                if !else_has_terminator {
+                    self.builder.build_branch(ir_func, unless_merge_bb);
+                }
+
+                if then_has_terminator && else_has_terminator {
                     self.builder.set_current_block(unless_merge_bb);
                     self.builder.build_unreachable(ir_func);
                     self.builder.build_const_int(ir_func, 0)
+                } else {
+                    self.builder.set_current_block(unless_merge_bb);
+                    let mut phi_inputs = Vec::new();
+                    if !then_has_terminator {
+                        if let Some(value) = unless_value {
+                            phi_inputs.push((value, unless_then_final));
+                        }
+                    }
+                    if !else_has_terminator {
+                        if let Some(value) = unless_else_value {
+                            phi_inputs.push((value, unless_else_final));
+                        }
+                    }
+                    if phi_inputs.len() >= 2 {
+                        self.builder.build_phi(ir_func, phi_inputs)
+                    } else if phi_inputs.len() == 1 && then_has_terminator != else_has_terminator {
+                        phi_inputs[0].0
+                    } else {
+                        self.builder.build_const_int(ir_func, 0)
+                    }
                 }
             }
             ExpressionKind::Grouping(inner) => self.lower_expression(inner, ir_func),

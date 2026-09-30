@@ -252,15 +252,35 @@ impl ASTLowering {
                     );
                 }
             }
-            // A variant with data is laid out as `(tag, data...)`; only the
-            // variant the tag names holds a live payload, and every other slot
-            // is zeroed or a scalar, which `spectra_rt_manual_escape` ignores.
+            // A variant with data is laid out as `(tag, data...)`. Payload
+            // slots are shared, so inspect only the fields selected by the
+            // runtime tag before recursively walking aggregate pointers.
             IRType::Enum { variants, .. } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
-                for (_, data_types) in variants {
+                let tag_ptr = self.builder.build_field_ptr(ir_func, value, 0);
+                let tag = self
+                    .builder
+                    .build_load_typed(ir_func, tag_ptr, IRType::Int);
+                let done_block = ir_func.add_block("enum_escape_done");
+                for (variant_index, (_, data_types)) in variants.iter().enumerate() {
                     let Some(data_types) = data_types else {
                         continue;
                     };
+
+                    let current_variant = ir_func.add_block("enum_escape_variant");
+                    let next_variant = ir_func.add_block("enum_escape_next");
+                    let expected_tag =
+                        self.builder
+                            .build_const_int(ir_func, variant_index as i64);
+                    let is_active = self.builder.build_eq(ir_func, tag, expected_tag);
+                    self.builder.build_cond_branch(
+                        ir_func,
+                        is_active,
+                        current_variant,
+                        next_variant,
+                    );
+                    self.builder.set_current_block(current_variant);
+
                     let mut element_types = vec![IRType::Int];
                     element_types.extend(data_types.iter().cloned());
                     let layout = layout::layout_of(element_types.iter());
@@ -292,7 +312,14 @@ impl ASTLowering {
                             );
                         }
                     }
+
+                    if !self.current_block_is_terminated(ir_func) {
+                        self.builder.build_branch(ir_func, done_block);
+                    }
+                    self.builder.set_current_block(next_variant);
                 }
+                self.builder.build_branch(ir_func, done_block);
+                self.builder.set_current_block(done_block);
             }
             // A generic application is an alias for its representation
             // (`Option<string>` -> an enum whose data is a string): the
@@ -343,10 +370,20 @@ impl ASTLowering {
         ir_func: &mut IRFunction,
         skipped_names: &HashSet<String>,
     ) {
+        self.emit_scope_drops_to_depth(ir_func, skipped_names, 0);
+    }
+
+    pub(crate) fn emit_scope_drops_to_depth(
+        &mut self,
+        ir_func: &mut IRFunction,
+        skipped_names: &HashSet<String>,
+        scope_depth: usize,
+    ) {
         let scopes: Vec<Vec<(String, Value, String)>> = self
             .struct_var_map
             .scopes
             .iter()
+            .skip(scope_depth)
             .rev()
             .map(|scope| {
                 scope
@@ -1047,6 +1084,20 @@ impl ASTLowering {
             .get_block(current_block_id)
             .map(|block| block.terminator.is_some())
             .unwrap_or(false);
+
+        if !has_terminator {
+            let mut skipped_names = HashSet::new();
+            if let Some(last) = stmts.last() {
+                if let StatementKind::Expression(expr) = &last.kind {
+                    Self::collect_moved_identifiers(expr, &mut skipped_names);
+                    if let Some(value) = produced_value {
+                        let value_type = self.infer_expr_ir_type(expr);
+                        self.emit_escape_for_value(value, &value_type, ir_func);
+                    }
+                }
+            }
+            self.emit_scope_drops(ir_func, &skipped_names);
+        }
 
         self.struct_var_map.pop_scope();
         self.array_map.pop_scope();

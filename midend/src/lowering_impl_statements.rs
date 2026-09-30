@@ -486,9 +486,11 @@ impl ASTLowering {
                     .build_cond_branch(ir_func, condition, body_block, exit_block);
 
                 // Body (push loop context for break/continue)
+                let scope_depth = self.struct_var_map.scopes.len();
                 self.loop_stack.push(LoopContext {
                     header_block,
                     exit_block,
+                    scope_depth,
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&while_stmt.body.statements, ir_func);
@@ -509,9 +511,11 @@ impl ASTLowering {
                 self.builder.build_branch(ir_func, body_block);
 
                 // Body (push loop context for break/continue)
+                let scope_depth = self.struct_var_map.scopes.len();
                 self.loop_stack.push(LoopContext {
                     header_block,
                     exit_block,
+                    scope_depth,
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&do_while.body.statements, ir_func);
@@ -541,9 +545,11 @@ impl ASTLowering {
 
                 // Body (infinite loop - needs break to exit)
                 // Use body_block as header since it's the loop entry point
+                let scope_depth = self.struct_var_map.scopes.len();
                 self.loop_stack.push(LoopContext {
                     header_block: body_block,
                     exit_block,
+                    scope_depth,
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&loop_stmt.body.statements, ir_func);
@@ -637,7 +643,8 @@ impl ASTLowering {
             }
             StatementKind::Break => {
                 // Branch to the exit block of the innermost loop
-                if let Some(loop_ctx) = self.loop_stack.last() {
+                if let Some(loop_ctx) = self.loop_stack.last().cloned() {
+                    self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), loop_ctx.scope_depth);
                     self.builder.build_branch(ir_func, loop_ctx.exit_block);
                 } else {
                     // Break outside of loop - error, but generate unreachable
@@ -650,7 +657,8 @@ impl ASTLowering {
             }
             StatementKind::Continue => {
                 // Branch to the header block of the innermost loop
-                if let Some(loop_ctx) = self.loop_stack.last() {
+                if let Some(loop_ctx) = self.loop_stack.last().cloned() {
+                    self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), loop_ctx.scope_depth);
                     self.builder.build_branch(ir_func, loop_ctx.header_block);
                 } else {
                     // Continue outside of loop - error, but generate unreachable
@@ -681,7 +689,7 @@ impl ASTLowering {
 
                 // Create basic blocks
                 let then_blk = ir_func.add_block("if_let.then");
-                let exit_blk = ir_func.add_block("if_let.exit");
+                let exit_blk = ir_func.add_block("if_let.merge");
                 let else_blk_opt = else_block
                     .as_ref()
                     .map(|_| ir_func.add_block("if_let.else"));
@@ -700,6 +708,7 @@ impl ASTLowering {
 
                 // --- Then block ---
                 self.builder.set_current_block(then_blk);
+                let scope_depth = self.struct_var_map.scopes.len();
                 // Push an inner scope for the pattern bindings
                 self.value_map.push_scope();
                 self.alloca_map.push_scope();
@@ -717,6 +726,10 @@ impl ASTLowering {
                 );
                 // lower_block creates its own inner scope; bindings remain visible via scope search
                 self.lower_block(&then_block.statements, ir_func);
+                let then_terminated = self.current_block_is_terminated(ir_func);
+                if !then_terminated {
+                    self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+                }
 
                 self.struct_var_map.pop_scope();
                 self.array_map.pop_scope();
@@ -725,31 +738,30 @@ impl ASTLowering {
                 self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
 
-                let cur = self.builder.get_current_block().unwrap_or(then_blk);
-                let terminated = ir_func
-                    .get_block(cur)
-                    .map(|b| b.terminator.is_some())
-                    .unwrap_or(false);
-                if !terminated {
+                if !then_terminated {
                     self.builder.build_branch(ir_func, exit_blk);
                 }
 
                 // --- Else block (optional) ---
+                let mut else_terminated = false;
                 if let (Some(else_b), Some(else_blk)) = (else_block, else_blk_opt) {
                     self.builder.set_current_block(else_blk);
                     self.lower_block(&else_b.statements, ir_func);
                     let cur = self.builder.get_current_block().unwrap_or(else_blk);
-                    let terminated = ir_func
+                    else_terminated = ir_func
                         .get_block(cur)
                         .map(|b| b.terminator.is_some())
                         .unwrap_or(false);
-                    if !terminated {
+                    if !else_terminated {
                         self.builder.build_branch(ir_func, exit_blk);
                     }
                 }
 
                 // --- Exit block ---
                 self.builder.set_current_block(exit_blk);
+                if else_blk_opt.is_some() && then_terminated && else_terminated {
+                    self.builder.build_unreachable(ir_func);
+                }
             }
             StatementKind::WhileLet(WhileLetStatement {
                 pattern,
@@ -788,9 +800,11 @@ impl ASTLowering {
 
                 // --- Body block ---
                 // Register loop so that break/continue work correctly
+                let scope_depth = self.struct_var_map.scopes.len();
                 self.loop_stack.push(LoopContext {
                     header_block,
                     exit_block,
+                    scope_depth,
                 });
                 self.builder.set_current_block(body_block);
 
@@ -812,6 +826,9 @@ impl ASTLowering {
                     ir_func,
                 );
                 self.lower_block(&body.statements, ir_func);
+                if !self.current_block_is_terminated(ir_func) {
+                    self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+                }
 
                 self.struct_var_map.pop_scope();
                 self.array_map.pop_scope();

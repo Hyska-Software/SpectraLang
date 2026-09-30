@@ -1,0 +1,24 @@
+module core_switch_no_matching_case
+
+func select(value: int) returns int {
+    let result = 50
+    switch value {
+        case 1: {
+            result = 10
+        }
+        case 2: {
+            result = 20
+        }
+    }
+    return result + 1
+}
+
+public func main() returns int {
+    if select(1) != 11 {
+        return 1
+    }
+    if select(9) != 51 {
+        return 2
+    }
+    return 0
+}

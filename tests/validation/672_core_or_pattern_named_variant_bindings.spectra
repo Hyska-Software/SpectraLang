@@ -1,0 +1,26 @@
+module core_or_pattern_named_variant_bindings
+
+enum Event {
+    Left { pad: int, value: int },
+    Right { value: int, pad: int },
+    Empty,
+}
+
+func payload(event: Event) returns int {
+    return match event {
+        when Event::Left { pad: padding, value } | Event::Right { pad: padding, value } then {
+            padding * 100 + value
+        },
+        when Event::Empty then 0
+    }
+}
+
+public func main() returns int {
+    if payload(Event::Left { pad: 9, value: 41 }) != 941 {
+        return 1
+    }
+    if payload(Event::Right { value: 42, pad: 7 }) != 742 {
+        return 2
+    }
+    return 0
+}

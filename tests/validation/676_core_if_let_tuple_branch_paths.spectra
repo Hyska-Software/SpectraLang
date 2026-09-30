@@ -1,0 +1,30 @@
+module core_if_let_tuple_branch_paths
+
+static CALLS: int = 0
+
+func produce(flag: bool) returns(bool, int, int) {
+    CALLS = CALLS + 1
+    if flag {
+        return( true, 3, 4)
+    }
+    return( false, 5, 6)
+}
+
+func select(flag: bool) returns int {
+    if let( true, left, right) = produce(flag) {
+        return left * 10 + right
+    } else {
+        return-1
+    }
+}
+
+public func main() returns int {
+    CALLS = 0
+    if select( true) != 34 or CALLS != 1 {
+        return 1
+    }
+    if select( false) != -1 or CALLS != 2 {
+        return 2
+    }
+    return 0
+}

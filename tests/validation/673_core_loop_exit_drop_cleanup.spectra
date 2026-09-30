@@ -1,0 +1,56 @@
+module core_loop_exit_drop_cleanup
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+func range_paths() returns int {
+    let visits = 0
+    for index in 0 .. 3 {
+        let token = Token { id: index }
+        visits = visits + 1
+        if index == 0 {
+            continue
+        }
+        if index == 2 {
+            break
+        }
+    }
+    return visits
+}
+
+func while_paths() returns int {
+    let index = 0
+    while index < 3 {
+        let token = Token { id: index }
+        index = index + 1
+        if index == 1 {
+            continue
+        }
+        if index == 3 {
+            break
+        }
+    }
+    return index
+}
+
+public func main() returns int {
+    DROPS = 0
+    if range_paths() != 3 or DROPS != 3 {
+        return 1
+    }
+
+    DROPS = 0
+    if while_paths() != 3 or DROPS != 3 {
+        return 2
+    }
+    return 0
+}

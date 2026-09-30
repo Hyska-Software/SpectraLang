@@ -95,6 +95,11 @@ impl ASTLowering {
 
                 // Err branch: early return the error result pointer
                 self.builder.set_current_block(err_block);
+                let result_type = self.infer_expr_ir_type(inner);
+                let mut skipped_names = HashSet::new();
+                Self::collect_moved_identifiers(inner, &mut skipped_names);
+                self.emit_escape_for_value(result_ptr, &result_type, ir_func);
+                self.emit_scope_drops(ir_func, &skipped_names);
                 self.builder.build_return(ir_func, Some(result_ptr));
 
                 // Ok branch: extract the Ok payload from slot 1

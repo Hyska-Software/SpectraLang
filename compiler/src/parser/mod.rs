@@ -792,6 +792,36 @@ mod tests {
     }
 
     #[test]
+    fn generic_type_annotation_parses_on_last_lambda_parameter() {
+        let source = r#"
+            module demo
+
+            func main() {
+                let identity = |value: Option<int>| value
+            }
+        "#;
+
+        let module = parse_source(source).expect("generic lambda parameter should parse");
+        let crate::ast::Item::Function(function) = &module.items[0] else {
+            panic!("expected function item");
+        };
+        let crate::ast::StatementKind::Let(binding) = &function.body.statements[0].kind else {
+            panic!("expected lambda binding");
+        };
+        let Some(crate::ast::ExpressionKind::Lambda { params, .. }) =
+            binding.value.as_ref().map(|expr| &expr.kind)
+        else {
+            panic!("expected lambda expression");
+        };
+        assert_eq!(params.len(), 1);
+        assert!(matches!(
+            params[0].ty.as_ref().map(|ty| &ty.kind),
+            Some(crate::ast::TypeAnnotationKind::Generic { name, type_args })
+                if name == "Option" && type_args.len() == 1
+        ));
+    }
+
+    #[test]
     fn parses_import_forms() {
         let source = r#"
             module demo

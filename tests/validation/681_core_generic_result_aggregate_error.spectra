@@ -1,0 +1,33 @@
+module core_generic_result_aggregate_error
+
+enum Fault {
+    Denied { code: int },
+    Missing(string),
+}
+
+func identity<T>(value: Result<T, Fault>) returns Result<T, Fault> {
+    let payload = value?
+    return Result::Ok(payload)
+}
+
+func code_of<T>(value: Result<T, Fault>) returns int {
+    return match value {
+        when Result::Ok(_) then 0,
+        when Result::Err(Fault::Denied { code }) then code,
+        when Result::Err(Fault::Missing(_)) then -1,
+        when Result::Err(_) then -2
+    }
+}
+
+public func main() returns int {
+    let rejected: Result<int, Fault> = Result::Err(Fault::Denied { code: 23 })
+    if code_of(identity(rejected)) != 23 {
+        return 1
+    }
+
+    let accepted: Result<int, Fault> = Result::Ok(9)
+    if code_of(identity(accepted)) != 0 {
+        return 2
+    }
+    return 0
+}

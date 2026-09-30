@@ -94,9 +94,11 @@ impl ASTLowering {
             .build_cond_branch(ir_func, has_next, iterator_body, iterator_exit);
 
         self.builder.set_current_block(iterator_body);
+        let scope_depth = self.struct_var_map.scopes.len();
         self.loop_stack.push(LoopContext {
             header_block: iterator_latch.unwrap_or(iterator_header),
             exit_block: iterator_exit,
+            scope_depth,
         });
         self.value_map.push_scope();
         self.alloca_map.push_scope();
@@ -126,6 +128,9 @@ impl ASTLowering {
         }
 
         self.lower_block_with_scope(&for_stmt.body.statements, ir_func, false);
+        if !self.current_block_is_terminated(ir_func) {
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+        }
         if let Some(current_block) = self.builder.get_current_block() {
             if let Some(block) = ir_func.get_block_mut(current_block) {
                 if block.terminator.is_none() {
@@ -220,9 +225,11 @@ impl ASTLowering {
             .build_cond_branch(ir_func, has_next, body_block, exit_block);
 
         self.builder.set_current_block(body_block);
+        let scope_depth = self.struct_var_map.scopes.len();
         self.loop_stack.push(LoopContext {
             header_block: latch_block,
             exit_block,
+            scope_depth,
         });
         self.value_map.push_scope();
         self.alloca_map.push_scope();
@@ -248,6 +255,9 @@ impl ASTLowering {
         }
 
         self.lower_block_with_scope(&for_stmt.body.statements, ir_func, false);
+        if !self.current_block_is_terminated(ir_func) {
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+        }
         if let Some(current_block) = self.builder.get_current_block() {
             if let Some(block) = ir_func.get_block_mut(current_block) {
                 if block.terminator.is_none() {
@@ -312,9 +322,11 @@ impl ASTLowering {
             .build_cond_branch(ir_func, has_next, body_block, exit_block);
 
         self.builder.set_current_block(body_block);
+        let scope_depth = self.struct_var_map.scopes.len();
         self.loop_stack.push(LoopContext {
             header_block: latch_block,
             exit_block,
+            scope_depth,
         });
         self.value_map.push_scope();
         self.alloca_map.push_scope();
@@ -333,6 +345,9 @@ impl ASTLowering {
             .insert(for_stmt.iterator.clone(), IRType::Int);
 
         self.lower_block_with_scope(&for_stmt.body.statements, ir_func, false);
+        if !self.current_block_is_terminated(ir_func) {
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+        }
         if let Some(current_block) = self.builder.get_current_block() {
             if let Some(block) = ir_func.get_block_mut(current_block) {
                 if block.terminator.is_none() {

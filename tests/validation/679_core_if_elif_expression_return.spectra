@@ -1,0 +1,39 @@
+module core_if_elif_expression_return
+
+func choose(value: int) returns int {
+    let result = if value == 0 {
+        10
+    } else if value == 1 {
+        return 20
+    } else {
+        30
+    }
+    return result
+}
+
+func choose_single_live_branch(value: bool) returns int {
+    return if value {
+        return 41
+    } else {
+        42
+    }
+}
+
+public func main() returns int {
+    if choose(0) != 10 {
+        return 1
+    }
+    if choose(1) != 20 {
+        return 2
+    }
+    if choose(7) != 30 {
+        return 3
+    }
+    if choose_single_live_branch( true) != 41 {
+        return 4
+    }
+    if choose_single_live_branch( false) != 42 {
+        return 5
+    }
+    return 0
+}

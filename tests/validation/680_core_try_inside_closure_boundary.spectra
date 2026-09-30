@@ -1,0 +1,24 @@
+module core_try_inside_closure_boundary
+
+func apply(value: Option<int>) returns int {
+    let transform: func(Option<int>) returns Option<int> = | input: Option<int> | {
+        let number = input?
+        Option::Some(number + 1)
+    }
+
+    let result = transform(value)
+    return match result {
+        when Option::Some(number) then number + 10,
+        when Option::None then 99
+    }
+}
+
+public func main() returns int {
+    if apply(Option::Some(4)) != 15 {
+        return 1
+    }
+    if apply(Option::None) != 99 {
+        return 2
+    }
+    return 0
+}

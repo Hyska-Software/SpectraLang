@@ -1,0 +1,31 @@
+module core_match_tuple_results
+
+enum Decoded {
+    Pair(int, int),
+    Single(int),
+    Empty,
+}
+
+func decode(value: Decoded) returns(int, int) {
+    return match value {
+        when Decoded::Pair(left, right) then(left, right),
+        when Decoded::Single(number) then(number, 0),
+        when Decoded::Empty then(0, 0)
+    }
+}
+
+public func main() returns int {
+    let(left, right) = decode(Decoded::Pair(7, 8))
+    if left != 7 or right != 8 {
+        return 1
+    }
+    let(single, zero) = decode(Decoded::Single(5))
+    if single != 5 or zero != 0 {
+        return 2
+    }
+    let(empty_left, empty_right) = decode(Decoded::Empty)
+    if empty_left != 0 or empty_right != 0 {
+        return 3
+    }
+    return 0
+}
