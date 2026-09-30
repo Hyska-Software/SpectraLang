@@ -1,0 +1,16 @@
+module core_bool_tuple_wildcard_cubes
+
+func classify(value: (bool, bool)) returns int {
+    return match value {
+        when (true, _) then 1,
+        when (false, _) then 0
+    }
+}
+
+public func main() returns int {
+    if classify((true, true)) != 1 { return 1 }
+    if classify((true, false)) != 1 { return 2 }
+    if classify((false, true)) != 0 { return 3 }
+    if classify((false, false)) != 0 { return 4 }
+    return 0
+}

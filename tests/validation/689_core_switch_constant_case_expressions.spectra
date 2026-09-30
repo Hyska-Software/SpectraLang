@@ -1,0 +1,18 @@
+module core_switch_constant_case_expressions
+
+const THREE: int = 1 + 2
+
+func classify(value: int) returns int {
+    switch value {
+        case THREE: { return 30 }
+        case 3 * 4: { return 120 }
+        else: { return -1 }
+    }
+}
+
+public func main() returns int {
+    if classify(3) != 30 { return 1 }
+    if classify(12) != 120 { return 2 }
+    if classify(7) != -1 { return 3 }
+    return 0
+}

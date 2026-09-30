@@ -256,8 +256,8 @@ let linha = std.string.repeat_str("-", 40)
 
 #### `char_at(s: string, index: int) -> int`
 
-**PT-BR:** Retorna o código Unicode do caractere na posição `index`. Retorna `-1` se o índice estiver fora dos limites.  
-**EN-US:** Returns the Unicode code point of the character at position `index`. Returns `-1` if the index is out of bounds.
+**PT-BR:** Retorna o valor do byte UTF-8 no deslocamento `index` (de `0` a `255`). Cada byte de um caractere não ASCII ocupa seu próprio índice. Retorna `-1` se o índice estiver fora dos limites.
+**EN-US:** Returns the UTF-8 byte value at byte offset `index` (from `0` to `255`). Each byte of a non-ASCII character has its own index. Returns `-1` if the index is out of bounds.
 
 ```spectra
 let c = std.string.char_at("hello", 0)
@@ -1873,10 +1873,10 @@ let err = std.result.result_map_err(
 ## 12. std.char — Operações em Caracteres / Character Operations
 
 **PT-BR:**  
-As funções de `std.char` operam sobre **códigos Unicode** (inteiros), o mesmo formato retornado por `std.string.char_at()`.
+As funções de `std.char` operam sobre **códigos Unicode** (inteiros). `std.string.char_at()` retorna bytes UTF-8, portanto seus resultados correspondem a códigos Unicode diretamente apenas para texto ASCII.
 
 **EN-US:**  
-Functions in `std.char` operate on **Unicode code points** (integers), the same format returned by `std.string.char_at()`.
+Functions in `std.char` operate on **Unicode code points** (integers). `std.string.char_at()` returns UTF-8 bytes, so its values directly match Unicode code points only for ASCII text.
 
 ```spectra
 import std.char

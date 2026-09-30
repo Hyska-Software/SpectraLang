@@ -1,0 +1,13 @@
+module core_closure_captured_slice_read
+
+func make_reader(values: [int]) returns func(int) returns int {
+    return | index: int | values[index]
+}
+
+public func main() returns int {
+    let reader = make_reader([5, 9, 13])
+    if reader(0) != 5 { return 1 }
+    if reader(1) != 9 { return 2 }
+    if reader(2) != 13 { return 3 }
+    return 0
+}

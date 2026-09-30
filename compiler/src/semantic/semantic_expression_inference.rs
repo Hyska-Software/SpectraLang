@@ -16,15 +16,14 @@ impl SemanticAnalyzer {
                 if crate::numeric::number_literal_is_float(num) {
                     Type::Float
                 } else {
-                    let value = crate::numeric::parse_number_literal_as_i128(num).and_then(
-                        |value| {
+                    let value =
+                        crate::numeric::parse_number_literal_as_i128(num).and_then(|value| {
                             if self.current_negative_integer_literal {
                                 value.checked_neg()
                             } else {
                                 Some(value)
                             }
-                        },
-                    );
+                        });
                     value
                         .and_then(|value| self.contextual_integer_literal_type(value))
                         .unwrap_or(Type::Unknown)
@@ -203,6 +202,9 @@ impl SemanticAnalyzer {
                 let array_type = self.infer_expression_type(array);
                 match array_type {
                     Type::Array { element_type, .. } => *element_type,
+                    // `string[index]` is byte-oriented, matching
+                    // `std.string.char_at` and the packed string ABI.
+                    Type::String => Type::Int,
                     _ => Type::Unknown,
                 }
             }

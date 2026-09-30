@@ -1,0 +1,31 @@
+module core_switch_semantic_diagnostics
+
+func non_exhaustive_tuple(value: (bool, bool)) returns int {
+    return match value {
+        when (true, true) then 1,
+        when (true, false) then 2,
+        when (false, true) then 3
+    }
+}
+
+func non_integer_scrutinee() returns int {
+    switch true {
+        case 1: { return 1 }
+        else: { return 0 }
+    }
+}
+
+func duplicate_cases() returns int {
+    switch 2 {
+        case 2: { return 1 }
+        case 1 + 1: { return 2 }
+        else: { return 0 }
+    }
+}
+
+func dynamic_case(value: int) returns int {
+    switch 2 {
+        case value: { return 1 }
+        else: { return 0 }
+    }
+}

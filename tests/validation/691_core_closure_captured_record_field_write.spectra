@@ -1,0 +1,22 @@
+module core_closure_captured_record_field_write
+
+record Cell {
+    public value: int,
+}
+
+func make_bump(cell: Cell) returns func(int) returns int {
+    return | amount: int | {
+        cell.value = cell.value + amount
+        return cell.value
+    }
+}
+
+public func main() returns int {
+    let cell = Cell { value: 2 }
+    let bump = make_bump(cell)
+    if bump(3) != 5 { return 1 }
+    if cell.value != 5 { return 2 }
+    if bump(4) != 9 { return 3 }
+    if cell.value != 9 { return 4 }
+    return 0
+}

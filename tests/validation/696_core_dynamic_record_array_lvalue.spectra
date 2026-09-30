@@ -1,0 +1,17 @@
+module core_dynamic_record_array_lvalue
+
+record Cell {
+    public value: int,
+}
+
+func replace(cells: [Cell], index: int, value: int) returns int {
+    cells[index].value = value
+    return cells[index].value
+}
+
+public func main() returns int {
+    let cells = [Cell { value: 2 }, Cell { value: 4 }]
+    if replace(cells, 1, 17) != 17 { return 1 }
+    if cells[1].value != 17 { return 2 }
+    return 0
+}

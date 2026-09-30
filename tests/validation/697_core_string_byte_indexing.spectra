@@ -1,0 +1,11 @@
+module core_string_byte_indexing
+
+public func main() returns int {
+    let text = "core"
+    if text[0] != 99 { return 1 }
+    if text[1] != 111 { return 2 }
+    if text[3] != 101 { return 3 }
+    if text[4] != -1 { return 4 }
+    if text[-1] != -1 { return 5 }
+    return 0
+}

@@ -133,6 +133,14 @@ released handles and do not count as uses.
 | --- | --- | --- | --- |
 | `E034` | semantic | use after free: a binding released by a resource-free call is read afterwards | reassign or recreate the handle before using it again; the hint points at the line of the freeing call |
 
+## Switch Diagnostics (E051-E053)
+
+| Code | Phase | Meaning | Expected hint/action |
+| --- | --- | --- | --- |
+| `E051` | semantic | `switch` scrutinee or case label is not integer-backed (`int`, exact-width integer, or `char`) | use an integer or character value |
+| `E052` | semantic | `switch` case label is not a constant integer or character expression, or does not fit the signed 64-bit switch representation | use a literal, a declared constant, or a pure constant expression within range |
+| `E053` | semantic | `switch` contains duplicate case values after constant evaluation | remove or change the repeated case value |
+
 ## Phase 21 Async Diagnostics
 
 The following async diagnostic range is stable for tooling and documentation.

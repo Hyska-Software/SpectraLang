@@ -1,0 +1,15 @@
+module core_bool_tuple_or_coverage
+
+func classify(value: (bool, bool)) returns int {
+    return match value {
+        when (true, second) | (false, second) then if second { 1 } else { 0 }
+    }
+}
+
+public func main() returns int {
+    if classify((true, false)) != 0 { return 1 }
+    if classify((false, true)) != 1 { return 2 }
+    if classify((false, false)) != 0 { return 3 }
+    if classify((true, true)) != 1 { return 4 }
+    return 0
+}

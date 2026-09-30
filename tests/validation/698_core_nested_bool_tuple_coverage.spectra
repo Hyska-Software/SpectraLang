@@ -1,0 +1,16 @@
+module core_nested_bool_tuple_coverage
+
+func classify(value: ((bool, bool), bool)) returns int {
+    return match value {
+        when ((true, _), _) then 1,
+        when ((false, _), _) then 0
+    }
+}
+
+public func main() returns int {
+    if classify(((true, true), true)) != 1 { return 1 }
+    if classify(((true, false), false)) != 1 { return 2 }
+    if classify(((false, true), true)) != 0 { return 3 }
+    if classify(((false, false), false)) != 0 { return 4 }
+    return 0
+}

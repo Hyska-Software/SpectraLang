@@ -1,0 +1,31 @@
+module core_match_tuple_guard_evaluation
+
+static SCRUTINEE_CALLS: int = 0
+static GUARD_CALLS: int = 0
+
+func next_pair() returns(bool, bool) {
+    SCRUTINEE_CALLS = SCRUTINEE_CALLS + 1
+    return (true, true)
+}
+
+func accept(value: bool) returns bool {
+    GUARD_CALLS = GUARD_CALLS + 1
+    return value
+}
+
+func classify() returns int {
+    return match next_pair() {
+        when (true, second) if accept(second) then 10,
+        when (true, _) then 20,
+        otherwise then 30
+    }
+}
+
+public func main() returns int {
+    SCRUTINEE_CALLS = 0
+    GUARD_CALLS = 0
+    if classify() != 10 { return 1 }
+    if SCRUTINEE_CALLS != 1 { return 2 }
+    if GUARD_CALLS != 1 { return 3 }
+    return 0
+}

@@ -1,0 +1,15 @@
+module core_nested_closure_captured_slice
+
+func make_reader(values: [int]) returns func(int) returns func(int) returns int {
+    return | first: int | {
+        return | second: int | values[first + second]
+    }
+}
+
+public func main() returns int {
+    let reader = make_reader([4, 8, 12, 16])
+    let tail_reader = reader(2)
+    if tail_reader(0) != 12 { return 1 }
+    if tail_reader(1) != 16 { return 2 }
+    return 0
+}

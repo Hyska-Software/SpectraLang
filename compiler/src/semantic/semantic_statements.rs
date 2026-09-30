@@ -510,12 +510,61 @@ impl SemanticAnalyzer {
                 self.loop_depth -= 1;
             }
             StatementKind::Switch(switch_stmt) => {
-                // Analyze the value being switched on
+                // `switch` lowers to an integer-backed IR terminator, so reject
+                // unsupported source types here instead of leaking a verifier
+                // diagnostic from the midend.
                 self.analyze_expression(&switch_stmt.value);
+                let switch_type = self.infer_expression_type(&switch_stmt.value);
+                if !matches!(switch_type, Type::Unknown)
+                    && !Self::is_switch_integer_type(&switch_type)
+                {
+                    self.error_coded_with_hint(
+                        "E051",
+                        format!(
+                            "Switch value must be integer-backed (`int`, exact-width integer, or `char`), found `{}`",
+                            type_name(&switch_type)
+                        ),
+                        switch_stmt.value.span,
+                        "Use an integer or character value as the switch scrutinee.",
+                    );
+                }
 
-                // Analyze each case
+                let mut seen_cases = HashSet::new();
                 for case in &switch_stmt.cases {
                     self.analyze_expression(&case.pattern);
+                    let case_type = self.infer_expression_type(&case.pattern);
+                    if matches!(case_type, Type::Unknown) {
+                        // A name/type-resolution diagnostic already explains
+                        // the missing type; avoid a secondary switch error.
+                    } else if !Self::is_switch_integer_type(&case_type) {
+                        self.error_coded_with_hint(
+                            "E051",
+                            format!(
+                                "Switch case value must be integer-backed (`int`, exact-width integer, or `char`), found `{}`",
+                                type_name(&case_type)
+                            ),
+                            case.pattern.span,
+                            "Use an integer or character constant for each case label.",
+                        );
+                    } else {
+                        match self.switch_case_integer_value(&case.pattern) {
+                            Some(value) if !seen_cases.insert(value) => {
+                                self.error_coded(
+                                    "E053",
+                                    format!("Duplicate switch case value {}", value),
+                                    case.pattern.span,
+                                );
+                            }
+                            Some(_) => {}
+                            None => self.error_coded_with_hint(
+                                "E052",
+                                "Switch case value must be a constant integer or character expression",
+                                case.pattern.span,
+                                "Use a literal, a declared constant, or a pure constant expression.",
+                            ),
+                        }
+                    }
+
                     let saved_uaf = self.uaf_snapshot();
                     self.analyze_block(&case.body);
                     self.uaf_restore(saved_uaf);
@@ -578,6 +627,18 @@ impl SemanticAnalyzer {
                 self.pop_scope();
                 self.loop_depth -= 1;
             }
+        }
+    }
+
+    fn is_switch_integer_type(ty: &Type) -> bool {
+        matches!(ty, Type::Int | Type::ExactInt { .. } | Type::Char)
+    }
+
+    fn switch_case_integer_value(&self, expression: &Expression) -> Option<i64> {
+        match self.eval_const_expression(expression)? {
+            ConstValue::Int(value) => i64::try_from(value).ok(),
+            ConstValue::Char(value) => Some(value as i64),
+            _ => None,
         }
     }
 
@@ -1263,5 +1324,33 @@ mod assignment_repair_field_tests {
             matches!(error.fix.as_deref(), Some(fix) if fix.contains("convert")),
             "E003 must carry a concrete conversion fix: {error:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod core_switch_diagnostic_tests {
+    use crate::{CompilationOptions, CompilationPipeline, CompilerError};
+
+    #[test]
+    fn switch_and_tuple_pattern_errors_are_reported_in_semantic_analysis() {
+        let source = include_str!("../../../tests/errors/core_switch_semantic_diagnostics.spectra");
+        let mut pipeline = CompilationPipeline::new(CompilationOptions::default());
+        let errors = pipeline
+            .compile(source, "core_switch_semantic_diagnostics.spectra")
+            .expect_err("invalid switch and incomplete tuple match must be rejected");
+
+        let codes = errors
+            .iter()
+            .filter_map(|error| match error {
+                CompilerError::Semantic(semantic) => semantic.code.as_deref(),
+                _ => None,
+            })
+            .collect::<std::collections::HashSet<_>>();
+        for expected in ["E031", "E051", "E052", "E053"] {
+            assert!(
+                codes.contains(expected),
+                "expected diagnostic {expected}, found {errors:?}"
+            );
+        }
     }
 }

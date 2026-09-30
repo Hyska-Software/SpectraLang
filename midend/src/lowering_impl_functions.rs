@@ -314,7 +314,9 @@ impl ASTLowering {
             }
             ExpressionKind::IndexAccess { array, .. } => match self.infer_expr_ir_type(array) {
                 IRType::Array { element_type, .. } => *element_type,
-                IRType::String => IRType::Char,
+                // String indexing returns the same byte value as
+                // `std.string.char_at`, whose public return type is `int`.
+                IRType::String => IRType::Int,
                 _ => IRType::Unknown,
             },
             ExpressionKind::TupleAccess { tuple, index } => match self.infer_expr_ir_type(tuple) {

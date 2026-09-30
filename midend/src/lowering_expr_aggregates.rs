@@ -265,6 +265,18 @@ impl ASTLowering {
                             self.dynamic_array_bound(array)
                         },
                     ),
+                    IRType::String => {
+                        return self.require_value(
+                            self.builder.build_typed_host_call(
+                                ir_func,
+                                "spectra.std.string.char_at".to_string(),
+                                vec![array_ptr, index_value],
+                                IRType::Int,
+                                true,
+                            ),
+                            "string indexing host call did not produce its declared result",
+                        );
+                    }
                     other => {
                         return self.invalid_value(format!(
                             "Index access expected array expression, found {:?}",

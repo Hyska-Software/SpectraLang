@@ -178,6 +178,10 @@ pub(crate) struct RangeInfo {
 pub(crate) struct ClosureCapture {
     name: String,
     ty: IRType,
+    /// The runtime length for a captured unsized array parameter. Stored
+    /// alongside the pointer in the closure environment and reloaded when
+    /// lowering the generated lambda.
+    hidden_array_size: Option<Value>,
 }
 
 #[derive(Clone)]

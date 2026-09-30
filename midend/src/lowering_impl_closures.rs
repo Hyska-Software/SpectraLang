@@ -172,6 +172,19 @@ impl ASTLowering {
         captures
     }
 
+    fn closure_capture(&self, name: &str, ty: IRType) -> ClosureCapture {
+        let hidden_array_size = if matches!(&ty, IRType::Array { size: 0, .. }) {
+            self.array_param_sizes.get(name).copied()
+        } else {
+            None
+        };
+        ClosureCapture {
+            name: name.to_string(),
+            ty,
+            hidden_array_size,
+        }
+    }
+
     pub(crate) fn collect_lambda_captures_expr(
         &self,
         expr: &Expression,
@@ -183,10 +196,7 @@ impl ASTLowering {
             ExpressionKind::Identifier(name) => {
                 if !locals.contains(name) && seen.insert(name.clone()) {
                     if let Some(ty) = self.variable_types.get(name) {
-                        captures.push(ClosureCapture {
-                            name: name.clone(),
-                            ty,
-                        });
+                        captures.push(self.closure_capture(name, ty));
                     }
                 }
             }
@@ -429,10 +439,7 @@ impl ASTLowering {
             spectra_compiler::ast::LValue::Identifier(name) => {
                 if !locals.contains(name) && seen.insert(name.clone()) {
                     if let Some(ty) = self.variable_types.get(name) {
-                        captures.push(ClosureCapture {
-                            name: name.clone(),
-                            ty,
-                        });
+                        captures.push(self.closure_capture(name, ty));
                     }
                 }
             }

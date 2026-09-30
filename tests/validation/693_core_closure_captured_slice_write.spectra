@@ -1,0 +1,16 @@
+module core_closure_captured_slice_write
+
+func make_writer(values: [int]) returns func(int, int) returns int {
+    return | index: int, replacement: int | {
+        values[index] = replacement
+        return values[index]
+    }
+}
+
+public func main() returns int {
+    let values = [3, 6, 9]
+    let writer = make_writer(values)
+    if writer(2, 15) != 15 { return 1 }
+    if values[2] != 15 { return 2 }
+    return 0
+}

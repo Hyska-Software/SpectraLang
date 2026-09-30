@@ -1,5 +1,118 @@
 use super::*;
 
+fn bool_tuple_dimensions(ty: &Type) -> Option<usize> {
+    match ty {
+        Type::Bool => Some(1),
+        Type::Tuple { elements } => elements.iter().try_fold(0usize, |count, element| {
+            count.checked_add(bool_tuple_dimensions(element)?)
+        }),
+        _ => None,
+    }
+}
+
+fn bool_tuple_expression_cubes(
+    expression: &crate::ast::Expression,
+    ty: &Type,
+) -> Option<Vec<Vec<Option<bool>>>> {
+    use crate::ast::ExpressionKind;
+
+    match (ty, &expression.kind) {
+        (Type::Bool, ExpressionKind::BoolLiteral(value)) => Some(vec![vec![Some(*value)]]),
+        (Type::Tuple { elements }, ExpressionKind::TupleLiteral { elements: values })
+            if elements.len() == values.len() =>
+        {
+            let mut cubes = vec![Vec::new()];
+            for (element_type, value) in elements.iter().zip(values) {
+                let value_cubes = bool_tuple_expression_cubes(value, element_type)?;
+                let mut combined = Vec::with_capacity(cubes.len() * value_cubes.len());
+                for prefix in &cubes {
+                    for suffix in &value_cubes {
+                        let mut cube = prefix.clone();
+                        cube.extend(suffix.iter().copied());
+                        combined.push(cube);
+                    }
+                }
+                cubes = combined;
+            }
+            Some(cubes)
+        }
+        (_, ExpressionKind::Grouping(inner)) => bool_tuple_expression_cubes(inner, ty),
+        _ => None,
+    }
+}
+
+fn bool_tuple_pattern_cubes(
+    pattern: &crate::ast::Pattern,
+    ty: &Type,
+) -> Option<Vec<Vec<Option<bool>>>> {
+    use crate::ast::Pattern;
+
+    match pattern {
+        Pattern::Wildcard(_) | Pattern::Identifier(_, _) => {
+            Some(vec![vec![None; bool_tuple_dimensions(ty)?]])
+        }
+        Pattern::Literal(expression) => bool_tuple_expression_cubes(expression, ty),
+        Pattern::Tuple(patterns) => {
+            let Type::Tuple { elements } = ty else {
+                return None;
+            };
+            if patterns.len() != elements.len() {
+                return None;
+            }
+
+            let mut cubes = vec![Vec::new()];
+            for (element_pattern, element_type) in patterns.iter().zip(elements) {
+                let element_cubes = bool_tuple_pattern_cubes(element_pattern, element_type)?;
+                let mut combined = Vec::with_capacity(cubes.len() * element_cubes.len());
+                for prefix in &cubes {
+                    for suffix in &element_cubes {
+                        let mut cube = prefix.clone();
+                        cube.extend(suffix.iter().copied());
+                        combined.push(cube);
+                    }
+                }
+                cubes = combined;
+            }
+            Some(cubes)
+        }
+        Pattern::Or(patterns) => {
+            let mut cubes = Vec::new();
+            for alternative in patterns {
+                cubes.extend(bool_tuple_pattern_cubes(alternative, ty)?);
+            }
+            Some(cubes)
+        }
+        _ => None,
+    }
+}
+
+fn bool_tuple_cubes_cover_all(cubes: &[Vec<Option<bool>>], dimension: usize) -> bool {
+    if cubes.is_empty() {
+        return false;
+    }
+    if cubes
+        .iter()
+        .any(|cube| cube[dimension..].iter().all(Option::is_none))
+    {
+        return true;
+    }
+    if dimension == cubes[0].len() {
+        return true;
+    }
+    if cubes.iter().all(|cube| cube[dimension].is_none()) {
+        return bool_tuple_cubes_cover_all(cubes, dimension + 1);
+    }
+
+    [false, true].into_iter().all(|value| {
+        let matching = cubes
+            .iter()
+            .filter(|cube| cube[dimension].is_none_or(|constraint| constraint == value))
+            .cloned()
+            .collect::<Vec<_>>();
+        bool_tuple_cubes_cover_all(&matching, dimension + 1)
+    })
+}
+
 impl SemanticAnalyzer {
     /// Verifica se um match expression é exhaustivo
     pub(crate) fn check_match_exhaustiveness(
@@ -183,53 +296,33 @@ impl SemanticAnalyzer {
                 if elements.is_empty() {
                     return;
                 }
+                let Some(dimensions) = bool_tuple_dimensions(scrutinee_type) else {
+                    let has_catch_all = arms
+                        .iter()
+                        .any(|arm| arm.guard.is_none() && pattern_is_catch_all(&arm.pattern));
+                    if !has_catch_all {
+                        self.error_coded(
+                            "E031",
+                            "Match on tuple requires a wildcard (_) pattern to cover remaining combinations.",
+                            span,
+                        );
+                    }
+                    return;
+                };
 
-                let mut bool_combinations: HashSet<Vec<bool>> = HashSet::new();
+                let mut bool_cubes = Vec::new();
                 let mut unsupported_pattern = false;
 
                 for arm in arms {
                     if arm.guard.is_some() {
                         continue;
                     }
-
-                    if let Pattern::Literal(expr) = &arm.pattern {
-                        if let ExpressionKind::TupleLiteral {
-                            elements: tuple_elems,
-                        } = &expr.kind
-                        {
-                            if tuple_elems.len() != elements.len() {
-                                unsupported_pattern = true;
-                                break;
-                            }
-
-                            let mut combo = Vec::with_capacity(elements.len());
-                            let mut tuple_supported = true;
-
-                            for (tuple_ty, tuple_expr) in elements.iter().zip(tuple_elems.iter()) {
-                                match (tuple_ty, &tuple_expr.kind) {
-                                    (Type::Bool, ExpressionKind::BoolLiteral(value)) => {
-                                        combo.push(*value);
-                                    }
-                                    _ => {
-                                        tuple_supported = false;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if tuple_supported {
-                                bool_combinations.insert(combo);
-                            } else {
-                                unsupported_pattern = true;
-                                break;
-                            }
-                        } else {
+                    match bool_tuple_pattern_cubes(&arm.pattern, scrutinee_type) {
+                        Some(mut cubes) => bool_cubes.append(&mut cubes),
+                        None => {
                             unsupported_pattern = true;
                             break;
                         }
-                    } else {
-                        unsupported_pattern = true;
-                        break;
                     }
                 }
 
@@ -239,16 +332,10 @@ impl SemanticAnalyzer {
                         "Match on tuple requires a wildcard (_) pattern to cover remaining combinations.",
                         span,
                     );
-                }
-
-                let expected = 1 << elements.len();
-                if bool_combinations.len() != expected {
+                } else if dimensions > 0 && !bool_tuple_cubes_cover_all(&bool_cubes, 0) {
                     self.error_coded(
                         "E031",
-                        format!(
-                            "Match on tuple of bools is not exhaustive. Expected {} combination(s).",
-                            expected
-                        ),
+                        "Match on tuple of bools is not exhaustive; add patterns for the missing combinations or a wildcard arm.",
                         span,
                     );
                 }

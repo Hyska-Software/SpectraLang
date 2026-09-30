@@ -2876,13 +2876,13 @@
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/622_enum_structural_equality.spectra": {
+    "tests/validation/61_closure_surface.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/61_closure_surface.spectra": {
+    "tests/validation/622_enum_structural_equality.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3020,6 +3020,12 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/65_closure_completion_surface.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/660_core_nested_tuple_match_patterns.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
@@ -3075,6 +3081,12 @@
       "kind": "exec"
     },
     "tests/validation/669_core_result_try_without_library.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/66_tensor_core_surface.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3140,6 +3152,12 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/67_tensor_float_surface.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/680_core_try_inside_closure_boundary.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
@@ -3176,19 +3194,25 @@
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/65_closure_completion_surface.spectra": {
+    "tests/validation/686_core_bool_tuple_exhaustive_literals.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/66_tensor_core_surface.spectra": {
+    "tests/validation/687_core_bool_tuple_wildcard_cubes.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/67_tensor_float_surface.spectra": {
+    "tests/validation/688_core_switch_char_codepoints.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/689_core_switch_constant_case_expressions.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3200,7 +3224,73 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/690_core_switch_scrutinee_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/691_core_closure_captured_record_field_write.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/692_core_closure_captured_slice_read.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/693_core_closure_captured_slice_write.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/694_core_closure_shadowed_signature_scope.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/695_core_nested_closure_captured_slice.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/696_core_dynamic_record_array_lvalue.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/697_core_string_byte_indexing.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/698_core_nested_bool_tuple_coverage.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/699_core_bool_tuple_or_coverage.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/69_tensor_phase4_statistics.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/700_core_match_tuple_guard_evaluation.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",

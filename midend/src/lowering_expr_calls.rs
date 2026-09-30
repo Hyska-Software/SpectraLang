@@ -177,7 +177,27 @@ impl ASTLowering {
                 // Function values are closure handles: slot 0 stores the code pointer
                 // and the handle itself is passed as hidden environment argument.
                 if let ExpressionKind::Identifier(name) = &callee.kind {
-                    if let Some(info) = self.closure_var_map.get(name).cloned() {
+                    // `closure_var_map` is a name-keyed cache, while
+                    // `variable_types` follows lexical scopes. Prefer the
+                    // active scoped type and refresh the cache so a closure
+                    // that was shadowed in a nested block cannot leave its
+                    // signature attached to the outer binding.
+                    let active_closure_info = match self.variable_types.get(name) {
+                        Some(IRType::Function {
+                            params,
+                            return_type,
+                        }) => {
+                            let info = ClosureInfo {
+                                signature_params: params,
+                                signature_return: *return_type,
+                            };
+                            self.closure_var_map.insert(name.clone(), info.clone());
+                            Some(info)
+                        }
+                        Some(_) => None,
+                        None => self.closure_var_map.get(name).cloned(),
+                    };
+                    if let Some(info) = active_closure_info {
                         if let Some(handle) = self.value_map.get(name) {
                             return self.lower_closure_handle_call(
                                 handle,
@@ -186,26 +206,6 @@ impl ASTLowering {
                                 info.signature_return,
                                 ir_func,
                             );
-                        }
-                    }
-
-                    // --- Function pointer parameter (fn(T) -> R) ---
-                    // If the identifier is a variable of Function type, call through the pointer.
-                    if let Some(var_type) = self.variable_types.get(name) {
-                        if let IRType::Function {
-                            params: sig_params,
-                            return_type: sig_return,
-                        } = var_type.clone()
-                        {
-                            if let Some(fn_ptr) = self.value_map.get(name) {
-                                return self.lower_closure_handle_call(
-                                    fn_ptr,
-                                    arg_values,
-                                    sig_params,
-                                    *sig_return,
-                                    ir_func,
-                                );
-                            }
                         }
                     }
                 }
@@ -274,9 +274,7 @@ impl ASTLowering {
                     )
                 }
             }
-            _ => self.invalid_value(
-                "lower_expression_call called with a non-call expression",
-            ),
+            _ => self.invalid_value("lower_expression_call called with a non-call expression"),
         }
     }
 }

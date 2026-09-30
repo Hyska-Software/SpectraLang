@@ -1,0 +1,22 @@
+module core_switch_scrutinee_once
+
+static CALLS: int = 0
+
+func next_value() returns int {
+    CALLS = CALLS + 1
+    return 7
+}
+
+func classify() returns int {
+    switch next_value() {
+        case 7: { return 70 }
+        else: { return -1 }
+    }
+}
+
+public func main() returns int {
+    CALLS = 0
+    if classify() != 70 { return 1 }
+    if CALLS != 1 { return 2 }
+    return 0
+}

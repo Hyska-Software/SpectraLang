@@ -1,0 +1,18 @@
+module core_bool_tuple_exhaustive_literals
+
+func classify(value: (bool, bool)) returns int {
+    return match value {
+        when (true, true) then 11,
+        when (true, false) then 12,
+        when (false, true) then 21,
+        when (false, false) then 22
+    }
+}
+
+public func main() returns int {
+    if classify((true, true)) != 11 { return 1 }
+    if classify((true, false)) != 12 { return 2 }
+    if classify((false, true)) != 21 { return 3 }
+    if classify((false, false)) != 22 { return 4 }
+    return 0
+}

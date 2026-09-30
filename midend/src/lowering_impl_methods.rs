@@ -599,6 +599,7 @@ impl ASTLowering {
         let saved_alloca_map = std::mem::replace(&mut self.alloca_map, ScopeStack::new());
         let saved_alloca_slot_types = std::mem::take(&mut self.alloca_slot_types);
         let saved_array_map = self.array_map.clone();
+        let saved_array_param_sizes = self.array_param_sizes.clone();
         let saved_async_output = self.current_async_output_type.clone();
         let saved_async_poll = self.lowering_async_poll;
         self.lowering_async_poll = is_async;
@@ -613,6 +614,7 @@ impl ASTLowering {
         self.alloca_map = ScopeStack::new();
         self.alloca_slot_types = HashMap::new();
         self.array_map.clear();
+        self.array_param_sizes.clear();
         self.range_map.clear();
         self.struct_var_map.clear();
         self.drop_excluded_names.clear();
@@ -650,10 +652,11 @@ impl ASTLowering {
         self.variable_types
             .insert("__closure_env".to_string(), IRType::Int);
 
-        for (slot, capture) in captures.iter().enumerate() {
+        let mut capture_slot = 1usize;
+        for capture in captures {
             let index = self
                 .builder
-                .build_const_int(&mut lambda_func, (slot + 1) as i64);
+                .build_const_int(&mut lambda_func, capture_slot as i64);
             let ptr =
                 self.builder
                     .build_getelementptr(&mut lambda_func, env_value, index, IRType::Int);
@@ -661,6 +664,34 @@ impl ASTLowering {
                 .builder
                 .build_load_typed(&mut lambda_func, ptr, capture.ty.clone());
             self.value_map.insert(capture.name.clone(), value);
+            if let IRType::Array { element_type, size } = &capture.ty {
+                self.array_map.insert(
+                    capture.name.clone(),
+                    ArrayInfo {
+                        ptr: value,
+                        element_type: element_type.as_ref().clone(),
+                        size: *size,
+                    },
+                );
+            }
+            capture_slot += 1;
+
+            if capture.hidden_array_size.is_some() {
+                let length_index = self
+                    .builder
+                    .build_const_int(&mut lambda_func, capture_slot as i64);
+                let length_ptr = self.builder.build_getelementptr(
+                    &mut lambda_func,
+                    env_value,
+                    length_index,
+                    IRType::Int,
+                );
+                let length =
+                    self.builder
+                        .build_load_typed(&mut lambda_func, length_ptr, IRType::Int);
+                self.array_param_sizes.insert(capture.name.clone(), length);
+                capture_slot += 1;
+            }
         }
 
         // Map explicit parameters into value/type maps
@@ -722,6 +753,7 @@ impl ASTLowering {
         self.alloca_map = saved_alloca_map;
         self.alloca_slot_types = saved_alloca_slot_types;
         self.array_map = saved_array_map;
+        self.array_param_sizes = saved_array_param_sizes;
         self.struct_var_map = saved_struct_var_map;
         self.current_function = saved_current_function;
         self.current_async_output_type = saved_async_output;
@@ -741,7 +773,12 @@ impl ASTLowering {
         lambda_name: String,
         captures: &[ClosureCapture],
     ) -> Value {
-        let slots = captures.len() + 1;
+        let slots = captures.len()
+            + captures
+                .iter()
+                .filter(|capture| capture.hidden_array_size.is_some())
+                .count()
+            + 1;
         let closure_ty = IRType::Array {
             element_type: Box::new(IRType::Int),
             size: slots,
@@ -755,13 +792,27 @@ impl ASTLowering {
                 .build_getelementptr(ir_func, closure_handle, zero, IRType::Int);
         self.builder.build_store(ir_func, code_slot, code_ptr);
 
-        for (idx, capture) in captures.iter().enumerate() {
+        let mut capture_slot = 1usize;
+        for capture in captures {
             let capture_value = self.lower_identifier_value(&capture.name, ir_func);
-            let slot_index = self.builder.build_const_int(ir_func, (idx + 1) as i64);
+            let slot_index = self.builder.build_const_int(ir_func, capture_slot as i64);
             let slot =
                 self.builder
                     .build_getelementptr(ir_func, closure_handle, slot_index, IRType::Int);
             self.builder.build_store(ir_func, slot, capture_value);
+            capture_slot += 1;
+
+            if let Some(length) = capture.hidden_array_size {
+                let length_index = self.builder.build_const_int(ir_func, capture_slot as i64);
+                let length_slot = self.builder.build_getelementptr(
+                    ir_func,
+                    closure_handle,
+                    length_index,
+                    IRType::Int,
+                );
+                self.builder.build_store(ir_func, length_slot, length);
+                capture_slot += 1;
+            }
         }
 
         closure_handle

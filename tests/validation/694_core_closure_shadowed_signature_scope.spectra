@@ -1,0 +1,19 @@
+module core_closure_shadowed_signature_scope
+
+func make_transform(offset: int) returns func(int) returns int {
+    let transform: func(int) returns int = | value: int | value + offset
+    return | value: int | {
+        {
+            let transform: func(bool) returns bool = | flag: bool | not flag
+            let flipped = transform(true)
+        }
+        return transform(value)
+    }
+}
+
+public func main() returns int {
+    let transform = make_transform(10)
+    if transform(5) != 15 { return 1 }
+    if transform(-4) != 6 { return 2 }
+    return 0
+}

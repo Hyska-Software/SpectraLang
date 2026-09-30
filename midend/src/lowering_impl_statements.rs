@@ -357,37 +357,32 @@ impl ASTLowering {
                     spectra_compiler::ast::LValue::FieldAccess { object, field } => {
                         // Assignment to struct field (e.g. self.x = ...)
                         // Step 1: collect the field info before any mutable borrow
-                        let field_info: Option<(usize, IRType)> =
+                        let object_type = self.infer_expr_ir_type(object);
+                        let fields = self.struct_fields_for_type(&object_type).or_else(|| {
+                            // Some generated or legacy bindings only carry the
+                            // nominal record name in `struct_var_map`. Keep
+                            // that fallback, but do not require it: closure
+                            // captures have their semantic type and value_map
+                            // entry without a struct_var_map entry.
                             if let spectra_compiler::ast::ExpressionKind::Identifier(var_name) =
                                 &object.kind
                             {
-                                let lookup = self.struct_var_map.get(var_name.as_str());
-                                if let Some((_, sname)) = lookup {
-                                    let sname = sname.clone();
-                                    self.struct_definitions.get(&sname).and_then(|defs| {
-                                        defs.iter()
-                                            .enumerate()
-                                            .find(|(_, (fname, _))| {
-                                                fname.as_str() == field.as_str()
-                                            })
-                                            .map(|(idx, (_, ty))| (idx, ty.clone()))
-                                    })
-                                } else {
-                                    None
-                                }
+                                self.struct_var_map.get(var_name.as_str()).and_then(
+                                    |(_, struct_name)| {
+                                        self.struct_definitions.get(struct_name.as_str()).cloned()
+                                    },
+                                )
                             } else {
-                                let object_type = self.infer_expr_ir_type(object);
-                                self.struct_fields_for_type(&object_type)
-                                    .and_then(|fields| {
-                                        fields
-                                            .into_iter()
-                                            .enumerate()
-                                            .find(|(_, (fname, _))| {
-                                                fname.as_str() == field.as_str()
-                                            })
-                                            .map(|(idx, (_, ty))| (idx, ty))
-                                    })
-                            };
+                                None
+                            }
+                        });
+                        let field_info = fields.as_ref().and_then(|fields| {
+                            fields
+                                .iter()
+                                .enumerate()
+                                .find(|(_, (field_name, _))| field_name == field)
+                                .map(|(index, (_, field_type))| (index, field_type.clone()))
+                        });
 
                         // Step 2: get (or compute) the struct pointer.
                         // `lower_expression` is authoritative here: it resolves a
@@ -397,35 +392,28 @@ impl ASTLowering {
 
                         // Step 3: field pointer (padded layout) + store
                         if let Some((field_idx, field_type)) = field_info {
-                            let object_type = self.infer_expr_ir_type(object);
-                            let (offsets, struct_label) = if let Some(fields) =
-                                self.struct_fields_for_type(&object_type)
-                            {
-                                (
-                                    layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets,
-                                    self.ir_nominal_name(&object_type)
-                                        .unwrap_or("unknown")
-                                        .to_string(),
-                                )
-                            } else if let spectra_compiler::ast::ExpressionKind::Identifier(
-                                var_name,
-                            ) = &object.kind
-                            {
-                                self.struct_var_map
-                                    .get(var_name.as_str())
-                                    .and_then(|(_, sname)| {
-                                        self.struct_definitions.get(sname.as_str()).map(|defs| {
-                                            (
-                                                layout::layout_of(defs.iter().map(|(_, ty)| ty))
-                                                    .offsets,
-                                                sname.clone(),
-                                            )
-                                        })
-                                    })
-                                    .unwrap_or_default()
-                            } else {
-                                (Vec::new(), "<unknown>".to_string())
-                            };
+                            let struct_label = self
+                                .ir_nominal_name(&object_type)
+                                .map(str::to_owned)
+                                .or_else(|| {
+                                    if let spectra_compiler::ast::ExpressionKind::Identifier(
+                                        var_name,
+                                    ) = &object.kind
+                                    {
+                                        self.struct_var_map
+                                            .get(var_name.as_str())
+                                            .map(|(_, struct_name)| struct_name.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .unwrap_or_else(|| "unknown".to_string());
+                            let offsets = fields
+                                .as_ref()
+                                .map(|fields| {
+                                    layout::layout_of(fields.iter().map(|(_, ty)| ty)).offsets
+                                })
+                                .unwrap_or_default();
                             let Some(byte_offset) = offsets.get(field_idx).copied() else {
                                 self.error(format!(
                                     "field layout for '{struct_label}.{field}' has no offset for field type {field_type:?}"
@@ -475,6 +463,7 @@ impl ASTLowering {
                 let header_block = ir_func.add_block("while.header");
                 let body_block = ir_func.add_block("while.body");
                 let exit_block = ir_func.add_block("while.exit");
+                let saved_closure_var_map = self.closure_var_map.clone();
 
                 // Branch to header
                 self.builder.build_branch(ir_func, header_block);
@@ -494,6 +483,7 @@ impl ASTLowering {
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&while_stmt.body.statements, ir_func);
+                self.closure_var_map = saved_closure_var_map;
                 if !self.current_block_is_terminated(ir_func) {
                     self.builder.build_branch(ir_func, header_block);
                 }
@@ -506,6 +496,7 @@ impl ASTLowering {
                 let body_block = ir_func.add_block("do_while.body");
                 let header_block = ir_func.add_block("do_while.header");
                 let exit_block = ir_func.add_block("do_while.exit");
+                let saved_closure_var_map = self.closure_var_map.clone();
 
                 // Branch to body first
                 self.builder.build_branch(ir_func, body_block);
@@ -519,6 +510,7 @@ impl ASTLowering {
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&do_while.body.statements, ir_func);
+                self.closure_var_map = saved_closure_var_map;
                 if !self.current_block_is_terminated(ir_func) {
                     self.builder.build_branch(ir_func, header_block);
                 }
@@ -539,6 +531,7 @@ impl ASTLowering {
             StatementKind::Loop(loop_stmt) => {
                 let body_block = ir_func.add_block("loop.body");
                 let exit_block = ir_func.add_block("loop.exit");
+                let saved_closure_var_map = self.closure_var_map.clone();
 
                 // Branch to body
                 self.builder.build_branch(ir_func, body_block);
@@ -553,6 +546,7 @@ impl ASTLowering {
                 });
                 self.builder.set_current_block(body_block);
                 self.lower_block(&loop_stmt.body.statements, ir_func);
+                self.closure_var_map = saved_closure_var_map;
                 if !self.current_block_is_terminated(ir_func) {
                     self.builder.build_branch(ir_func, body_block);
                 }
@@ -562,7 +556,26 @@ impl ASTLowering {
                 self.builder.set_current_block(exit_block);
             }
             StatementKind::Switch(switch) => {
-                let scrutinee = self.lower_expression(&switch.value, ir_func);
+                let raw_scrutinee = self.lower_expression(&switch.value, ir_func);
+                let scrutinee_type = self.infer_expr_ir_type(&switch.value);
+                // Switch case labels are stored as i64 constants in the IR.
+                // Normalize narrow integer and character scrutinees to that
+                // representation before codegen compares them; otherwise a
+                // char (i32) or exact-width integer (i8/i16/i32) reaches the
+                // backend with a mismatched compare operand width.
+                let scrutinee = if matches!(
+                    &scrutinee_type,
+                    IRType::Char | IRType::ExactInt { .. }
+                ) {
+                    self.builder.build_cast(
+                        ir_func,
+                        raw_scrutinee,
+                        scrutinee_type,
+                        IRType::Int,
+                    )
+                } else {
+                    raw_scrutinee
+                };
 
                 // Create blocks for each case and default/exit
                 let mut exit_block = if switch.default.is_none() {
@@ -615,9 +628,11 @@ impl ASTLowering {
                 }
 
                 // Lower each case body
+                let saved_closure_var_map = self.closure_var_map.clone();
                 for (case_block, case) in case_blocks {
                     self.builder.set_current_block(case_block);
                     self.lower_block(&case.body.statements, ir_func);
+                    self.closure_var_map = saved_closure_var_map.clone();
                     if !self.current_block_is_terminated(ir_func) {
                         let exit =
                             *exit_block.get_or_insert_with(|| ir_func.add_block("switch.exit"));
@@ -629,6 +644,7 @@ impl ASTLowering {
                 if let Some(ref default_block) = switch.default {
                     self.builder.set_current_block(default);
                     self.lower_block(&default_block.statements, ir_func);
+                    self.closure_var_map = saved_closure_var_map;
                     if !self.current_block_is_terminated(ir_func) {
                         let exit =
                             *exit_block.get_or_insert_with(|| ir_func.add_block("switch.exit"));
@@ -676,6 +692,7 @@ impl ASTLowering {
                 else_block,
                 ..
             }) => {
+                let saved_closure_var_map = self.closure_var_map.clone();
                 // Evaluate the scrutinee expression once
                 let scrutinee_value = self.lower_expression(value, ir_func);
                 let scrutinee_type = self.infer_expr_ir_type(value);
@@ -737,6 +754,7 @@ impl ASTLowering {
                 self.variable_types.pop_scope();
                 self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
+                self.closure_var_map = saved_closure_var_map.clone();
 
                 if !then_terminated {
                     self.builder.build_branch(ir_func, exit_blk);
@@ -747,6 +765,7 @@ impl ASTLowering {
                 if let (Some(else_b), Some(else_blk)) = (else_block, else_blk_opt) {
                     self.builder.set_current_block(else_blk);
                     self.lower_block(&else_b.statements, ir_func);
+                    self.closure_var_map = saved_closure_var_map.clone();
                     let cur = self.builder.get_current_block().unwrap_or(else_blk);
                     else_terminated = ir_func
                         .get_block(cur)
@@ -756,6 +775,7 @@ impl ASTLowering {
                         self.builder.build_branch(ir_func, exit_blk);
                     }
                 }
+                self.closure_var_map = saved_closure_var_map;
 
                 // --- Exit block ---
                 self.builder.set_current_block(exit_blk);
@@ -769,6 +789,7 @@ impl ASTLowering {
                 body,
                 ..
             }) => {
+                let saved_closure_var_map = self.closure_var_map.clone();
                 let header_block = ir_func.add_block("while_let.header");
                 let body_block = ir_func.add_block("while_let.body");
                 let exit_block = ir_func.add_block("while_let.exit");
@@ -836,6 +857,7 @@ impl ASTLowering {
                 self.variable_types.pop_scope();
                 self.alloca_map.pop_scope();
                 self.value_map.pop_scope();
+                self.closure_var_map = saved_closure_var_map;
 
                 self.loop_stack.pop();
 

@@ -258,9 +258,7 @@ impl ASTLowering {
             IRType::Enum { variants, .. } => {
                 self.builder.build_escape_manual_alloc(ir_func, value);
                 let tag_ptr = self.builder.build_field_ptr(ir_func, value, 0);
-                let tag = self
-                    .builder
-                    .build_load_typed(ir_func, tag_ptr, IRType::Int);
+                let tag = self.builder.build_load_typed(ir_func, tag_ptr, IRType::Int);
                 let done_block = ir_func.add_block("enum_escape_done");
                 for (variant_index, (_, data_types)) in variants.iter().enumerate() {
                     let Some(data_types) = data_types else {
@@ -269,9 +267,7 @@ impl ASTLowering {
 
                     let current_variant = ir_func.add_block("enum_escape_variant");
                     let next_variant = ir_func.add_block("enum_escape_next");
-                    let expected_tag =
-                        self.builder
-                            .build_const_int(ir_func, variant_index as i64);
+                    let expected_tag = self.builder.build_const_int(ir_func, variant_index as i64);
                     let is_active = self.builder.build_eq(ir_func, tag, expected_tag);
                     self.builder.build_cond_branch(
                         ir_func,
@@ -740,9 +736,8 @@ impl ASTLowering {
                     }
                 }
                 StatementKind::Expression(expr) => {
-                    assigned.extend(
-                        self.collect_assigned_variables_in_expr_with_types(expr, hints),
-                    );
+                    assigned
+                        .extend(self.collect_assigned_variables_in_expr_with_types(expr, hints));
                 }
                 StatementKind::Return(ret) => {
                     if let Some(value) = &ret.value {
@@ -796,8 +791,9 @@ impl ASTLowering {
             ExpressionKind::Call { callee, arguments } => {
                 assigned.extend(self.collect_assigned_variables_in_expr_with_types(callee, hints));
                 for argument in arguments {
-                    assigned
-                        .extend(self.collect_assigned_variables_in_expr_with_types(argument, hints));
+                    assigned.extend(
+                        self.collect_assigned_variables_in_expr_with_types(argument, hints),
+                    );
                 }
             }
             ExpressionKind::If {
@@ -806,10 +802,14 @@ impl ASTLowering {
                 elif_blocks,
                 else_block,
             } => {
-                assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
-                assigned.extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
+                assigned
+                    .extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                assigned
+                    .extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
                 for (condition, block) in elif_blocks {
-                    assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                    assigned.extend(
+                        self.collect_assigned_variables_in_expr_with_types(condition, hints),
+                    );
                     assigned
                         .extend(self.find_assigned_variables_with_types(&block.statements, hints));
                 }
@@ -824,8 +824,10 @@ impl ASTLowering {
                 then_block,
                 else_block,
             } => {
-                assigned.extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
-                assigned.extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
+                assigned
+                    .extend(self.collect_assigned_variables_in_expr_with_types(condition, hints));
+                assigned
+                    .extend(self.find_assigned_variables_with_types(&then_block.statements, hints));
                 if let Some(else_block) = else_block {
                     assigned.extend(
                         self.find_assigned_variables_with_types(&else_block.statements, hints),
@@ -860,26 +862,31 @@ impl ASTLowering {
             } => {
                 if let Some(values) = data {
                     for value in values {
-                        assigned
-                            .extend(self.collect_assigned_variables_in_expr_with_types(value, hints));
+                        assigned.extend(
+                            self.collect_assigned_variables_in_expr_with_types(value, hints),
+                        );
                     }
                 }
                 if let Some(fields) = struct_data {
                     for (_, value) in fields {
-                        assigned
-                            .extend(self.collect_assigned_variables_in_expr_with_types(value, hints));
+                        assigned.extend(
+                            self.collect_assigned_variables_in_expr_with_types(value, hints),
+                        );
                     }
                 }
             }
             ExpressionKind::Match { scrutinee, arms } => {
-                assigned.extend(self.collect_assigned_variables_in_expr_with_types(scrutinee, hints));
+                assigned
+                    .extend(self.collect_assigned_variables_in_expr_with_types(scrutinee, hints));
                 for arm in arms {
                     if let Some(guard) = &arm.guard {
-                        assigned
-                            .extend(self.collect_assigned_variables_in_expr_with_types(guard, hints));
+                        assigned.extend(
+                            self.collect_assigned_variables_in_expr_with_types(guard, hints),
+                        );
                     }
-                    assigned
-                        .extend(self.collect_assigned_variables_in_expr_with_types(&arm.body, hints));
+                    assigned.extend(
+                        self.collect_assigned_variables_in_expr_with_types(&arm.body, hints),
+                    );
                 }
             }
             ExpressionKind::MethodCall {
@@ -887,8 +894,9 @@ impl ASTLowering {
             } => {
                 assigned.extend(self.collect_assigned_variables_in_expr_with_types(object, hints));
                 for argument in arguments {
-                    assigned
-                        .extend(self.collect_assigned_variables_in_expr_with_types(argument, hints));
+                    assigned.extend(
+                        self.collect_assigned_variables_in_expr_with_types(argument, hints),
+                    );
                 }
             }
             ExpressionKind::Lambda { body, .. } => {
@@ -900,8 +908,9 @@ impl ASTLowering {
             ExpressionKind::FString(parts) => {
                 for part in parts {
                     if let spectra_compiler::ast::FStringPart::Interpolated(expr) = part {
-                        assigned
-                            .extend(self.collect_assigned_variables_in_expr_with_types(expr, hints));
+                        assigned.extend(
+                            self.collect_assigned_variables_in_expr_with_types(expr, hints),
+                        );
                     }
                 }
             }
@@ -1119,9 +1128,21 @@ impl ASTLowering {
                     _ => None,
                 }
             }
+            ExpressionKind::CharLiteral(value) => Some(*value as i64),
+            ExpressionKind::Identifier(name) => match self.const_values.get(name) {
+                Some(LoweredConstValue::Int(value)) => Some(*value),
+                Some(LoweredConstValue::Char(value)) => Some(*value as i64),
+                _ => None,
+            },
             ExpressionKind::BoolLiteral(value) => Some(if *value { 1 } else { 0 }),
             ExpressionKind::Grouping(inner) => self.evaluate_int_constant(inner),
             ExpressionKind::Unary { operator, operand } => {
+                if matches!(operator, UnaryOperator::Negate) {
+                    if let Some(raw) = Self::direct_integer_literal(operand) {
+                        let value = spectra_compiler::numeric::parse_number_literal_as_i128(raw)?;
+                        return i64::try_from(value.checked_neg()?).ok();
+                    }
+                }
                 let inner = self.evaluate_int_constant(operand)?;
                 match operator {
                     UnaryOperator::Negate => inner.checked_neg(),
