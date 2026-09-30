@@ -1,0 +1,44 @@
+module core_collection_return_drop_cleanup
+
+from std.collections import List
+import std.collections as collections
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+func return_from_collection_loop(values: List<int>) returns int {
+    let outer = Token { id: 7 }
+    for value in values {
+        let item = Token { id: value }
+        if value == 37 {
+            let branch = Token { id: 11 }
+            return outer.id + item.id + branch.id
+        }
+    }
+    return-1
+}
+
+public func main() returns int {
+    let values: List<int> = collections.list_new()
+    collections.list_push(values, 37)
+    DROPS = 0
+    if return_from_collection_loop(values) != 55 {
+        collections.list_free(values)
+        return 1
+    }
+    if DROPS != 3 {
+        collections.list_free(values)
+        return 2
+    }
+    collections.list_free(values)
+    return 0
+}

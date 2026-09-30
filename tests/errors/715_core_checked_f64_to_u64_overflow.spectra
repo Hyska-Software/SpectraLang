@@ -1,0 +1,15 @@
+module core_checked_f64_to_u64_overflow
+
+func narrow(value: f64) returns u64 {
+    return value as u64
+}
+
+public func main() returns int {
+    let expected: u64 = (9223372036854775807 as u64 - 1023 as u64) * 2 as u64
+    let in_range: u64 = narrow(18446744073709549568.0)
+    if in_range != expected {
+        return 1
+    }
+    let out_of_range: u64 = narrow(18446744073709551616.0)
+    return 0
+}

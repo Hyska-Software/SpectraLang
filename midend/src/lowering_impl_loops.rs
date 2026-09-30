@@ -45,6 +45,27 @@ impl ASTLowering {
             return;
         }
 
+        // Put an owned iterator in a loop-local drop scope. A return from the
+        // loop body emits all active scope drops, while break and exhaustion
+        // leave this scope for the shared iterator-exit cleanup below.
+        let owned_scope_depth = self.struct_var_map.scopes.len();
+        if owns_iterator {
+            self.value_map.push_scope();
+            self.alloca_map.push_scope();
+            self.variable_types.push_scope();
+            self.array_map.push_scope();
+            self.range_map.push_scope();
+            self.struct_var_map.push_scope();
+            self.struct_var_map.insert(
+                format!("__spectra_owned_iterator_{}", iterator_value.id),
+                (
+                    iterator_value,
+                    ASTLowering::OWNED_ITERATOR_DROP_TYPE.to_string(),
+                ),
+            );
+        }
+        let loop_scope_depth = self.struct_var_map.scopes.len();
+
         let iterator_header = ir_func.add_block("iterator.header");
         let iterator_body = ir_func.add_block("iterator.body");
         let iterator_latch = snapshot_length.then(|| ir_func.add_block("iterator.latch"));
@@ -94,11 +115,10 @@ impl ASTLowering {
             .build_cond_branch(ir_func, has_next, iterator_body, iterator_exit);
 
         self.builder.set_current_block(iterator_body);
-        let scope_depth = self.struct_var_map.scopes.len();
         self.loop_stack.push(LoopContext {
             header_block: iterator_latch.unwrap_or(iterator_header),
             exit_block: iterator_exit,
-            scope_depth,
+            scope_depth: loop_scope_depth,
         });
         self.value_map.push_scope();
         self.alloca_map.push_scope();
@@ -129,7 +149,7 @@ impl ASTLowering {
 
         self.lower_block_with_scope(&for_stmt.body.statements, ir_func, false);
         if !self.current_block_is_terminated(ir_func) {
-            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), scope_depth);
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), loop_scope_depth);
         }
         if let Some(current_block) = self.builder.get_current_block() {
             if let Some(block) = ir_func.get_block_mut(current_block) {
@@ -170,12 +190,13 @@ impl ASTLowering {
 
         self.builder.set_current_block(iterator_exit);
         if owns_iterator {
-            let _ = self.builder.build_host_call(
-                ir_func,
-                "spectra.std.collections.iterator_free".to_string(),
-                vec![iterator_value],
-                false,
-            );
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), owned_scope_depth);
+            self.struct_var_map.pop_scope();
+            self.range_map.pop_scope();
+            self.array_map.pop_scope();
+            self.variable_types.pop_scope();
+            self.alloca_map.pop_scope();
+            self.value_map.pop_scope();
         }
     }
 

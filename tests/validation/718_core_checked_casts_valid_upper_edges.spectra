@@ -1,0 +1,30 @@
+module core_checked_casts_valid_upper_edges
+
+func narrow_unsigned(value: u64) returns i64 {
+    return value as i64
+}
+
+func narrow_float_unsigned(value: f64) returns u64 {
+    return value as u64
+}
+
+func narrow_float_signed(value: f64) returns i64 {
+    return value as i64
+}
+
+public func main() returns int {
+    let signed_max_as_unsigned: u64 = 9223372036854775807 as u64
+    if narrow_unsigned(signed_max_as_unsigned) != 9223372036854775807 {
+        return 1
+    }
+
+    let expected_unsigned: u64 = (9223372036854775807 as u64 - 1023 as u64) * 2 as u64
+    if narrow_float_unsigned(18446744073709549568.0) != expected_unsigned {
+        return 2
+    }
+
+    if narrow_float_signed(9223372036854774784.0) != 9223372036854774784 {
+        return 3
+    }
+    return 0
+}

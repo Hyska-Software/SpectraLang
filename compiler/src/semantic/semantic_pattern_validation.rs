@@ -1,6 +1,24 @@
 use super::*;
 
 impl SemanticAnalyzer {
+    fn pattern_binding_types(&mut self, pattern: &Pattern, ty: &Type) -> HashMap<String, Type> {
+        self.push_scope();
+        self.register_pattern_bindings(pattern);
+        self.bind_pattern_types(pattern, ty);
+        let binding_types = self
+            .symbols
+            .last()
+            .map(|scope| {
+                scope
+                    .iter()
+                    .map(|(name, info)| (name.clone(), info.ty.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.pop_scope();
+        binding_types
+    }
+
     /// Ensure match arm patterns are compatible with the scrutinee type before binding names.
     pub(crate) fn validate_pattern_against_type(
         &mut self,
@@ -512,6 +530,7 @@ impl SemanticAnalyzer {
                 }
 
                 let expected_names = self.collect_pattern_binding_names(&patterns[0]);
+                let expected_types = self.pattern_binding_types(&patterns[0], scrutinee_type);
                 for branch in patterns {
                     self.validate_pattern_against_type(branch, scrutinee_type, match_span);
                     if self.collect_pattern_binding_names(branch) != expected_names {
@@ -521,6 +540,32 @@ impl SemanticAnalyzer {
                             "Rewrite the pattern so every branch binds the same identifiers in the same order.",
                         );
                         break;
+                    }
+
+                    let branch_types = self.pattern_binding_types(branch, scrutinee_type);
+                    for name in &expected_names {
+                        let (Some(expected_type), Some(branch_type)) =
+                            (expected_types.get(name), branch_types.get(name))
+                        else {
+                            continue;
+                        };
+                        if expected_type != branch_type
+                            && !matches!(expected_type, Type::Unknown)
+                            && !matches!(branch_type, Type::Unknown)
+                        {
+                            self.error_coded_with_hint(
+                                "E004",
+                                format!(
+                                    "OR-pattern binding '{}' has incompatible types across alternatives: {} and {}",
+                                    name,
+                                    type_name(expected_type),
+                                    type_name(branch_type)
+                                ),
+                                match_span,
+                                "Bind each name to the same type in every OR-pattern alternative.",
+                            );
+                            break;
+                        }
                     }
                 }
             }

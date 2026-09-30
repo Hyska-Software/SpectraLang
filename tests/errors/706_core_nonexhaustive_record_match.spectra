@@ -1,0 +1,15 @@
+module core_nonexhaustive_record_match
+
+record Gate {
+    public active: bool,
+}
+
+func classify(gate: Gate) returns int {
+    return match gate {
+        when Gate { active: true} then 1
+    }
+}
+
+public func main() returns int {
+    return classify(Gate { active: false })
+}

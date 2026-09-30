@@ -646,6 +646,9 @@ if (Test-Path $errorDir) {
         "exact_width_float_nonfinite.spectra",
         "exact_width_invalid_cast.spectra",
         "exact_width_runtime_overflow.spectra",
+        "714_core_checked_u64_to_i64_overflow.spectra",
+        "715_core_checked_f64_to_u64_overflow.spectra",
+        "717_core_checked_f64_to_i64_overflow.spectra",
         "integer_division_by_zero.spectra",
         "integer_division_overflow.spectra",
         "json_malformed_rejects.spectra"

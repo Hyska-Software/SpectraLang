@@ -1,0 +1,18 @@
+module core_generic_record_irrefutable_match
+
+record Boxed<T> {
+    public value: T,
+}
+
+func unwrap(box: Boxed<int>) returns int {
+    return match box {
+        when Boxed { value} then value
+    }
+}
+
+public func main() returns int {
+    if unwrap(Boxed { value: 12 }) != 12 {
+        return 1
+    }
+    return 0
+}

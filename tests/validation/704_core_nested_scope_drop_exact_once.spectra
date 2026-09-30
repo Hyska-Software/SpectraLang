@@ -1,0 +1,35 @@
+module core_nested_scope_drop_exact_once
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+func read_outer_after_nested_scope() returns int {
+    let outer = Token { id: 7 }
+    if true {
+        let inner = Token { id: 11 }
+    }
+    if DROPS != 1 {
+        return-100
+    }
+    return outer.id
+}
+
+public func main() returns int {
+    DROPS = 0
+    if read_outer_after_nested_scope() != 7 {
+        return 1
+    }
+    if DROPS != 2 {
+        return 2
+    }
+    return 0
+}

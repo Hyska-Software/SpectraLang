@@ -1,0 +1,14 @@
+module core_checked_f64_to_i64_overflow
+
+func narrow(value: f64) returns i64 {
+    return value as i64
+}
+
+public func main() returns int {
+    let in_range: i64 = narrow(9223372036854774784.0)
+    if in_range != 9223372036854774784 {
+        return 1
+    }
+    let out_of_range: i64 = narrow(9223372036854775808.0)
+    return 0
+}

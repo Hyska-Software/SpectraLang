@@ -1,0 +1,18 @@
+module core_or_pattern_binding_positions
+
+func choose(value: (int, int)) returns int {
+    return match value {
+        when(0, item) | (item, 0) if item > 0 then item,
+        otherwise then -1
+    }
+}
+
+public func main() returns int {
+    if choose((0, 7)) != 7 {
+        return 1
+    }
+    if choose((5, 0)) != 5 {
+        return 2
+    }
+    return 0
+}

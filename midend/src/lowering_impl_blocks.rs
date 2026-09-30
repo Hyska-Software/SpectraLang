@@ -1,6 +1,8 @@
 use super::*;
 
 impl ASTLowering {
+    pub(crate) const OWNED_ITERATOR_DROP_TYPE: &'static str = "__spectra_internal_owned_iterator";
+
     pub(crate) fn lower_block(&mut self, statements: &[Statement], ir_func: &mut IRFunction) {
         self.lower_block_with_scope(statements, ir_func, true);
     }
@@ -8,8 +10,10 @@ impl ASTLowering {
     pub(crate) fn type_has_drop(&self, ty: &IRType) -> bool {
         match ty {
             IRType::Struct { name, fields } => {
-                self.trait_implementations
-                    .contains_key(&(name.clone(), "Drop".to_string()))
+                name == Self::OWNED_ITERATOR_DROP_TYPE
+                    || self
+                        .trait_implementations
+                        .contains_key(&(name.clone(), "Drop".to_string()))
                     || fields
                         .iter()
                         .any(|(_, field_ty)| self.type_has_drop(field_ty))
@@ -33,6 +37,16 @@ impl ASTLowering {
     ) {
         match ty {
             IRType::Struct { name, fields } => {
+                if name == Self::OWNED_ITERATOR_DROP_TYPE {
+                    let _ = self.builder.build_host_call(
+                        ir_func,
+                        "spectra.std.collections.iterator_free".to_string(),
+                        vec![value],
+                        false,
+                    );
+                    return;
+                }
+
                 if self
                     .trait_implementations
                     .contains_key(&(name.clone(), "Drop".to_string()))
@@ -468,6 +482,7 @@ impl ASTLowering {
         ir_func: &mut IRFunction,
         create_scope: bool,
     ) {
+        let scope_depth_before_push = self.struct_var_map.scopes.len();
         if create_scope {
             self.value_map.push_scope();
             self.alloca_map.push_scope();
@@ -495,7 +510,15 @@ impl ASTLowering {
                 return;
             }
 
-            self.emit_scope_drops(ir_func, &HashSet::new());
+            // Ordinary nested blocks own only their innermost locals. The
+            // root function body also owns the parameter scope, so it keeps
+            // the historical full-function cleanup at the outermost level.
+            let cleanup_depth = if scope_depth_before_push == 1 {
+                0
+            } else {
+                scope_depth_before_push
+            };
+            self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), cleanup_depth);
 
             self.struct_var_map.pop_scope();
             self.array_map.pop_scope();
@@ -1058,6 +1081,7 @@ impl ASTLowering {
         ir_func: &mut IRFunction,
         entry_block: usize,
     ) -> (Option<Value>, usize, bool) {
+        let branch_scope_depth = self.struct_var_map.scopes.len();
         self.value_map.push_scope();
         self.alloca_map.push_scope();
         self.variable_types.push_scope();
@@ -1105,7 +1129,7 @@ impl ASTLowering {
                     }
                 }
             }
-            self.emit_scope_drops(ir_func, &skipped_names);
+            self.emit_scope_drops_to_depth(ir_func, &skipped_names, branch_scope_depth);
         }
 
         self.struct_var_map.pop_scope();

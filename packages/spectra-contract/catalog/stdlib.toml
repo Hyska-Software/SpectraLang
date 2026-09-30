@@ -19915,6 +19915,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
 
 [[entry]]
+path = "std.numeric.checked_i16_from_u64"
+kind = "function"
+namespace = "std.numeric"
+signature = "fn(u64) -> i16"
+params = [{ name = "arg0", ty = "u64" }]
+returns = "i16"
+ir_return = "ExactInt<i16>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.numeric.checked_i16_from_u64"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
+
+[[entry]]
 path = "std.numeric.checked_i32"
 kind = "function"
 namespace = "std.numeric"
@@ -19927,6 +19945,24 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.numeric.checked_i32"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
+
+[[entry]]
+path = "std.numeric.checked_i32_from_u64"
+kind = "function"
+namespace = "std.numeric"
+signature = "fn(u64) -> i32"
+params = [{ name = "arg0", ty = "u64" }]
+returns = "i32"
+ir_return = "ExactInt<i32>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.numeric.checked_i32_from_u64"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -19951,6 +19987,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
 
 [[entry]]
+path = "std.numeric.checked_i64_from_u64"
+kind = "function"
+namespace = "std.numeric"
+signature = "fn(u64) -> i64"
+params = [{ name = "arg0", ty = "u64" }]
+returns = "i64"
+ir_return = "ExactInt<i64>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.numeric.checked_i64_from_u64"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
+
+[[entry]]
 path = "std.numeric.checked_i8"
 kind = "function"
 namespace = "std.numeric"
@@ -19963,6 +20017,24 @@ abi = "host(ctx: SpectraHostCallContext) -> i32"
 effects = ["host"]
 error_model = "host status + typed return"
 binding = "spectra.std.numeric.checked_i8"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/189_exact_width_numeric_semantics.spectra"
+
+[[entry]]
+path = "std.numeric.checked_i8_from_u64"
+kind = "function"
+namespace = "std.numeric"
+signature = "fn(u64) -> i8"
+params = [{ name = "arg0", ty = "u64" }]
+returns = "i8"
+ir_return = "ExactInt<i8>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.numeric.checked_i8_from_u64"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"

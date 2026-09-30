@@ -414,6 +414,9 @@ def runtime_only_signature(path: str, semantic: dict[str, dict[str, str]]) -> tu
     match = re.match(r"^std\.numeric\.checked_(i8|i16|i32|i64|u8|u16|u32|u64)$", path)
     if match:
         return "function", f"fn(int) -> {match.group(1)}"
+    match = re.match(r"^std\.numeric\.checked_(i8|i16|i32|i64)_from_u64$", path)
+    if match:
+        return "function", f"fn(u64) -> {match.group(1)}"
 
     tensor_literal = {
         "std.tensor.literal": "fn(int, ...int) -> Tensor<int>",

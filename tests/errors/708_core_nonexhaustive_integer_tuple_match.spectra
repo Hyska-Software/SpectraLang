@@ -1,0 +1,11 @@
+module core_nonexhaustive_integer_tuple_match
+
+func classify(pair: (int, int)) returns int {
+    return match pair {
+        when(0, second) then second
+    }
+}
+
+public func main() returns int {
+    return classify((2, 3))
+}

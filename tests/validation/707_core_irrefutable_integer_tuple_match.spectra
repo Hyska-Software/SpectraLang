@@ -1,0 +1,17 @@
+module core_irrefutable_integer_tuple_match
+
+func add(pair: (int, int)) returns int {
+    return match pair {
+        when(left, right) then left + right
+    }
+}
+
+public func main() returns int {
+    if add((4, 5)) != 9 {
+        return 1
+    }
+    if add((-3, 8)) != 5 {
+        return 2
+    }
+    return 0
+}

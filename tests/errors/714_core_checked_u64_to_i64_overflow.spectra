@@ -1,0 +1,16 @@
+module core_checked_u64_to_i64_overflow
+
+func narrow(value: u64) returns i64 {
+    return value as i64
+}
+
+public func main() returns int {
+    let signed_max_as_unsigned: u64 = 9223372036854775807 as u64
+    let in_range: i64               = narrow(signed_max_as_unsigned)
+    if in_range != 9223372036854775807 {
+        return 1
+    }
+    let above_signed_max: u64 = signed_max_as_unsigned + 1 as u64
+    let out_of_range: i64     = narrow(above_signed_max)
+    return 0
+}

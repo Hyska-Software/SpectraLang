@@ -1,0 +1,19 @@
+// Regression: every branch of an OR-pattern must bind each name with the same type.
+module core_or_pattern_incompatible_binding_types
+
+enum Signal {
+    Count(int),
+    Enabled(bool),
+    Empty,
+}
+
+func payload(signal: Signal) returns int {
+    return match signal {
+        when Signal::Count(value) | Signal::Enabled(value) then value,
+        when Signal::Empty then 0
+    }
+}
+
+public func main() returns int {
+    return payload(Signal::Count(1))
+}

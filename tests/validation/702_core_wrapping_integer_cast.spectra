@@ -1,0 +1,28 @@
+module core_wrapping_integer_cast
+
+const CONSTANT_I64: i64 = 300
+
+func pass_i64(value: i64) returns i64 {
+    return value
+}
+
+public func main() returns int {
+    let dynamic_positive: i64 = pass_i64(300)
+    let wrapped_i8: i8        = dynamic_positive as wrapping i8
+    if wrapped_i8 as int != 44 {
+        return 1
+    }
+
+    let dynamic_negative: i64 = pass_i64(-1)
+    let wrapped_u8: u8        = dynamic_negative as wrapping u8
+    if wrapped_u8 as int != 255 {
+        return 2
+    }
+
+    let wrapped_constant: i8 = CONSTANT_I64 as wrapping i8
+    if wrapped_constant as int != 44 {
+        return 3
+    }
+
+    return 0
+}

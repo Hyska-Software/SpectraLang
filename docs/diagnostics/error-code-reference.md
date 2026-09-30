@@ -94,7 +94,7 @@ The following codes cover module resolution, duplicate declarations,
 | `E028` | semantic | circular import detected (including a module importing itself) | break the cycle by removing or restructuring one of the imports in the reported chain |
 | `E029` | semantic | user (non-stdlib) module does not exist | check the spelling of the module path; the module must be declared as a source file in the same project or package |
 | `E030` | semantic | duplicate declaration (struct/enum already defined, or duplicated struct field / enum variant) | remove the duplicate declaration, rename it, or drop the repeated field/variant |
-| `E031` | semantic | `match` expression is not exhaustive (missing enum variants or missing wildcard bindings for payload variants) | add patterns for the listed `Enum::Variant` arms or a wildcard arm with payload bindings |
+| `E031` | semantic | `match` expression is not exhaustive (missing enum or boolean cases, non-exhaustive tuple/record patterns, or missing wildcard bindings for enum payloads) | add the missing cases; for types the compiler cannot prove exhaustive, use an irrefutable structural pattern or wildcard arm |
 | `E032` | semantic | method receiver mismatch (receiver type differs from the declared `self` type, or a `self`-less method called on a value) | convert or borrow the receiver to match the signature, or call it as `Type::method(...)` |
 | `E033` | semantic | unknown standard library module in an import | use one of the registered stdlib modules; the diagnostic includes a did-you-mean suggestion when close |
 

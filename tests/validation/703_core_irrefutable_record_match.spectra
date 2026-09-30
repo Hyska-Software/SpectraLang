@@ -1,0 +1,22 @@
+module core_irrefutable_record_match
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+func sum(point: Point) returns int {
+    return match point {
+        when Point { x, y} then x + y
+    }
+}
+
+public func main() returns int {
+    if sum(Point { x: 3, y: 4 }) != 7 {
+        return 1
+    }
+    if sum(Point { x: -2, y: 9 }) != 7 {
+        return 2
+    }
+    return 0
+}

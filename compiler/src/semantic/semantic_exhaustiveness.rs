@@ -126,6 +126,10 @@ impl SemanticAnalyzer {
         fn pattern_is_catch_all(pattern: &Pattern) -> bool {
             match pattern {
                 Pattern::Wildcard(_) | Pattern::Identifier(_, _) => true,
+                Pattern::Tuple(patterns) => patterns.iter().all(pattern_is_catch_all),
+                Pattern::Struct { fields, .. } => fields
+                    .iter()
+                    .all(|(_, pattern)| pattern_is_catch_all(pattern)),
                 Pattern::Or(patterns) => patterns.iter().any(pattern_is_catch_all),
                 _ => false,
             }
@@ -170,6 +174,11 @@ impl SemanticAnalyzer {
                 let Some((base_enum_name, enum_info, _)) =
                     self.specialized_enum_context_for_type(scrutinee_type)
                 else {
+                    self.error_coded(
+                        "E031",
+                        "Match expression is not exhaustive. Add an irrefutable pattern (such as '_') to cover remaining values.",
+                        span,
+                    );
                     return;
                 };
 
@@ -292,21 +301,13 @@ impl SemanticAnalyzer {
                     );
                 }
             }
-            Type::Tuple { elements } => {
-                if elements.is_empty() {
-                    return;
-                }
-                let Some(dimensions) = bool_tuple_dimensions(scrutinee_type) else {
-                    let has_catch_all = arms
-                        .iter()
-                        .any(|arm| arm.guard.is_none() && pattern_is_catch_all(&arm.pattern));
-                    if !has_catch_all {
-                        self.error_coded(
-                            "E031",
-                            "Match on tuple requires a wildcard (_) pattern to cover remaining combinations.",
-                            span,
-                        );
-                    }
+            Type::Tuple { .. } => {
+                let Some(_dimensions) = bool_tuple_dimensions(scrutinee_type) else {
+                    self.error_coded(
+                        "E031",
+                        "Match on tuple requires an irrefutable tuple pattern or wildcard (_) to cover remaining combinations.",
+                        span,
+                    );
                     return;
                 };
 
@@ -332,7 +333,7 @@ impl SemanticAnalyzer {
                         "Match on tuple requires a wildcard (_) pattern to cover remaining combinations.",
                         span,
                     );
-                } else if dimensions > 0 && !bool_tuple_cubes_cover_all(&bool_cubes, 0) {
+                } else if !bool_tuple_cubes_cover_all(&bool_cubes, 0) {
                     self.error_coded(
                         "E031",
                         "Match on tuple of bools is not exhaustive; add patterns for the missing combinations or a wildcard arm.",
@@ -341,18 +342,11 @@ impl SemanticAnalyzer {
                 }
             }
             _ => {
-                let only_literals = arms
-                    .iter()
-                    .filter(|arm| arm.guard.is_none())
-                    .all(|arm| matches!(arm.pattern, Pattern::Literal(_)));
-
-                if only_literals {
-                    self.error_coded(
-                        "E031",
-                        "Match expression with only literal patterns is not exhaustive. Consider adding a wildcard pattern (_).",
-                        span,
-                    );
-                }
+                self.error_coded(
+                    "E031",
+                    "Match expression is not exhaustive. Add an irrefutable pattern (such as '_') to cover remaining values.",
+                    span,
+                );
             }
         }
     }

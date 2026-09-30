@@ -240,6 +240,22 @@ pub(crate) fn register_numeric() {
     register_host_function("spectra.std.numeric.checked_i16", std_numeric_checked_i16);
     register_host_function("spectra.std.numeric.checked_i32", std_numeric_checked_i32);
     register_host_function("spectra.std.numeric.checked_i64", std_numeric_checked_i64);
+    register_host_function(
+        "spectra.std.numeric.checked_i8_from_u64",
+        std_numeric_checked_i8_from_u64,
+    );
+    register_host_function(
+        "spectra.std.numeric.checked_i16_from_u64",
+        std_numeric_checked_i16_from_u64,
+    );
+    register_host_function(
+        "spectra.std.numeric.checked_i32_from_u64",
+        std_numeric_checked_i32_from_u64,
+    );
+    register_host_function(
+        "spectra.std.numeric.checked_i64_from_u64",
+        std_numeric_checked_i64_from_u64,
+    );
     register_host_function("spectra.std.numeric.checked_u8", std_numeric_checked_u8);
     register_host_function("spectra.std.numeric.checked_u16", std_numeric_checked_u16);
     register_host_function("spectra.std.numeric.checked_u32", std_numeric_checked_u32);
@@ -423,6 +439,27 @@ macro_rules! define_checked_int_cast {
     };
 }
 
+macro_rules! define_checked_u64_to_signed_cast {
+    ($fn_name:ident, $path:literal, $max:expr) => {
+        extern "C" fn $fn_name(ctx: *mut SpectraHostCallContext) -> i32 {
+            let Some((raw, results_ptr)) = numeric_unary_arg(ctx) else {
+                return HOST_STATUS_INVALID_ARGUMENT;
+            };
+            let value = raw as u64;
+            if value > $max as u64 {
+                return numeric_checked_error(
+                    "E2903",
+                    concat!("value is outside ", $path, " range"),
+                );
+            }
+            unsafe {
+                *results_ptr = value as i64;
+            }
+            HOST_STATUS_SUCCESS
+        }
+    };
+}
+
 define_checked_int_cast!(std_numeric_checked_i8, "i8", true, 8);
 define_checked_int_cast!(std_numeric_checked_i16, "i16", true, 16);
 define_checked_int_cast!(std_numeric_checked_i32, "i32", true, 32);
@@ -431,6 +468,10 @@ define_checked_int_cast!(std_numeric_checked_u8, "u8", false, 8);
 define_checked_int_cast!(std_numeric_checked_u16, "u16", false, 16);
 define_checked_int_cast!(std_numeric_checked_u32, "u32", false, 32);
 define_checked_int_cast!(std_numeric_checked_u64, "u64", false, 64);
+define_checked_u64_to_signed_cast!(std_numeric_checked_i8_from_u64, "i8", i8::MAX);
+define_checked_u64_to_signed_cast!(std_numeric_checked_i16_from_u64, "i16", i16::MAX);
+define_checked_u64_to_signed_cast!(std_numeric_checked_i32_from_u64, "i32", i32::MAX);
+define_checked_u64_to_signed_cast!(std_numeric_checked_i64_from_u64, "i64", i64::MAX);
 
 macro_rules! define_checked_float_int_cast {
     ($fn_name:ident, $path:literal, $signed:expr, $bits:expr) => {
@@ -443,10 +484,11 @@ macro_rules! define_checked_float_int_cast {
                 && value.fract() == 0.0
                 && if $signed {
                     let min = -(2_f64).powi(($bits - 1) as i32);
-                    let max = (2_f64).powi(($bits - 1) as i32) - 1.0;
-                    value >= min && value <= max
+                    let upper_exclusive = (2_f64).powi(($bits - 1) as i32);
+                    value >= min && value < upper_exclusive
                 } else {
-                    value >= 0.0 && value <= (2_f64).powi($bits as i32) - 1.0
+                    let upper_exclusive = (2_f64).powi($bits as i32);
+                    value >= 0.0 && value < upper_exclusive
                 };
             if !valid {
                 return numeric_checked_error(

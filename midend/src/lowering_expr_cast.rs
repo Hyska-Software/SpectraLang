@@ -10,11 +10,9 @@ impl ASTLowering {
             ExpressionKind::Cast {
                 expr: inner,
                 target_type,
-                ..
-            } => self.lower_cast_expression(inner, target_type, ir_func),
-            _ => self.invalid_value(
-                "lower_expression_cast called with a non-cast expression",
-            ),
+                mode,
+            } => self.lower_cast_expression(inner, target_type, *mode, ir_func),
+            _ => self.invalid_value("lower_expression_cast called with a non-cast expression"),
         }
     }
 }

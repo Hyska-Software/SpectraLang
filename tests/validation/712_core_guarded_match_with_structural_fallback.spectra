@@ -1,0 +1,23 @@
+module core_guarded_match_with_structural_fallback
+
+record Gate {
+    public active: bool,
+    public code: int,
+}
+
+func classify(gate: Gate) returns int {
+    return match gate {
+        when Gate { active, code} if active then code,
+        when Gate { active, code} then -code
+    }
+}
+
+public func main() returns int {
+    if classify(Gate { active: true, code: 8 }) != 8 {
+        return 1
+    }
+    if classify(Gate { active: false, code: 5 }) != -5 {
+        return 2
+    }
+    return 0
+}

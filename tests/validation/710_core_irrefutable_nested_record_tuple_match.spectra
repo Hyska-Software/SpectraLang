@@ -1,0 +1,19 @@
+module core_irrefutable_nested_record_tuple_match
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+func sum(value: ((int, int), Point)) returns int {
+    return match value {
+        when((left, right), Point { x, y }) then left + right + x + y
+    }
+}
+
+public func main() returns int {
+    if sum(((1, 2), Point { x: 3, y: 4 })) != 10 {
+        return 1
+    }
+    return 0
+}

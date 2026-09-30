@@ -6,6 +6,7 @@ impl ASTLowering {
         &mut self,
         inner: &Expression,
         target_type: &TypeAnnotation,
+        mode: spectra_compiler::ast::CastMode,
         ir_func: &mut IRFunction,
     ) -> Value {
         let from_ty = self.infer_expr_ir_type(inner);
@@ -15,6 +16,23 @@ impl ASTLowering {
         if let IRType::DynTrait { trait_name, .. } = &to_ty.clone() {
             let operand = self.lower_expression(inner, ir_func);
             return self.lower_coerce_to_dyn(operand, &from_ty, trait_name, ir_func);
+        }
+
+        if mode == spectra_compiler::ast::CastMode::Wrapping
+            && Self::is_wrapping_integer_type(&from_ty)
+            && Self::is_wrapping_integer_type(&to_ty)
+        {
+            if let Some(value) = self.eval_const_expression(inner) {
+                if let Some(casted) = Self::cast_const_value_wrapping(value, &to_ty) {
+                    return self.emit_const_value(&casted, ir_func);
+                }
+            }
+
+            let operand = self.lower_expression(inner, ir_func);
+            if from_ty == to_ty {
+                return operand;
+            }
+            return self.builder.build_cast(ir_func, operand, from_ty, to_ty);
         }
 
         if let Some(value) = self.eval_const_expression(inner) {
@@ -74,11 +92,22 @@ impl ASTLowering {
                         bits
                     )
                 } else {
-                    format!(
-                        "spectra.std.numeric.checked_{}{}",
-                        if *signed { "i" } else { "u" },
-                        bits
-                    )
+                    let source_is_u64 = matches!(
+                        from_ty,
+                        IRType::ExactInt {
+                            signed: false,
+                            width: IRIntWidth::I64
+                        }
+                    );
+                    if *signed && source_is_u64 {
+                        format!("spectra.std.numeric.checked_i{}_from_u64", bits)
+                    } else {
+                        format!(
+                            "spectra.std.numeric.checked_{}{}",
+                            if *signed { "i" } else { "u" },
+                            bits
+                        )
+                    }
                 };
                 if let Some(value) = self.builder.build_typed_host_call(
                     ir_func,
@@ -122,6 +151,48 @@ impl ASTLowering {
         }
 
         self.builder.build_cast(ir_func, operand, from_ty, to_ty)
+    }
+
+    fn is_wrapping_integer_type(ty: &IRType) -> bool {
+        matches!(ty, IRType::Int | IRType::ExactInt { .. })
+    }
+
+    fn cast_const_value_wrapping(
+        value: LoweredConstValue,
+        target: &IRType,
+    ) -> Option<LoweredConstValue> {
+        let LoweredConstValue::Int(value) = value else {
+            return None;
+        };
+
+        let (signed, bits) = match target {
+            IRType::Int => (true, 64),
+            IRType::ExactInt { signed, width } => (
+                *signed,
+                match width {
+                    IRIntWidth::I8 => 8,
+                    IRIntWidth::I16 => 16,
+                    IRIntWidth::I32 => 32,
+                    IRIntWidth::I64 | IRIntWidth::Isize | IRIntWidth::Usize => 64,
+                },
+            ),
+            _ => return None,
+        };
+
+        let mask = if bits == 64 {
+            u64::MAX
+        } else {
+            (1_u64 << bits) - 1
+        };
+        let truncated = (value as u64) & mask;
+        let sign_bit = 1_u64 << (bits - 1);
+        let represented = if signed && truncated & sign_bit != 0 {
+            truncated | !mask
+        } else {
+            truncated
+        };
+
+        Some(LoweredConstValue::Int(represented as i64))
     }
 
     /// Dispatch a method call via vtable for `dyn Trait` objects.

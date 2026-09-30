@@ -1,0 +1,15 @@
+module core_nonexhaustive_generic_record_match
+
+record Boxed<T> {
+    public value: T,
+}
+
+func classify(box: Boxed<int>) returns int {
+    return match box {
+        when Boxed { value: 0} then 1
+    }
+}
+
+public func main() returns int {
+    return classify(Boxed { value: 2 })
+}
