@@ -1,0 +1,50 @@
+module std_round7_async_task_list_hof
+
+from std.collections import List
+import std.collections as collections
+import std.concurrent as concurrent
+import std.option as option
+
+async func ready(value: int) returns int {
+    return value
+}
+
+async func run_group() returns int {
+    let tasks: List<int> = collections.list_new()
+    collections.list_push(tasks, concurrent.task_spawn_fn( | value: int | value * value, 3))
+    collections.list_push(tasks, concurrent.task_spawn_fn( | value: int | value * value, 4))
+    collections.list_push(tasks, concurrent.task_spawn_fn( | value: int | value * value, 5))
+
+    let scale              = await ready(3)
+    let results: List<int> = collections.list_new()
+    let index              = collections.list_len(tasks) - 1
+    while index >= 0 {
+        let task_option = collections.list_get(tasks, index)
+        if option.is_none(task_option) {
+            collections.list_free(tasks)
+            collections.list_free(results)
+            return-1
+        }
+        let task = option.option_unwrap(task_option)
+        collections.list_push(results, concurrent.task_join(task))
+        index = index - 1
+    }
+
+    let scaled       = collections.list_map(results, | value: int | value * scale)
+    let total        = collections.list_reduce(scaled, 0, | acc: int, value: int | acc + value)
+    let result_count = collections.list_len(scaled)
+    collections.list_free(tasks)
+    collections.list_free(results)
+    collections.list_free(scaled)
+    return total + result_count
+}
+
+public func main() returns int {
+    concurrent.reset()
+    let result = block_on(run_group())
+    concurrent.reset()
+    if result != 153 {
+        return 1
+    }
+    return 0
+}

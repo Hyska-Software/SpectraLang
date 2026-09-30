@@ -1,0 +1,42 @@
+module std_round7_async_worker_counter
+
+import std.concurrent as concurrent
+
+async func ready(value: int) returns int {
+    return value
+}
+
+async func run_updates(counter: int) returns int {
+    let first = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let second = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let third = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let fourth = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let fifth = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let sixth = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let seventh = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+    let eighth = concurrent.task_spawn_fn( | delta: int | concurrent.counter_add(counter, delta), 1)
+
+    if await ready(1) != 1 {
+        return-1
+    }
+
+    let observed = concurrent.task_join(eighth) + concurrent.task_join(second) +
+        concurrent.task_join(sixth) + concurrent.task_join(first) +
+        concurrent.task_join(seventh) + concurrent.task_join(third) +
+        concurrent.task_join(fifth) + concurrent.task_join(fourth)
+    if observed != 36 or concurrent.counter_get(counter) != 8 {
+        return-2
+    }
+    return concurrent.counter_get(counter)
+}
+
+public func main() returns int {
+    concurrent.reset()
+    let counter = concurrent.counter_new(0)
+    let result  = block_on(run_updates(counter))
+    concurrent.reset()
+    if result != 8 {
+        return 1
+    }
+    return 0
+}

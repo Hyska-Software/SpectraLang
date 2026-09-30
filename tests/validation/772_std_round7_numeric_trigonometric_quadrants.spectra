@@ -1,0 +1,37 @@
+module std_round7_numeric_trigonometric_quadrants
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let upper_left  = math.atan2_f(1.0, -1.0)
+    let lower_left  = math.atan2_f(-1.0, -1.0)
+    let lower_right = math.atan2_f(-1.0, 1.0)
+    if upper_left < 2.35 or upper_left > 2.36 {
+        return 1
+    }
+    if lower_left > -2.35 or lower_left < -2.36 {
+        return 2
+    }
+    if lower_right > -0.78 or lower_right < -0.79 {
+        return 3
+    }
+
+    let pi        = math.pi()
+    let half_turn = math.sin_f(pi / 2.0)
+    let full_turn = math.cos_f(pi * 2.0)
+    if half_turn < 0.999999 or full_turn < 0.999999 {
+        return 4
+    }
+
+    let horizontal       = convert.int_to_float(3)
+    let vertical         = convert.int_to_float(4)
+    let squared_distance = math.pow_f(horizontal, 2.0) + math.pow_f(vertical, 2.0)
+    if math.sqrt_f(squared_distance) != 5.0 {
+        return 5
+    }
+    if convert.float_to_int(math.atan2_f(vertical, horizontal) * 100.0) != 92 {
+        return 6
+    }
+    return 0
+}

@@ -1,0 +1,38 @@
+module std_round7_numeric_scientific_signed_zero
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let parsed_large = convert.string_to_float("  -1.25E+3  ")
+    let parsed_small = convert.string_to_float_or("6.25e-2", -1.0)
+    if parsed_large != -1250.0 or parsed_small != 0.0625 {
+        return 1
+    }
+
+    let large_round_trip = convert.string_to_float(convert.float_to_string(parsed_large))
+    let small_round_trip = convert.string_to_float(convert.float_to_string(parsed_small))
+    if large_round_trip != parsed_large or small_round_trip != parsed_small {
+        return 2
+    }
+
+    let negative_zero = convert.string_to_float("-0.0")
+    let positive_zero = convert.string_to_float("+0.0")
+    if negative_zero != 0.0 or positive_zero != 0.0 {
+        return 3
+    }
+
+    // atan2 distinguishes the sign of zero on the negative x-axis.
+    let negative_axis_angle = math.atan2_f(negative_zero, -1.0)
+    let positive_axis_angle = math.atan2_f(positive_zero, -1.0)
+    if negative_axis_angle > -3.14 or negative_axis_angle < -3.15 {
+        return 4
+    }
+    if positive_axis_angle < 3.14 or positive_axis_angle > 3.15 {
+        return 5
+    }
+    if convert.string_to_int(" +00042 ") != 42 {
+        return 6
+    }
+    return 0
+}

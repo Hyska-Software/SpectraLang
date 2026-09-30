@@ -1,0 +1,51 @@
+module validation_767_std_round7_collections_bitset_alias_snapshot
+
+from std.collections import BitSet, Iterator
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let bits: BitSet = collections.bitset_new()
+    collections.bitset_insert(bits, 0)
+    collections.bitset_insert(bits, 63)
+    collections.bitset_insert(bits, 64)
+    collections.bitset_insert(bits, 4096)
+
+    let snapshot: Iterator<int> = collections.bitset_iter(bits)
+    collections.bitset_union_with(bits, bits)
+    if collections.bitset_count(bits) != 4 {
+        return 1
+    }
+    collections.bitset_intersect_with(bits, bits)
+    if collections.bitset_count(bits) != 4 {
+        return 2
+    }
+    collections.bitset_difference_with(bits, bits)
+    if collections.bitset_count(bits) != 0 {
+        return 3
+    }
+
+    if collections.iterator_remaining(snapshot) != 4 {
+        return 4
+    }
+    if option.option_unwrap(collections.iterator_next(snapshot)) != 0 or
+    option.option_unwrap(collections.iterator_next(snapshot)) != 63 or
+    option.option_unwrap(collections.iterator_next(snapshot)) != 64 or
+    option.option_unwrap(collections.iterator_next(snapshot)) != 4096 {
+        return 5
+    }
+    if option.is_some(collections.iterator_next(snapshot)) {
+        return 6
+    }
+    collections.iterator_free(snapshot)
+
+    collections.bitset_insert(bits, 64)
+    collections.bitset_insert(bits, 127)
+    if collections.bitset_count(bits) != 2 or
+    collections.bitset_contains(bits, 64) != true or
+    collections.bitset_contains(bits, 127) != true {
+        return 7
+    }
+    collections.bitset_free(bits)
+    return 0
+}

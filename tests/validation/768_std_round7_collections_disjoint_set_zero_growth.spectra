@@ -1,0 +1,52 @@
+module validation_768_std_round7_collections_disjoint_set_zero_growth
+
+from std.collections import DisjointSet
+import std.collections as collections
+
+public func main() returns int {
+    let groups: DisjointSet = collections.disjoint_set_new(0)
+    if collections.disjoint_set_count(groups) != 0 {
+        return 1
+    }
+
+    let first  = collections.disjoint_set_add(groups)
+    let second = collections.disjoint_set_add(groups)
+    let third  = collections.disjoint_set_add(groups)
+    let fourth = collections.disjoint_set_add(groups)
+    if first != 0 or second != 1 or third != 2 or fourth != 3 or
+    collections.disjoint_set_count(groups) != 4 {
+        return 2
+    }
+
+    if collections.disjoint_set_union(groups, 2, 2) != false or
+    collections.disjoint_set_count(groups) != 4 {
+        return 3
+    }
+    if collections.disjoint_set_union(groups, first, third) != true or
+    collections.disjoint_set_union(groups, second, fourth) != true or
+    collections.disjoint_set_count(groups) != 2 {
+        return 4
+    }
+    if collections.disjoint_set_connected(groups, first, third) != true or
+    collections.disjoint_set_connected(groups, second, fourth) != true or
+    collections.disjoint_set_connected(groups, first, second) != false {
+        return 5
+    }
+    if collections.disjoint_set_find(groups, first) != collections.disjoint_set_find(groups, third) or
+    collections.disjoint_set_find(groups, second) != collections.disjoint_set_find(groups, fourth) {
+        return 6
+    }
+
+    let fifth = collections.disjoint_set_add(groups)
+    if fifth != 4 or collections.disjoint_set_count(groups) != 3 or
+    collections.disjoint_set_connected(groups, fifth, first) != false {
+        return 7
+    }
+    if collections.disjoint_set_union(groups, fifth, third) != true or
+    collections.disjoint_set_union(groups, fifth, first) != false or
+    collections.disjoint_set_count(groups) != 2 {
+        return 8
+    }
+    collections.disjoint_set_free(groups)
+    return 0
+}

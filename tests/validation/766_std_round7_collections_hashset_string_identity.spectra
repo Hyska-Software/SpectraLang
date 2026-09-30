@@ -1,0 +1,80 @@
+module validation_766_std_round7_collections_hashset_string_identity
+
+from std.collections import HashSet, Iterator
+import std.collections as collections
+import std.option as option
+import std.string as string
+
+public func main() returns int {
+    let words: HashSet<string> = collections.hash_set_new()
+    let built: string          = string.concat("snow", "bird")
+    if collections.hash_set_insert(words, built) != true {
+        return 1
+    }
+    if collections.hash_set_insert(words, "snowbird") != false {
+        return 2
+    }
+    collections.hash_set_insert(words, "eagle")
+    collections.hash_set_insert(words, "hawk")
+    if collections.hash_set_len(words) != 3 {
+        return 3
+    }
+
+    let snapshot: Iterator<string> = collections.hash_set_iter(words)
+    if collections.hash_set_remove(words, "snowbird") != true {
+        return 4
+    }
+    let replacement: string = string.concat("snow", "bird")
+    if collections.hash_set_insert(words, replacement) != true or collections.hash_set_len(words) != 3 {
+        return 5
+    }
+    if collections.iterator_remaining(snapshot) != 3 {
+        return 6
+    }
+
+    let saw_snowbird = false
+    let saw_eagle    = false
+    let saw_hawk     = false
+    let index        = 0
+    while index < 3 {
+        let item = collections.iterator_next(snapshot)
+        if option.is_none(item) {
+            return 7
+        }
+        let value = option.option_unwrap(item)
+        if value == "snowbird" {
+            if saw_snowbird {
+                return 8
+            }
+            saw_snowbird = true
+        } else if value == "eagle" {
+            if saw_eagle {
+                return 9
+            }
+            saw_eagle = true
+        } else if value == "hawk" {
+            if saw_hawk {
+                return 10
+            }
+            saw_hawk = true
+        } else {
+            return 11
+        }
+        index = index + 1
+    }
+    if saw_snowbird != true or saw_eagle != true or saw_hawk != true {
+        return 12
+    }
+    if option.is_some(collections.iterator_next(snapshot)) {
+        return 13
+    }
+    collections.iterator_free(snapshot)
+
+    if collections.hash_set_contains(words, "snowbird") != true or
+    collections.hash_set_remove(words, built) != true or
+    collections.hash_set_contains(words, "snowbird") != false {
+        return 14
+    }
+    collections.hash_set_free(words)
+    return 0
+}

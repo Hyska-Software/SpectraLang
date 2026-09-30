@@ -1,0 +1,69 @@
+module validation_765_std_round7_collections_ordered_utf8_range
+
+from std.collections import Iterator, OrderedMap
+import std.collections as collections
+import std.option as option
+
+func next_key_is(keys: Iterator<string>, expected: string) returns bool {
+    let current = collections.iterator_next(keys)
+    return option.is_some(current) and option.option_unwrap(current) == expected
+}
+
+public func main() returns int {
+    let table: OrderedMap<string, int> = collections.ordered_map_new()
+    collections.ordered_map_set(table, "é", 5)
+    collections.ordered_map_set(table, "zulu", 4)
+    collections.ordered_map_set(table, "", 0)
+    collections.ordered_map_set(table, "alpha", 1)
+    collections.ordered_map_set(table, "á", 6)
+    collections.ordered_map_set(table, "bravo", 2)
+
+    let range: Iterator<string> = collections.ordered_map_range_keys(table, "bravo", "é")
+    collections.ordered_map_set(table, "bravo", 22)
+    let removed = collections.ordered_map_remove(table, "zulu")
+    collections.ordered_map_set(table, "charlie", 3)
+    if option.is_none(removed) or option.option_unwrap(removed) != 4 {
+        return 1
+    }
+
+    if collections.iterator_remaining(range) != 3 {
+        return 2
+    }
+    let first  = collections.iterator_next(range)
+    let second = collections.iterator_next(range)
+    let third  = collections.iterator_next(range)
+    if option.is_none(first) or option.option_unwrap(first) != "bravo" {
+        return 3
+    }
+    if option.is_none(second) or option.option_unwrap(second) != "zulu" {
+        return 4
+    }
+    if option.is_none(third) or option.option_unwrap(third) != "á" {
+        return 5
+    }
+    if option.is_some(collections.iterator_next(range)) {
+        return 6
+    }
+    collections.iterator_free(range)
+
+    let all_keys: Iterator<string> = collections.ordered_map_iter(table)
+    if next_key_is(all_keys, "") != true or
+    next_key_is(all_keys, "alpha") != true or
+    next_key_is(all_keys, "bravo") != true or
+    next_key_is(all_keys, "charlie") != true or
+    next_key_is(all_keys, "á") != true or
+    next_key_is(all_keys, "é") != true {
+        return 7
+    }
+    if option.is_some(collections.iterator_next(all_keys)) {
+        return 8
+    }
+    collections.iterator_free(all_keys)
+
+    let updated = collections.ordered_map_get(table, "bravo")
+    if option.is_none(updated) or option.option_unwrap(updated) != 22 {
+        return 9
+    }
+    collections.ordered_map_free(table)
+    return 0
+}

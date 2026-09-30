@@ -1,0 +1,36 @@
+module std_round7_numeric_float_int_saturation
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let nan               = convert.string_to_float("NaN")
+    let positive_infinity = 1.0 / 0.0
+    let negative_infinity = 0.0 - positive_infinity
+
+    if math.is_nan_f(nan) != true or convert.float_to_int(nan) != 0 {
+        return 1
+    }
+    if math.is_infinite_f(positive_infinity) != true or
+    convert.float_to_int(positive_infinity) != 9223372036854775807 {
+        return 2
+    }
+    if math.is_infinite_f(negative_infinity) != true or
+    convert.float_to_int(negative_infinity) != -9223372036854775807 - 1 {
+        return 3
+    }
+
+    // The nearest f64 value at the positive i64 boundary is 2^63.
+    let positive_boundary = 9.223372036854776e18
+    let negative_boundary = -9.223372036854776e18
+    if convert.float_to_int(positive_boundary) != 9223372036854775807 or
+    convert.float_to_int(negative_boundary) != -9223372036854775807 - 1 {
+        return 4
+    }
+
+    if convert.float_to_int(9223372036854774784.0) != 9223372036854774784 or
+    convert.float_to_int(-9223372036854775808.0) != -9223372036854775807 - 1 {
+        return 5
+    }
+    return 0
+}

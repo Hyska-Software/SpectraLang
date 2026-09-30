@@ -1,0 +1,39 @@
+module std_round7_numeric_unicode_scalar_edges
+
+import std.char as character
+import std.convert as convert
+
+public func main() returns int {
+    // Whitespace classification follows Unicode; decimal digit classification is ASCII-only.
+    if character.is_whitespace_char(0x2003) != true or
+    character.is_whitespace_char(0x200B) != false {
+        return 1
+    }
+    if character.is_digit_char(0x0664) != false or
+    character.is_alphanumeric(0x0664) != true {
+        return 2
+    }
+    if character.is_digit_char(57) != true or character.is_alphanumeric(0x1F642) != false {
+        return 3
+    }
+
+    // Surrogates and values outside Unicode are not valid scalar values.
+    if character.is_alphanumeric(0xD800) != false or
+    character.is_whitespace_char(0x110000) != false or
+    character.is_digit_char(-1) != false {
+        return 4
+    }
+    if character.to_upper_char(0xD800) != 0 or character.to_lower_char(0x110000) != 0 {
+        return 5
+    }
+
+    let maximum_scalar = 0x10FFFF
+    if character.is_alphanumeric(maximum_scalar) != false or
+    character.to_upper_char(maximum_scalar) != maximum_scalar {
+        return 6
+    }
+    if convert.int_to_string(character.to_upper_char(0xD800)) != "0" {
+        return 7
+    }
+    return 0
+}

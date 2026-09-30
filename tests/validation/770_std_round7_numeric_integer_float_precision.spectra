@@ -1,0 +1,33 @@
+module std_round7_numeric_integer_float_precision
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let below_exact_limit   = convert.int_to_float(9007199254740991)
+    let exact_limit         = convert.int_to_float(9007199254740992)
+    let first_rounded_value = convert.int_to_float(9007199254740993)
+    let next_even_value     = convert.int_to_float(9007199254740994)
+
+    if below_exact_limit != 9007199254740991.0 or exact_limit != 9007199254740992.0 {
+        return 1
+    }
+    if first_rounded_value != exact_limit or next_even_value != 9007199254740994.0 {
+        return 2
+    }
+    if convert.float_to_int(first_rounded_value) != 9007199254740992 {
+        return 3
+    }
+
+    let negative_rounded_value = convert.int_to_float(-9007199254740993)
+    if negative_rounded_value != -9007199254740992.0 or
+    convert.float_to_int(negative_rounded_value) != -9007199254740992 {
+        return 4
+    }
+
+    let difference = math.abs_f(next_even_value - first_rounded_value)
+    if difference != 2.0 {
+        return 5
+    }
+    return 0
+}

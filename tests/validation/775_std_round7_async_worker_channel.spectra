@@ -1,0 +1,44 @@
+module std_round7_async_worker_channel
+
+import std.concurrent as concurrent
+
+async func ready(value: int) returns int {
+    return value
+}
+
+async func send_from_worker(channel: int, base: int) returns int {
+    let value = await ready(base)
+    let task  = concurrent.task_spawn_fn( | item: int | {
+            if concurrent.channel_send(channel, item) and concurrent.channel_send(channel, item + 1) {
+                return 2
+            }
+            return-1
+        }, value)
+    return concurrent.task_join(task)
+}
+
+public func main() returns int {
+    concurrent.reset()
+    let channel = concurrent.channel_new()
+    if concurrent.channel_send(channel, 5) != true {
+        return 1
+    }
+
+    if block_on(send_from_worker(channel, 40)) != 2 or concurrent.channel_len(channel) != 3 {
+        return 2
+    }
+    if concurrent.channel_recv(channel) != 5 or concurrent.channel_recv(channel) != 40 or
+    concurrent.channel_recv(channel) != 41 {
+        return 3
+    }
+    if concurrent.channel_len(channel) != 0 or concurrent.channel_recv(channel) != -1 {
+        return 4
+    }
+
+    concurrent.channel_close(channel)
+    if concurrent.channel_send(channel, 99) != false {
+        return 5
+    }
+    concurrent.reset()
+    return 0
+}

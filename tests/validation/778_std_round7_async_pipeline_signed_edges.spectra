@@ -1,0 +1,36 @@
+module std_round7_async_pipeline_signed_edges
+
+import std.concurrent as concurrent
+import std.convert as convert
+
+async func ready(value: int) returns int {
+    return value
+}
+
+async func check_edges() returns int {
+    let start        = await ready(-5)
+    let parallel     = concurrent.pipeline_sum(start, 7, 3)
+    let zero_workers = concurrent.pipeline_sum(4, 5, 0)
+    let empty        = concurrent.pipeline_sum(9, -2, 4)
+    let batch        = concurrent.task_spawn_batch(-3, 4)
+    let batch_sum    = concurrent.task_join_batch_sum(batch)
+
+    if parallel != -14 or zero_workers != 30 or empty != 0 or batch_sum != -6 {
+        return-1
+    }
+    let rendered = convert.int_to_string(parallel + batch_sum)
+    if rendered != "-20" or concurrent.stats_tasks_spawned() != 4 {
+        return-2
+    }
+    return 0
+}
+
+public func main() returns int {
+    concurrent.reset()
+    let result = block_on(check_edges())
+    concurrent.reset()
+    if result != 0 {
+        return 1
+    }
+    return 0
+}
