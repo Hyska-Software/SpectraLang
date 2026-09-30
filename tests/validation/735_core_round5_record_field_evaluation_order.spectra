@@ -1,0 +1,28 @@
+module core_round5_record_field_evaluation_order
+
+static TRACE: int = 0
+
+record Pair {
+    public first: int,
+    public second: int,
+}
+
+func mark(value: int) returns int {
+    TRACE = TRACE * 10 + value
+    return value
+}
+
+public func main() returns int {
+    TRACE = 0
+    let pair = Pair {
+        second: mark(2),
+        first: mark(1)
+    }
+    if TRACE != 21 {
+        return 1
+    }
+    if pair.first != 1 or pair.second != 2 {
+        return 2
+    }
+    return 0
+}

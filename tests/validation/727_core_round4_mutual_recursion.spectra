@@ -1,0 +1,25 @@
+module core_round4_mutual_recursion
+
+func is_even(value: int) returns bool {
+    if value == 0 {
+        return true
+    }
+    return is_odd(value - 1)
+}
+
+func is_odd(value: int) returns bool {
+    if value == 0 {
+        return false
+    }
+    return is_even(value - 1)
+}
+
+public func main() returns int {
+    if not is_even(100) or is_odd(100) {
+        return 1
+    }
+    if is_even(99) or not is_odd(99) {
+        return 2
+    }
+    return 0
+}

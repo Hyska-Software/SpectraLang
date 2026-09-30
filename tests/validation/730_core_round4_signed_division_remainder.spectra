@@ -1,0 +1,17 @@
+module core_round4_signed_division_remainder
+
+public func main() returns int {
+    if 7 / 3 != 2 or 7 % 3 != 1 {
+        return 1
+    }
+    if-7 / 3 != -2 or - 7 % 3 != -1 {
+        return 2
+    }
+    if 7 /-3 != -2 or 7 % -3 != 1 {
+        return 3
+    }
+    if-7 /-3 != 2 or - 7 % -3 != -1 {
+        return 4
+    }
+    return 0
+}

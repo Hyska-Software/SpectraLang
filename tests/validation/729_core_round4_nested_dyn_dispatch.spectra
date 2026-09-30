@@ -1,0 +1,37 @@
+module core_round4_nested_dyn_dispatch
+
+trait Measure {
+    func measure( & self) returns int
+}
+
+record Counter {
+    public value: int,
+}
+
+impl Measure for Counter {
+    func measure( & self) returns int {
+        return self.value
+    }
+}
+
+record Holder {
+    public item: dyn Measure,
+}
+
+func make_holder(value: int) returns Holder {
+    let counter              = Counter { value: value }
+    let dynamic: dyn Measure = counter as dyn Measure
+    return Holder { item: dynamic }
+}
+
+func measure_twice(holder: Holder) returns int {
+    return holder.item.measure() * 2
+}
+
+public func main() returns int {
+    let holder = make_holder(23)
+    if measure_twice(holder) != 46 {
+        return 1
+    }
+    return 0
+}

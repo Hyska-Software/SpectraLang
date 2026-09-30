@@ -125,7 +125,7 @@ impl SemanticAnalyzer {
                     }
                     if let Some(sig) = self.functions.get(name).cloned() {
                         let substitutions =
-                            self.infer_type_parameter_substitutions(&sig.params, arguments);
+                            self.infer_call_type_parameter_substitutions(&sig, arguments);
                         return self.substitute_type_parameters(&sig.return_type, &substitutions);
                     }
                 }
@@ -240,33 +240,58 @@ impl SemanticAnalyzer {
                 fields,
             } => {
                 if self.struct_infos.contains_key(name) {
-                    let inferred_type_args = if type_args.is_empty() {
-                        self.generic_structs
-                            .get(name)
-                            .cloned()
-                            .map(|(type_params, field_defs)| {
-                                self.infer_struct_type_args(&type_params, &field_defs, fields)
-                            })
-                            .unwrap_or_default()
+                    let contextual_type_args = if type_args.is_empty() {
+                        match self.current_expected_type.clone() {
+                            Some(Type::Applied {
+                                name: expected_name,
+                                args,
+                            }) if expected_name == *name
+                                && args.len()
+                                    == self
+                                        .generic_structs
+                                        .get(name)
+                                        .map(|(params, _)| params.len())
+                                        .unwrap_or(0) =>
+                            {
+                                Some(args)
+                            }
+                            _ => None,
+                        }
                     } else {
-                        Vec::new()
+                        None
                     };
-                    let effective_type_args = if type_args.is_empty() {
-                        inferred_type_args.as_slice()
-                    } else {
-                        type_args.as_slice()
-                    };
-                    if self.generic_structs.contains_key(name) {
-                        let args = effective_type_args
+                    let inferred_type_args =
+                        if type_args.is_empty() && contextual_type_args.is_none() {
+                            self.generic_structs
+                                .get(name)
+                                .cloned()
+                                .map(|(type_params, field_defs)| {
+                                    self.infer_struct_type_args(&type_params, &field_defs, fields)
+                                })
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+                    let effective_type_args = if let Some(args) = contextual_type_args {
+                        args
+                    } else if type_args.is_empty() {
+                        inferred_type_args
                             .iter()
                             .map(|arg| self.type_annotation_to_type(&Some(arg.clone())))
-                            .collect::<Vec<_>>();
-                        if args.is_empty() {
+                            .collect::<Vec<_>>()
+                    } else {
+                        type_args
+                            .iter()
+                            .map(|arg| self.type_annotation_to_type(&Some(arg.clone())))
+                            .collect::<Vec<_>>()
+                    };
+                    if self.generic_structs.contains_key(name) {
+                        if effective_type_args.is_empty() {
                             Type::Unknown
                         } else {
                             Type::Applied {
                                 name: name.clone(),
-                                args,
+                                args: effective_type_args,
                             }
                         }
                     } else {
@@ -451,12 +476,18 @@ impl SemanticAnalyzer {
                     return Type::Unknown;
                 }
 
+                // The expected type applies to arm results, not the value
+                // being matched. Keep it for each body after inferring the
+                // scrutinee independently.
+                let saved_expected = self.current_expected_type.clone();
+                self.current_expected_type = None;
                 let scrutinee_type = match &expr.kind {
                     ExpressionKind::Match { scrutinee, .. } => {
                         self.infer_expression_type(scrutinee)
                     }
                     _ => Type::Unknown,
                 };
+                self.current_expected_type = saved_expected;
 
                 let arm_types: Vec<Type> = arms
                     .iter()

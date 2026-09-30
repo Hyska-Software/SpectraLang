@@ -1,0 +1,35 @@
+module core_round5_generic_enum_map
+
+enum Maybe<T> {
+    Empty,
+    Value(T),
+}
+
+func map<T, U>(source: Maybe<T>, transform: func(T) returns U) returns Maybe<U> {
+    return match source {
+        when Maybe::Empty then Maybe::Empty,
+        when Maybe::Value(value) then Maybe::Value(transform(value))
+    }
+}
+
+func add_bias(value: int) returns int {
+    return value + 6
+}
+
+public func main() returns int {
+    let present: Maybe<int> = map(Maybe::Value(5), add_bias)
+    let absent: Maybe<int>  = map(Maybe::Empty, add_bias)
+    if match present {
+        when Maybe::Value(value) then value != 11,
+        when Maybe::Empty then true
+    } {
+        return 1
+    }
+    if match absent {
+        when Maybe::Empty then false,
+        when Maybe::Value(_) then true
+    } {
+        return 2
+    }
+    return 0
+}

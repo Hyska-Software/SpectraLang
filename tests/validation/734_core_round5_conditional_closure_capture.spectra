@@ -1,0 +1,21 @@
+module core_round5_conditional_closure_capture
+
+func choose_transform(add: bool, amount: int) returns func(int) returns int {
+    let offset = amount * 2
+    if add {
+        return | value: int | value + offset
+    }
+    return | value: int | value - offset
+}
+
+public func main() returns int {
+    let add      = choose_transform( true, 4)
+    let subtract = choose_transform( false, 3)
+    if add(5) != 13 {
+        return 1
+    }
+    if subtract(5) != -1 {
+        return 2
+    }
+    return 0
+}

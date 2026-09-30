@@ -1,0 +1,30 @@
+module core_round4_short_circuit
+
+static VISITS: int = 0
+
+func visit(value: bool) returns bool {
+    VISITS = VISITS + 1
+    return value
+}
+
+public func main() returns int {
+    VISITS = 0
+
+    if false and visit( true) {
+        return 1
+    }
+    if true or visit( false) {
+    } else {
+        return 2
+    }
+    if not( true and visit( true)) {
+        return 3
+    }
+    if not( false or visit( true)) {
+        return 4
+    }
+    if VISITS != 2 {
+        return 5
+    }
+    return 0
+}

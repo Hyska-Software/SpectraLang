@@ -12,8 +12,19 @@ impl ASTLowering {
                 fields,
                 type_args,
             } => {
+                let needs_inference = type_args.is_empty()
+                    || type_args
+                        .iter()
+                        .any(|argument| self.type_annotation_needs_refinement(argument));
+                let inferred_type_args = if needs_inference {
+                    self.infer_struct_type_args_from_fields(name, fields)
+                        .or_else(|| Some(type_args.clone()))
+                        .unwrap_or_default()
+                } else {
+                    type_args.clone()
+                };
                 let (actual_name, field_defs) =
-                    self.ensure_struct_definition(name, type_args.as_slice());
+                    self.ensure_struct_definition(name, inferred_type_args.as_slice());
 
                 // Criar tipo struct
                 let struct_type = IRType::Struct {

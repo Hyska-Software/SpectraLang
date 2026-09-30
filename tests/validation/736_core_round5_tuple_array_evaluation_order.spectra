@@ -1,0 +1,23 @@
+module core_round5_tuple_array_evaluation_order
+
+static TRACE: int = 0
+
+func mark(value: int) returns int {
+    TRACE = TRACE * 10 + value
+    return value
+}
+
+public func main() returns int {
+    TRACE = 0
+    let tuple = (mark(1), mark(2), mark(3))
+    if TRACE != 123 or tuple.0 != 1 or tuple.1 != 2 or tuple.2 != 3 {
+        return 1
+    }
+
+    TRACE = 0
+    let values = [mark(4), mark(5), mark(6)]
+    if TRACE != 456 or values[0] != 4 or values[1] != 5 or values[2] != 6 {
+        return 2
+    }
+    return 0
+}

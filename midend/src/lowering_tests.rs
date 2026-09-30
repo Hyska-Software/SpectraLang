@@ -49,8 +49,14 @@ mod tests {
 
         let first_text = crate::ir::pretty::format_module(&first);
         let second_text = crate::ir::pretty::format_module(&second);
-        assert!(first_text.contains("__lambda_alpha_lambda_0"), "{first_text}");
-        assert!(second_text.contains("__lambda_beta_lambda_0"), "{second_text}");
+        assert!(
+            first_text.contains("__lambda_alpha_lambda_0"),
+            "{first_text}"
+        );
+        assert!(
+            second_text.contains("__lambda_beta_lambda_0"),
+            "{second_text}"
+        );
         assert!(!first_text.contains("__lambda_beta_lambda_0"));
         assert!(!second_text.contains("__lambda_alpha_lambda_0"));
     }
@@ -157,8 +163,14 @@ mod tests {
 
         let pretty = crate::ir::pretty::format_module(&ir);
         assert!(!pretty.contains("spectra.std.range.iter"), "{pretty}");
-        assert!(!pretty.contains("spectra.std.collections.iterator_remaining"), "{pretty}");
-        assert!(!pretty.contains("spectra.std.collections.iterator_next"), "{pretty}");
+        assert!(
+            !pretty.contains("spectra.std.collections.iterator_remaining"),
+            "{pretty}"
+        );
+        assert!(
+            !pretty.contains("spectra.std.collections.iterator_next"),
+            "{pretty}"
+        );
         assert!(pretty.contains("range.cond"), "{pretty}");
         assert!(pretty.contains("range.body"), "{pretty}");
         assert!(pretty.contains("range.latch"), "{pretty}");
@@ -199,13 +211,19 @@ mod tests {
             .and_then(|body| body.split("fn reassigned()").next())
             .expect("total function should be present");
         assert!(!total.contains("spectra.std.range.iter"), "{total}");
-        assert!(!total.contains("spectra.std.collections.iterator_remaining"), "{total}");
+        assert!(
+            !total.contains("spectra.std.collections.iterator_remaining"),
+            "{total}"
+        );
 
         let reassigned = pretty
             .split("fn reassigned()")
             .nth(1)
             .expect("reassigned function should be present");
-        assert!(reassigned.contains("spectra.std.range.iter"), "{reassigned}");
+        assert!(
+            reassigned.contains("spectra.std.range.iter"),
+            "{reassigned}"
+        );
     }
 
     #[test]
@@ -239,7 +257,10 @@ mod tests {
             .expect("collection loop should have an iterator header");
         assert!(remaining < header, "{pretty}");
         assert!(pretty.contains("iterator.latch"), "{pretty}");
-        assert!(pretty.contains("spectra.std.collections.iterator_next_unchecked"), "{pretty}");
+        assert!(
+            pretty.contains("spectra.std.collections.iterator_next_unchecked"),
+            "{pretty}"
+        );
     }
 
     #[test]
@@ -970,10 +991,9 @@ mod tests {
     /// The zero operand of a unary negation must be typed exactly like the
     /// operand's *lowered* form: number literals take their type from
     /// `current_expected_annotation` (not the semantic span fact).
-    /// `let x: i8 = -5` therefore needs an i8 zero, while `(-120) as i8`
-    /// (cast outside the annotation's reach) lowers the literal untyped and
-    /// needs the historical i64 zero. Both used to mismatch the other way
-    /// and crash the Cranelift verifier.
+    /// `let x: i8 = -5` and `-120 as i8` both need an i8 zero. By contrast,
+    /// `(-120) as i8` negates an untyped literal first and applies the explicit
+    /// cast afterward. Mixing either representation used to fail verification.
     #[test]
     fn unary_negate_zero_matches_the_literals_lowered_type() {
         // Shape 1: annotation active over the literal -> typed i8 pair.
@@ -991,10 +1011,7 @@ mod tests {
             for block in &function.blocks {
                 let instructions = &block.instructions;
                 for (index, instruction) in instructions.iter().enumerate() {
-                    if !matches!(
-                        &instruction.kind,
-                        crate::ir::InstructionKind::Sub { .. }
-                    ) {
+                    if !matches!(&instruction.kind, crate::ir::InstructionKind::Sub { .. }) {
                         continue;
                     }
                     // Find the preceding constants feeding this Sub.
@@ -1003,19 +1020,20 @@ mod tests {
                         _ => unreachable!(),
                     };
                     let producer = |id: usize| {
-                        instructions[..index].iter().rev().find_map(|instr| match &instr.kind {
-                            crate::ir::InstructionKind::ConstIntTyped { result, ty, .. }
-                                if result.id == id =>
-                            {
-                                Some(Some(ty.clone()))
-                            }
-                            crate::ir::InstructionKind::ConstInt { result, .. }
-                                if result.id == id =>
-                            {
-                                Some(None)
-                            }
-                            _ => None,
-                        })
+                        instructions[..index]
+                            .iter()
+                            .rev()
+                            .find_map(|instr| match &instr.kind {
+                                crate::ir::InstructionKind::ConstIntTyped {
+                                    result, ty, ..
+                                } if result.id == id => Some(Some(ty.clone())),
+                                crate::ir::InstructionKind::ConstInt { result, .. }
+                                    if result.id == id =>
+                                {
+                                    Some(None)
+                                }
+                                _ => None,
+                            })
                     };
                     if let (Some(Some(lhs_ty)), Some(Some(rhs_ty))) =
                         (producer(lhs_id), producer(rhs_id))
@@ -1035,11 +1053,8 @@ mod tests {
             "the annotated `-5` must lower as a typed-constant Sub"
         );
 
-        // Shape 2: no annotation reaches the literal when it sits behind a
-        // cast feeding a call argument (`sink((-120) as i8)`), so both
-        // negate operands are the historical untyped i64 constants. (A
-        // fully-constant `let` chain would be const-evaluated instead, which
-        // is why this shape goes through an opaque call.)
+        // Shape 2: an explicit cast is the unary operand (`sink(-120 as i8)`),
+        // so the cast and its negation must both retain the exact i8 type.
         let ir = lower_source(
             r#"
             module negate_cast_literal
@@ -1051,32 +1066,48 @@ mod tests {
             }
             "#,
         );
-        let mut saw_untyped_sub = false;
+        let mut saw_typed_i8_sub = false;
         for function in &ir.functions {
             for block in &function.blocks {
                 let instructions = &block.instructions;
                 for (index, instruction) in instructions.iter().enumerate() {
-                    let crate::ir::InstructionKind::Sub { lhs, rhs, .. } = &instruction.kind
-                    else {
+                    let crate::ir::InstructionKind::Sub { lhs, rhs, .. } = &instruction.kind else {
                         continue;
                     };
                     let producer = |id: usize| {
-                        instructions[..index].iter().rev().any(|instr| {
-                            matches!(
-                                &instr.kind,
-                                crate::ir::InstructionKind::ConstInt { result, .. } if result.id == id
-                            )
-                        })
+                        instructions[..index]
+                            .iter()
+                            .rev()
+                            .find_map(|instr| match &instr.kind {
+                                crate::ir::InstructionKind::ConstIntTyped {
+                                    result, ty, ..
+                                } if result.id == id => Some(Some(ty.clone())),
+                                crate::ir::InstructionKind::ConstInt { result, .. }
+                                    if result.id == id =>
+                                {
+                                    Some(None)
+                                }
+                                _ => None,
+                            })
                     };
-                    if producer(lhs.id) && producer(rhs.id) {
-                        saw_untyped_sub = true;
+                    if let (Some(Some(lhs_ty)), Some(Some(rhs_ty))) =
+                        (producer(lhs.id), producer(rhs.id))
+                    {
+                        assert_eq!(lhs_ty, rhs_ty, "both cast-negate operands must match");
+                        saw_typed_i8_sub |= matches!(
+                            lhs_ty,
+                            IRType::ExactInt {
+                                signed: true,
+                                width: crate::lowering::IRIntWidth::I8
+                            }
+                        );
                     }
                 }
             }
         }
         assert!(
-            saw_untyped_sub,
-            "an unannotated literal negation must lower as an untyped i64 Sub, got:\n{}",
+            saw_typed_i8_sub,
+            "a negated i8 cast must lower as an i8-typed Sub, got:\n{}",
             crate::ir::pretty::format_module(&ir)
         );
     }

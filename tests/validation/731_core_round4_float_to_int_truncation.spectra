@@ -1,0 +1,18 @@
+module core_round4_float_to_int_truncation
+
+func truncate(value: f64) returns int {
+    return value as int
+}
+
+public func main() returns int {
+    if truncate(3.875) != 3 {
+        return 1
+    }
+    if truncate(-3.875) != -3 {
+        return 2
+    }
+    if truncate(0.875) != 0 or truncate(-0.875) != 0 {
+        return 3
+    }
+    return 0
+}

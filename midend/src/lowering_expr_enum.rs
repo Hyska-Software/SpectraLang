@@ -78,7 +78,10 @@ impl ASTLowering {
                         let value = if position == 0 {
                             self.builder.build_const_int(ir_func, 0)
                         } else {
-                            match data.as_ref().and_then(|expressions| expressions.get(position)) {
+                            match data
+                                .as_ref()
+                                .and_then(|expressions| expressions.get(position))
+                            {
                                 Some(argument) => self.hidden_size_argument(argument, ir_func),
                                 None => self.builder.build_const_int(ir_func, 0),
                             }
@@ -162,7 +165,11 @@ impl ASTLowering {
                         // Named-field arguments already lack positional
                         // ordering; forward "unknown length" for any hidden
                         // parameter so the ABI stays aligned.
-                        self.append_hidden_size_zeros(&[function_name.as_str()], &mut call_args, ir_func);
+                        self.append_hidden_size_zeros(
+                            &[function_name.as_str()],
+                            &mut call_args,
+                            ir_func,
+                        );
                     } else {
                         self.append_hidden_size_args(
                             &[function_name.as_str()],
@@ -230,13 +237,21 @@ impl ASTLowering {
                         };
                         if call_exprs.is_empty() {
                             self.append_hidden_size_zeros(
-                                &[final_name.as_str(), callee.as_str(), qualified_callee.as_str()],
+                                &[
+                                    final_name.as_str(),
+                                    callee.as_str(),
+                                    qualified_callee.as_str(),
+                                ],
                                 &mut call_args,
                                 ir_func,
                             );
                         } else {
                             self.append_hidden_size_args(
-                                &[final_name.as_str(), callee.as_str(), qualified_callee.as_str()],
+                                &[
+                                    final_name.as_str(),
+                                    callee.as_str(),
+                                    qualified_callee.as_str(),
+                                ],
                                 &call_exprs,
                                 &mut call_args,
                                 ir_func,
@@ -307,11 +322,13 @@ impl ASTLowering {
                 let (resolved_enum_name, variants) =
                     self.ensure_enum_definition(enum_name, final_args.as_slice());
 
-                let data_values: Vec<Value> = if let Some(data_exprs) = data {
-                    data_exprs
-                        .iter()
-                        .map(|expr| self.lower_expression(expr, ir_func))
-                        .collect()
+                let expected_payload_types = variants
+                    .iter()
+                    .find(|(name, _, _)| name == variant_name)
+                    .and_then(|(_, _, payload)| payload.clone())
+                    .unwrap_or_default();
+                let payload_exprs: Vec<&Expression> = if let Some(data_exprs) = data {
+                    data_exprs.iter().collect()
                 } else if let Some(named_fields) = struct_data {
                     self.reorder_named_variant_exprs(
                         &resolved_enum_name,
@@ -319,12 +336,25 @@ impl ASTLowering {
                         named_fields,
                     )
                     .unwrap_or_default()
-                    .into_iter()
-                    .map(|expr| self.lower_expression(expr, ir_func))
-                    .collect()
                 } else {
                     Vec::new()
                 };
+                let mut data_values = Vec::with_capacity(payload_exprs.len());
+                for (index, expression) in payload_exprs.into_iter().enumerate() {
+                    let saved_expected_type = self.current_expected_ir_type.clone();
+                    let saved_expected_annotation = self.current_expected_annotation.clone();
+                    let expected_type = expected_payload_types
+                        .get(index)
+                        .filter(|ty| !Self::ir_type_contains_unknown(ty))
+                        .cloned();
+                    self.current_expected_ir_type = expected_type.clone();
+                    self.current_expected_annotation = expected_type
+                        .as_ref()
+                        .map(|ty| self.ir_type_to_annotation(ty));
+                    data_values.push(self.lower_expression(expression, ir_func));
+                    self.current_expected_ir_type = saved_expected_type;
+                    self.current_expected_annotation = saved_expected_annotation;
+                }
 
                 if !variants.is_empty() {
                     // Encontrar o variant
@@ -423,9 +453,8 @@ impl ASTLowering {
                     enum_name, variant_name
                 ))
             }
-            _ => self.invalid_value(
-                "lower_expression_enum called with a non-enum-variant expression",
-            ),
+            _ => self
+                .invalid_value("lower_expression_enum called with a non-enum-variant expression"),
         }
     }
 }

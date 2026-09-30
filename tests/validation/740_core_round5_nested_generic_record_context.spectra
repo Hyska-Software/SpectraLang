@@ -1,0 +1,32 @@
+module core_round5_nested_generic_record_context
+
+enum Maybe<T> {
+    Empty,
+    Value(T),
+}
+
+record Snapshot<T> {
+    public value: Maybe<T>,
+    public count: int,
+}
+
+func make_snapshot() returns Snapshot<int> {
+    return Snapshot {
+        value: Maybe::Empty,
+        count: 3
+    }
+}
+
+public func main() returns int {
+    let snapshot: Snapshot<int> = make_snapshot()
+    if snapshot.count != 3 {
+        return 1
+    }
+    if match snapshot.value {
+        when Maybe::Empty then false,
+        when Maybe::Value(_) then true
+    } {
+        return 2
+    }
+    return 0
+}

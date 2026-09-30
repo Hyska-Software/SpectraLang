@@ -398,6 +398,21 @@ impl ASTLowering {
                 self.value_map.insert(name.clone(), scrutinee);
                 if let Some(ty) = scrutinee_type {
                     self.variable_types.insert(name.clone(), ty.clone());
+                    // A pattern binding is an owner for the matched value for
+                    // the duration of its arm. Keep record payloads in the
+                    // ordinary scope-drop map so returning a scalar from a
+                    // match still runs the payload's destructor exactly once.
+                    // Bindings that are moved out by the arm expression are
+                    // excluded by match lowering before this scope is popped.
+                    if self.type_has_drop(ty) {
+                        if let IRType::Struct {
+                            name: struct_name, ..
+                        } = Self::ir_type_representation_static(ty)
+                        {
+                            self.struct_var_map
+                                .insert(name.clone(), (scrutinee, struct_name.clone()));
+                        }
+                    }
                 }
             }
             Pattern::Literal(_) => {

@@ -37,7 +37,18 @@ impl ASTLowering {
 
         if let Some(value) = self.eval_const_expression(inner) {
             if let Some(casted) = self.cast_const_value(value, &to_ty) {
-                return self.emit_const_value(&casted, ir_func);
+                // The explicit cast owns its destination type, even when the
+                // surrounding call or aggregate supplies no contextual
+                // annotation. Without this, a constant `17 as i8` was emitted
+                // as canonical `Int` and failed ABI checks at an `i8` call
+                // parameter.
+                let saved_expected_ir_type =
+                    std::mem::replace(&mut self.current_expected_ir_type, Some(to_ty.clone()));
+                let saved_expected_annotation = self.current_expected_annotation.take();
+                let result = self.emit_const_value(&casted, ir_func);
+                self.current_expected_ir_type = saved_expected_ir_type;
+                self.current_expected_annotation = saved_expected_annotation;
+                return result;
             }
         }
 

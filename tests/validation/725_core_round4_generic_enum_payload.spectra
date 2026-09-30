@@ -1,0 +1,31 @@
+module core_round4_generic_enum_payload
+
+record Pair {
+    public left: int,
+    public right: int,
+}
+
+enum Outcome<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+func relay<T, E>(value: Outcome<T, E>) returns Outcome<T, E> {
+    return value
+}
+
+func score(value: Outcome<Pair, int>) returns int {
+    return match value {
+        when Outcome::Ok(Pair { left, right }) then left + right,
+        when Outcome::Err(code) then -code
+    }
+}
+
+public func main() returns int {
+    let accepted: Outcome<Pair, int> = relay(Outcome::Ok(Pair { left: 7, right: 9 }))
+    let rejected: Outcome<Pair, int> = relay(Outcome::Err(13))
+    if score(accepted) != 16 or score(rejected) != -13 {
+        return 1
+    }
+    return 0
+}

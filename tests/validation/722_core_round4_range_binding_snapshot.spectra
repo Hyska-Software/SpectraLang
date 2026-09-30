@@ -1,0 +1,25 @@
+module core_round4_range_binding_snapshot
+
+import std.range as range
+
+public func main() returns int {
+    let sequence = 1 ..= 3
+    let total    = 0
+    let visits   = 0
+
+    for value in sequence {
+        visits = visits + 1
+        total = total + value
+        if value == 1 {
+            sequence = 8 ..= 9
+        }
+    }
+
+    if total != 6 or visits != 3 {
+        return 1
+    }
+    if range.start(sequence) != 8 or range.end(sequence) != 9 {
+        return 2
+    }
+    return 0
+}

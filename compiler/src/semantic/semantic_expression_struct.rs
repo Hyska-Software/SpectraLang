@@ -62,6 +62,25 @@ impl SemanticAnalyzer {
                     })
                     .collect::<HashMap<_, _>>();
 
+                // A declared expected application specializes a generic
+                // record even when one or more fields do not expose their
+                // type parameters (for example `Snapshot<int>` containing
+                // `Maybe::Empty`). Explicit constructor arguments remain the
+                // source of truth when present.
+                if type_args.is_empty() {
+                    if let Some(Type::Applied {
+                        name: expected_name,
+                        args,
+                    }) = self.current_expected_type.clone()
+                    {
+                        if expected_name == *name && args.len() == struct_info.type_params.len() {
+                            for (param, arg) in struct_info.type_params.iter().zip(args) {
+                                substitutions.entry(param.clone()).or_insert(arg);
+                            }
+                        }
+                    }
+                }
+
                 // Generic struct constructors may omit their type arguments
                 // when the field values provide an unambiguous application,
                 // e.g. `Wrapper { value: 12 }` -> `Wrapper<int>`.  The later
@@ -76,7 +95,8 @@ impl SemanticAnalyzer {
                             self.infer_struct_type_args(&type_params, &field_defs, fields);
                         for (param, arg) in struct_info.type_params.iter().zip(inferred_args) {
                             substitutions
-                                .insert(param.clone(), self.type_annotation_to_type(&Some(arg)));
+                                .entry(param.clone())
+                                .or_insert_with(|| self.type_annotation_to_type(&Some(arg)));
                         }
                     }
                 }
@@ -84,7 +104,14 @@ impl SemanticAnalyzer {
                 let mut provided_fields = HashSet::new();
 
                 for (field_name, field_value) in fields {
+                    let expected_field_type = struct_info.fields.get(field_name).map(|field| {
+                        self.type_annotation_to_type_with_substitutions(&field.ty, &substitutions)
+                    });
+                    let saved_expected = self.current_expected_type.clone();
+                    self.current_expected_type = expected_field_type.clone();
                     self.analyze_expression(field_value);
+                    let value_type = self.infer_expression_type(field_value);
+                    self.current_expected_type = saved_expected;
 
                     if !provided_fields.insert(field_name.clone()) {
                         self.error(
@@ -98,11 +125,12 @@ impl SemanticAnalyzer {
                     }
 
                     if let Some(expected_field) = struct_info.fields.get(field_name) {
-                        let value_type = self.infer_expression_type(field_value);
-                        let expected_type = self.type_annotation_to_type_with_substitutions(
-                            &expected_field.ty,
-                            &substitutions,
-                        );
+                        let expected_type = expected_field_type.unwrap_or_else(|| {
+                            self.type_annotation_to_type_with_substitutions(
+                                &expected_field.ty,
+                                &substitutions,
+                            )
+                        });
 
                         if !self.generic_argument_types_match(&value_type, &expected_type) {
                             let mut message = format!(

@@ -153,9 +153,8 @@ impl SemanticAnalyzer {
                     if s.type_params.is_empty() {
                         if let Some(derived) = self.json_struct_derives.get(&s.name) {
                             let methods = self.methods.get(&s.name);
-                            let has_method = |name: &str| {
-                                methods.is_some_and(|table| table.contains_key(name))
-                            };
+                            let has_method =
+                                |name: &str| methods.is_some_and(|table| table.contains_key(name));
                             exports.json_derives.insert(
                                 s.name.clone(),
                                 ExportedJsonDerive {
@@ -234,9 +233,8 @@ impl SemanticAnalyzer {
                     if e.type_params.is_empty() {
                         if let Some(wire_names) = self.json_enum_names.get(&e.name) {
                             let methods = self.methods.get(&e.name);
-                            let has_method = |name: &str| {
-                                methods.is_some_and(|table| table.contains_key(name))
-                            };
+                            let has_method =
+                                |name: &str| methods.is_some_and(|table| table.contains_key(name));
                             exports.json_derives.insert(
                                 e.name.clone(),
                                 ExportedJsonDerive {
@@ -247,9 +245,7 @@ impl SemanticAnalyzer {
                                         .variants
                                         .iter()
                                         .zip(wire_names.iter())
-                                        .map(|(variant, wire)| {
-                                            (variant.name.clone(), wire.clone())
-                                        })
+                                        .map(|(variant, wire)| (variant.name.clone(), wire.clone()))
                                         .collect(),
                                 },
                             );
@@ -868,6 +864,23 @@ impl SemanticAnalyzer {
         substitutions
     }
 
+    pub(crate) fn infer_call_type_parameter_substitutions(
+        &mut self,
+        signature: &FunctionSignature,
+        arguments: &[Expression],
+    ) -> HashMap<String, Type> {
+        let mut substitutions =
+            self.infer_type_parameter_substitutions(&signature.params, arguments);
+        if let Some(expected_return) = self.current_expected_type.clone() {
+            self.collect_type_parameter_substitutions(
+                &signature.return_type,
+                &expected_return,
+                &mut substitutions,
+            );
+        }
+        substitutions
+    }
+
     fn collect_type_parameter_substitutions(
         &self,
         expected: &Type,
@@ -876,9 +889,20 @@ impl SemanticAnalyzer {
     ) {
         match expected {
             Type::TypeParameter { name } => {
-                substitutions
-                    .entry(name.clone())
-                    .or_insert_with(|| actual.clone());
+                if matches!(actual, Type::Unknown)
+                    || matches!(actual, Type::TypeParameter { name: actual_name } if actual_name == name)
+                {
+                    return;
+                }
+                match substitutions.get(name) {
+                    Some(Type::TypeParameter { .. }) => {
+                        substitutions.insert(name.clone(), actual.clone());
+                    }
+                    Some(_) => {}
+                    None => {
+                        substitutions.insert(name.clone(), actual.clone());
+                    }
+                }
             }
             Type::Array { element_type, .. } => {
                 if let Type::Array {
@@ -903,6 +927,28 @@ impl SemanticAnalyzer {
                     }
                 }
             }
+            Type::Applied {
+                name: expected_name,
+                args: expected_args,
+            } => {
+                if let Type::Applied {
+                    name: actual_name,
+                    args: actual_args,
+                } = actual
+                {
+                    if expected_name == actual_name && expected_args.len() == actual_args.len() {
+                        for (expected_arg, actual_arg) in
+                            expected_args.iter().zip(actual_args.iter())
+                        {
+                            self.collect_type_parameter_substitutions(
+                                expected_arg,
+                                actual_arg,
+                                substitutions,
+                            );
+                        }
+                    }
+                }
+            }
             Type::Fn {
                 params,
                 return_type,
@@ -920,6 +966,14 @@ impl SemanticAnalyzer {
                         actual_return,
                         substitutions,
                     );
+                }
+            }
+            Type::Task { output } => {
+                if let Type::Task {
+                    output: actual_output,
+                } = actual
+                {
+                    self.collect_type_parameter_substitutions(output, actual_output, substitutions);
                 }
             }
             _ => {}

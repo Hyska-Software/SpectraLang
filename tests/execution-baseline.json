@@ -2876,7 +2876,49 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/618_stdlib_list_sort_typed.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/619_stdlib_collection_capacity.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/619_stdlib_utf8_program_arguments.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/61_closure_surface.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/620_ml_attention_diff_autodiff.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/620_stdlib_advanced_collections.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/621_generic_enum_context.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/621_stdlib_vector.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -2888,13 +2930,73 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/622_stdlib_collection_growth.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/623_stdlib_vector_growth.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/624_stdlib_hash_set.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/625_stdlib_ordered_map.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/626_stdlib_priority_queue.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/627_stdlib_bitset.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/628_stdlib_disjoint_set.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/629_stdlib_collections_graph_search.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/62_block_return_and_shadowing.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/630_language_core_guards_try_mut.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/63_destructuring_and_or_patterns.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/640_tensor_graph_fused_unary.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3296,7 +3398,73 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/701_core_or_pattern_binding_positions.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/702_core_wrapping_integer_cast.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/703_core_irrefutable_record_match.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/704_core_nested_scope_drop_exact_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/705_core_collection_return_drop_cleanup.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/707_core_irrefutable_integer_tuple_match.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/70_tensor_phase3_production.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/710_core_irrefutable_nested_record_tuple_match.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/712_core_guarded_match_with_structural_fallback.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/713_core_generic_record_irrefutable_match.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/718_core_checked_casts_valid_upper_edges.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/719_core_round4_short_circuit.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3308,13 +3476,187 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/720_core_round4_call_argument_order.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/721_core_round4_range_bounds_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/722_core_round4_range_binding_snapshot.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/723_core_round4_lvalue_index_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/724_core_round4_nested_lvalue_index_order.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/725_core_round4_generic_enum_payload.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/726_core_round4_nested_enum_match.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/727_core_round4_mutual_recursion.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/728_core_round4_generic_record_reordering.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/729_core_round4_nested_dyn_dispatch.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/72_ml_phase6_mlp_training.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/730_core_round4_signed_division_remainder.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/731_core_round4_float_to_int_truncation.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/732_core_round4_record_alias_consistency.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/733_core_round4_nested_field_drop_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/734_core_round5_conditional_closure_capture.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/735_core_round5_record_field_evaluation_order.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/736_core_round5_tuple_array_evaluation_order.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/737_core_round5_named_enum_payload_exhaustiveness.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/738_core_round5_nested_generic_boolean_exhaustiveness.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/739_core_round5_generic_unit_variant_return_context.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/73_ml_phase6_cnn_training.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/740_core_round5_nested_generic_record_context.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/741_core_round5_unary_cast_call_context.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/742_core_round5_array_record_lvalue_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/743_core_round5_zero_arg_record_closure.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/744_core_round5_enum_payload_drop_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/745_core_round5_do_while_continue_condition.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/746_core_round5_match_scrutinee_once.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/747_core_round5_tuple_alias_exhaustiveness.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/748_core_round5_generic_enum_map.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -3663,168 +4005,6 @@
       "kind": "exec"
     },
     "tests/validation/trailing_comma_arrays.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/630_language_core_guards_try_mut.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/701_core_or_pattern_binding_positions.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/702_core_wrapping_integer_cast.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/703_core_irrefutable_record_match.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/704_core_nested_scope_drop_exact_once.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/705_core_collection_return_drop_cleanup.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/707_core_irrefutable_integer_tuple_match.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/710_core_irrefutable_nested_record_tuple_match.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/712_core_guarded_match_with_structural_fallback.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/713_core_generic_record_irrefutable_match.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/718_core_checked_casts_valid_upper_edges.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/618_stdlib_list_sort_typed.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/619_stdlib_collection_capacity.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/619_stdlib_utf8_program_arguments.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/620_ml_attention_diff_autodiff.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/620_stdlib_advanced_collections.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/621_generic_enum_context.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/621_stdlib_vector.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/622_stdlib_collection_growth.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/623_stdlib_vector_growth.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/624_stdlib_hash_set.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/625_stdlib_ordered_map.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/626_stdlib_priority_queue.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/627_stdlib_bitset.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/628_stdlib_disjoint_set.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/629_stdlib_collections_graph_search.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/640_tensor_graph_fused_unary.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",

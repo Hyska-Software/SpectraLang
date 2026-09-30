@@ -44,11 +44,8 @@ impl SemanticAnalyzer {
                             "Call the function with its module-qualified name, such as `module::function(...)`, or import it with a unique alias.",
                         );
                     } else if let Some(signature) = self.functions.get(name).cloned() {
-                        let signature = self.specialize_std_call_signature(
-                            name,
-                            &signature,
-                            arguments,
-                        );
+                        let signature =
+                            self.specialize_std_call_signature(name, &signature, arguments);
                         let def_span = self.lookup_symbol(name).and_then(|info| info.def_span);
                         self.symbol_resolutions.insert(
                             callee.span,
@@ -70,15 +67,17 @@ impl SemanticAnalyzer {
                                 expr.span,
                             );
                         } else {
-                            let substitutions = self
-                                .infer_type_parameter_substitutions(&signature.params, arguments);
+                            let substitutions =
+                                self.infer_call_type_parameter_substitutions(&signature, arguments);
 
                             // Validate argument types
                             for (i, (arg, expected_type)) in
                                 arguments.iter().zip(&signature.params).enumerate()
                             {
                                 let saved_expected = self.current_expected_type.clone();
-                                self.current_expected_type = Some(expected_type.clone());
+                                let specialized_expected =
+                                    self.substitute_type_parameters(expected_type, &substitutions);
+                                self.current_expected_type = Some(specialized_expected);
                                 let arg_type = self.infer_expression_type(arg);
                                 self.current_expected_type = saved_expected;
                                 if matches!(arg_type, Type::Unknown) {
@@ -209,11 +208,7 @@ impl SemanticAnalyzer {
                 for (index, arg) in arguments.iter().enumerate() {
                     let saved_expected = self.current_expected_type.clone();
                     self.current_expected_type =
-                        if Self::is_contextual_integer_literal_expression(arg) {
-                            self.expected_call_argument_type(callee, index)
-                        } else {
-                            None
-                        };
+                        self.expected_call_argument_type(callee, arguments, index);
                     self.analyze_expression(arg);
                     self.current_expected_type = saved_expected;
                 }
@@ -247,11 +242,18 @@ impl SemanticAnalyzer {
     fn expected_call_argument_type(
         &mut self,
         callee: &Expression,
+        arguments: &[Expression],
         argument_index: usize,
     ) -> Option<Type> {
         if let ExpressionKind::Identifier(name) = &callee.kind {
             if let Some(signature) = self.functions.get(name) {
-                return signature.params.get(argument_index).cloned();
+                let signature = signature.clone();
+                let substitutions =
+                    self.infer_call_type_parameter_substitutions(&signature, arguments);
+                return signature
+                    .params
+                    .get(argument_index)
+                    .map(|expected| self.substitute_type_parameters(expected, &substitutions));
             }
         }
         // Namespace calls are represented as field-access expressions. Use
@@ -261,7 +263,13 @@ impl SemanticAnalyzer {
         // `i8`).
         if let Some(qualified_name) = namespace_path(callee) {
             if let Some(signature) = self.functions.get(&qualified_name) {
-                return signature.params.get(argument_index).cloned();
+                let signature = signature.clone();
+                let substitutions =
+                    self.infer_call_type_parameter_substitutions(&signature, arguments);
+                return signature
+                    .params
+                    .get(argument_index)
+                    .map(|expected| self.substitute_type_parameters(expected, &substitutions));
             }
             if let Some((namespace, _)) = qualified_name.rsplit_once('.') {
                 if self.module_namespaces.contains(namespace) {

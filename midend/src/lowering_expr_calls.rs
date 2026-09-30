@@ -1,6 +1,28 @@
 use super::*;
 
 impl ASTLowering {
+    pub(crate) fn is_explicit_cast_expression(expr: &Expression) -> bool {
+        match &expr.kind {
+            ExpressionKind::Cast { .. } => true,
+            ExpressionKind::Grouping(inner) => Self::is_explicit_cast_expression(inner),
+            _ => false,
+        }
+    }
+
+    fn propagates_expected_annotation(expr: &Expression) -> bool {
+        match &expr.kind {
+            // An explicit cast owns the type of its result. Letting a call-site
+            // expectation flow through it changes the typing of its operand.
+            ExpressionKind::Cast { .. } => false,
+            ExpressionKind::Grouping(inner) => Self::propagates_expected_annotation(inner),
+            ExpressionKind::Unary {
+                operator: spectra_compiler::ast::UnaryOperator::Negate,
+                operand,
+            } if Self::is_explicit_cast_expression(operand) => false,
+            _ => true,
+        }
+    }
+
     fn is_contextual_integer_literal_expression(expr: &Expression) -> bool {
         if Self::direct_integer_literal(expr).is_some() {
             return true;
@@ -38,17 +60,28 @@ impl ASTLowering {
                 let mut arg_values = Vec::with_capacity(arguments.len());
                 for (index, arg) in arguments.iter().enumerate() {
                     let saved_expected = self.current_expected_ir_type.clone();
+                    let saved_annotation = self.current_expected_annotation.clone();
+                    let expected_parameter = expected_parameters
+                        .as_ref()
+                        .and_then(|params| params.get(index))
+                        .cloned();
+                    self.current_expected_annotation = if Self::propagates_expected_annotation(arg)
+                    {
+                        expected_parameter
+                            .as_ref()
+                            .map(|ty| self.ir_type_to_annotation(ty))
+                    } else {
+                        None
+                    };
                     self.current_expected_ir_type =
                         if Self::is_contextual_integer_literal_expression(arg) {
-                            expected_parameters
-                                .as_ref()
-                                .and_then(|params| params.get(index))
-                                .cloned()
+                            expected_parameter
                         } else {
                             None
                         };
                     arg_values.push(self.lower_expression(arg, ir_func));
                     self.current_expected_ir_type = saved_expected;
+                    self.current_expected_annotation = saved_annotation;
                 }
 
                 if let ExpressionKind::Identifier(name) = &callee.kind {

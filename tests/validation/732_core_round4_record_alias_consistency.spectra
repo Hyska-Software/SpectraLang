@@ -1,0 +1,21 @@
+module core_round4_record_alias_consistency
+
+record Point {
+    public x: int,
+    public y: int,
+}
+
+public func main() returns int {
+    let original = Point { x: 2, y: 5 }
+    let alias    = original
+    alias.x = 19
+    alias.y = -4
+
+    if original.x != 19 or original.y != -4 {
+        return 1
+    }
+    if alias.x != 19 or alias.y != -4 {
+        return 2
+    }
+    return 0
+}

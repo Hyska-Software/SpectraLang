@@ -1,0 +1,32 @@
+module core_round5_do_while_continue_condition
+
+static CONDITION_CALLS: int = 0
+
+func should_continue(index: int) returns bool {
+    CONDITION_CALLS = CONDITION_CALLS + 1
+    return index < 4
+}
+
+func count_visits() returns int {
+    let index    = 0
+    let accepted = 0
+    do {
+        index = index + 1
+        if index < 3 {
+            continue
+        }
+        accepted = accepted + 1
+    } while should_continue(index)
+    return index * 10 + accepted
+}
+
+public func main() returns int {
+    CONDITION_CALLS = 0
+    if count_visits() != 42 {
+        return 1
+    }
+    if CONDITION_CALLS != 4 {
+        return 2
+    }
+    return 0
+}

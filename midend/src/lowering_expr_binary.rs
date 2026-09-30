@@ -244,37 +244,38 @@ impl ASTLowering {
                         //   constant (an i64 zero crashed the Cranelift
                         //   verifier), while `(-120) as i8` lowers the
                         //   literal untyped (an i8 zero would crash it).
-                        // - Any other operand keeps the historical behavior.
-                        let expected_operand_ir_type = self
-                            .current_expected_annotation
-                            .clone()
-                            .map(|annotation| self.lower_type_annotation(&annotation))
-                            .or_else(|| self.current_expected_ir_type.clone());
-                        let lowered_constant_cast_type = if expected_operand_ir_type.is_none()
-                            && matches!(&operand.kind, ExpressionKind::Cast { .. })
+                        // - Explicit casts lower to their declared destination
+                        //   type, so negating a cast uses that exact type too.
+                        let expected_operand_ir_type = if Self::is_explicit_cast_expression(operand)
                         {
-                            match self.eval_const_expression(operand) {
-                                Some(LoweredConstValue::Int(_)) => Some(IRType::Int),
-                                Some(LoweredConstValue::Float(_)) => Some(IRType::Float),
-                                _ => None,
-                            }
-                        } else {
                             None
+                        } else {
+                            self.current_expected_annotation
+                                .clone()
+                                .map(|annotation| self.lower_type_annotation(&annotation))
+                                .or_else(|| self.current_expected_ir_type.clone())
                         };
                         let operand_ir_type = expected_operand_ir_type
-                            .or(lowered_constant_cast_type)
                             .unwrap_or_else(|| self.infer_expr_ir_type(operand));
-                        let zero = match operand_ir_type {
+                        let zero = match &operand_ir_type {
                             ty @ IRType::ExactInt { .. } => {
-                                self.builder.build_const_int_typed(ir_func, 0, ty)
+                                self.builder.build_const_int_typed(ir_func, 0, ty.clone())
                             }
                             ty @ IRType::ExactFloat { .. } => {
-                                self.builder.build_const_float_typed(ir_func, 0.0, ty)
+                                self.builder
+                                    .build_const_float_typed(ir_func, 0.0, ty.clone())
                             }
                             IRType::Float => self.builder.build_const_float(ir_func, 0.0),
                             _ => self.builder.build_const_int(ir_func, 0),
                         };
-                        self.builder.build_sub(ir_func, zero, operand_value)
+                        let negated = self.builder.build_sub(ir_func, zero, operand_value);
+                        let expression_type = self.infer_expr_ir_type(expr);
+                        self.coerce_value_to_type(
+                            negated,
+                            &operand_ir_type,
+                            &expression_type,
+                            ir_func,
+                        )
                     }
                     UnaryOperator::Not => self.builder.build_not(ir_func, operand_value),
                 }

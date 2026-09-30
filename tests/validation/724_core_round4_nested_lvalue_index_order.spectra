@@ -1,0 +1,27 @@
+module core_round4_nested_lvalue_index_order
+
+static TRACE: int = 0
+
+func outer_index() returns int {
+    TRACE = TRACE * 10 + 1
+    return 1
+}
+
+func inner_index() returns int {
+    TRACE = TRACE * 10 + 2
+    return 0
+}
+
+public func main() returns int {
+    let values = [[1, 2], [3, 4]]
+    TRACE = 0
+    values[outer_index()] [inner_index()] = 77
+
+    if TRACE != 12 {
+        return 1
+    }
+    if values[1] [0] != 77 or values[0] [0] != 1 {
+        return 2
+    }
+    return 0
+}

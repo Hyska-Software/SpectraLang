@@ -1,0 +1,33 @@
+module core_round4_range_bounds_once
+
+static START_CALLS: int = 0
+static END_CALLS: int = 0
+static TRACE: int = 0
+
+func range_start() returns int {
+    START_CALLS = START_CALLS + 1
+    TRACE = TRACE * 10 + 1
+    return 2
+}
+
+func range_end() returns int {
+    END_CALLS = END_CALLS + 1
+    TRACE = TRACE * 10 + 2
+    return 4
+}
+
+public func main() returns int {
+    START_CALLS = 0
+    END_CALLS = 0
+    TRACE = 0
+    let total = 0
+
+    for value in range_start() ..= range_end() {
+        total = total + value
+    }
+
+    if total != 9 or START_CALLS != 1 or END_CALLS != 1 or TRACE != 12 {
+        return 1
+    }
+    return 0
+}

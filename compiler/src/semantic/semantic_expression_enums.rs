@@ -1,6 +1,26 @@
 use super::*;
 
 impl SemanticAnalyzer {
+    fn enum_payload_type_is_resolved(ty: &Type) -> bool {
+        match ty {
+            Type::Unknown | Type::TypeParameter { .. } => false,
+            Type::Applied { args, .. } | Type::Tuple { elements: args } => {
+                args.iter().all(Self::enum_payload_type_is_resolved)
+            }
+            Type::Array { element_type, .. } => Self::enum_payload_type_is_resolved(element_type),
+            Type::Fn {
+                params,
+                return_type,
+            } => {
+                params.iter().all(Self::enum_payload_type_is_resolved)
+                    && Self::enum_payload_type_is_resolved(return_type)
+            }
+            Type::Task { output } => Self::enum_payload_type_is_resolved(output),
+            Type::Tensor { dtype, .. } => Self::enum_payload_type_is_resolved(dtype),
+            _ => true,
+        }
+    }
+
     pub(crate) fn analyze_expression_enum(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::EnumVariant {
@@ -183,10 +203,7 @@ impl SemanticAnalyzer {
                                         method_export.return_type.clone(),
                                     ));
                                     self.qualified_fn_types.push((
-                                        format!(
-                                            "{}::{}_{}",
-                                            module_name, item_name, inner_variant
-                                        ),
+                                        format!("{}::{}_{}", module_name, item_name, inner_variant),
                                         method_export.return_type.clone(),
                                     ));
                                     return;
@@ -500,23 +517,23 @@ impl SemanticAnalyzer {
                     return;
                 }
 
-                // ------------------------------------------------------------------
-                // Local enum / struct static method (existing behaviour)
-                // ------------------------------------------------------------------
-                if let Some(args) = data {
-                    for arg in args {
-                        self.analyze_expression(arg);
-                    }
-                }
-                if let Some(fields) = struct_data {
-                    for (_, value) in fields {
-                        self.analyze_expression(value);
-                    }
-                }
-
                 let enum_info = match self.enum_infos.get(enum_name).cloned() {
                     Some(info) => info,
                     None => {
+                        // Struct associated functions and unresolved enum
+                        // paths still analyze their arguments even though
+                        // they do not have a local enum payload contract.
+                        if let Some(args) = data {
+                            for arg in args {
+                                self.analyze_expression(arg);
+                            }
+                        }
+                        if let Some(fields) = struct_data {
+                            for (_, value) in fields {
+                                self.analyze_expression(value);
+                            }
+                        }
+
                         // Check if this is a struct static method call: StructName::method(...)
                         if self.struct_infos.contains_key(enum_name.as_str()) {
                             let signature = self
@@ -632,6 +649,16 @@ impl SemanticAnalyzer {
                 let variant_info = match enum_info.variants.get(variant_name).cloned() {
                     Some(info) => info,
                     None => {
+                        if let Some(args) = data {
+                            for arg in args {
+                                self.analyze_expression(arg);
+                            }
+                        }
+                        if let Some(fields) = struct_data {
+                            for (_, value) in fields {
+                                self.analyze_expression(value);
+                            }
+                        }
                         self.error(
                             format!(
                                 "Enum '{}' has no variant named '{}'",
@@ -659,44 +686,106 @@ impl SemanticAnalyzer {
                         );
                     }
                 }
-                if let Some(Type::Enum {
-                    name: expected_name,
-                }) = self.current_expected_type.clone()
-                {
-                    if let Some((base_name, _, expected_substitutions)) =
-                        self.specialized_enum_context(&expected_name)
+                match self.current_expected_type.clone() {
+                    Some(Type::Applied {
+                        name: expected_name,
+                        args,
+                    }) if expected_name == *enum_name
+                        && args.len() == enum_info.type_params.len() =>
                     {
-                        if base_name == *enum_name {
-                            variant_substitutions.extend(expected_substitutions);
+                        for (param, arg) in enum_info.type_params.iter().zip(args) {
+                            variant_substitutions.entry(param.clone()).or_insert(arg);
+                        }
+                    }
+                    Some(Type::Enum {
+                        name: expected_name,
+                    }) => {
+                        if let Some((base_name, _, expected_substitutions)) =
+                            self.specialized_enum_context(&expected_name)
+                        {
+                            if base_name == *enum_name {
+                                for (param, arg) in expected_substitutions {
+                                    variant_substitutions.entry(param).or_insert(arg);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Infer payloads in order. A resolved expected type can
+                // specialize a nested constructor, but Unknown or generic
+                // parameters must not mask evidence in the payload (for
+                // example, `Seq::Cons(1, Seq::Cons(...))` infers T from the
+                // first value before contextualizing the recursive tail).
+                if let Some(actual_args) = data {
+                    for (index, arg_expr) in actual_args.iter().enumerate() {
+                        let expected_type = variant_info
+                            .data
+                            .as_ref()
+                            .and_then(|params| params.get(index))
+                            .map(|annotation| {
+                                self.type_annotation_to_type_with_substitutions(
+                                    annotation,
+                                    &variant_substitutions,
+                                )
+                            });
+                        let payload_context = expected_type
+                            .as_ref()
+                            .filter(|ty| Self::enum_payload_type_is_resolved(ty))
+                            .cloned();
+                        let saved_expected = self.current_expected_type.clone();
+                        self.current_expected_type = payload_context;
+                        self.analyze_expression(arg_expr);
+                        let actual_type = self.infer_expression_type(arg_expr);
+                        self.current_expected_type = saved_expected;
+
+                        if let Some(expected_ann) = variant_info
+                            .data
+                            .as_ref()
+                            .and_then(|params| params.get(index))
+                        {
+                            self.unify_type_annotation(
+                                expected_ann,
+                                &actual_type,
+                                &mut variant_substitutions,
+                            );
                         }
                     }
                 }
-                if let (Some(expected_params), Some(actual_args)) =
-                    (&variant_info.data, data.as_ref())
-                {
-                    for (expected_ann, arg_expr) in expected_params.iter().zip(actual_args) {
-                        let arg_type = self.infer_expression_type(arg_expr);
-                        self.unify_type_annotation(
-                            expected_ann,
-                            &arg_type,
-                            &mut variant_substitutions,
-                        );
-                    }
-                }
-                if let (Some(expected_fields), Some(actual_fields)) =
-                    (&variant_info.struct_data, struct_data.as_ref())
-                {
-                    // Named payloads participate in generic inference just
-                    // like tuple payloads.  This pass also runs when the
-                    // constructor is nested in a function call whose
-                    // expected type is not kept in the later AST-analysis
-                    // traversal, so infer T from the actual field value here.
-                    for (field_name, expected_ann) in expected_fields {
-                        if let Some((_, field_expr)) = actual_fields
-                            .iter()
-                            .find(|(actual_name, _)| actual_name == field_name)
+                if let Some(actual_fields) = struct_data {
+                    for (field_name, field_expr) in actual_fields {
+                        let expected_type = variant_info
+                            .struct_data
+                            .as_ref()
+                            .and_then(|fields| {
+                                fields
+                                    .iter()
+                                    .find(|(expected_name, _)| expected_name == field_name)
+                            })
+                            .map(|(_, annotation)| {
+                                self.type_annotation_to_type_with_substitutions(
+                                    annotation,
+                                    &variant_substitutions,
+                                )
+                            });
+                        let payload_context = expected_type
+                            .as_ref()
+                            .filter(|ty| Self::enum_payload_type_is_resolved(ty))
+                            .cloned();
+                        let saved_expected = self.current_expected_type.clone();
+                        self.current_expected_type = payload_context;
+                        self.analyze_expression(field_expr);
+                        let actual_type = self.infer_expression_type(field_expr);
+                        self.current_expected_type = saved_expected;
+
+                        if let Some((_, expected_ann)) =
+                            variant_info.struct_data.as_ref().and_then(|fields| {
+                                fields
+                                    .iter()
+                                    .find(|(expected_name, _)| expected_name == field_name)
+                            })
                         {
-                            let actual_type = self.infer_expression_type(field_expr);
                             self.unify_type_annotation(
                                 expected_ann,
                                 &actual_type,
@@ -706,14 +795,33 @@ impl SemanticAnalyzer {
                     }
                 }
 
+                let resolved_enum_type = if enum_info.type_params.is_empty() {
+                    Type::Enum {
+                        name: enum_name.clone(),
+                    }
+                } else {
+                    Type::Applied {
+                        name: enum_name.clone(),
+                        args: enum_info
+                            .type_params
+                            .iter()
+                            .map(|param| {
+                                variant_substitutions
+                                    .get(param)
+                                    .cloned()
+                                    .unwrap_or_else(|| Type::TypeParameter {
+                                        name: param.clone(),
+                                    })
+                            })
+                            .collect(),
+                    }
+                };
                 self.symbol_resolutions.insert(
                     expr.span,
                     SymbolInfo {
                         is_local: false,
                         def_span: Some(variant_info.span),
-                        ty: Type::Enum {
-                            name: enum_name.clone(),
-                        },
+                        ty: resolved_enum_type,
                     },
                 );
 

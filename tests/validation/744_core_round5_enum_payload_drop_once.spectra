@@ -1,0 +1,36 @@
+module core_round5_enum_payload_drop_once
+
+static DROPS: int = 0
+
+record Token {
+    public id: int,
+}
+
+impl Drop for Token {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+    }
+}
+
+enum Maybe<T> {
+    Empty,
+    Value(T),
+}
+
+func read_token(value: Maybe<Token>) returns int {
+    return match value {
+        when Maybe::Empty then 0,
+        when Maybe::Value(token) then token.id
+    }
+}
+
+public func main() returns int {
+    DROPS = 0
+    if read_token(Maybe::Value(Token { id: 37 })) != 37 {
+        return 1
+    }
+    if DROPS != 1 {
+        return 2
+    }
+    return 0
+}

@@ -102,10 +102,26 @@ impl ASTLowering {
                 }
             }
             ExpressionKind::StructLiteral {
-                name, type_args, ..
-            } => self
-                .resolve_struct_type(name, type_args)
-                .unwrap_or(IRType::Unknown),
+                name,
+                type_args,
+                fields,
+            } => {
+                let needs_inference = type_args.is_empty()
+                    || type_args
+                        .iter()
+                        .any(|argument| self.type_annotation_needs_refinement(argument));
+                let inferred_args = if needs_inference {
+                    self.infer_struct_type_args_from_fields(name, fields)
+                        .or_else(|| Some(type_args.clone()))
+                } else {
+                    Some(type_args.clone())
+                };
+                inferred_args
+                    .as_deref()
+                    .and_then(|args| self.resolve_struct_type(name, args))
+                    .or_else(|| self.resolve_struct_type(name, type_args))
+                    .unwrap_or(IRType::Unknown)
+            }
             ExpressionKind::FieldAccess { object, field } => {
                 let object_type = self.infer_expr_ir_type(object);
                 self.struct_fields_for_type(&object_type)

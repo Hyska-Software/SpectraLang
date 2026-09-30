@@ -4,8 +4,13 @@ impl SemanticAnalyzer {
     pub(crate) fn analyze_expression_match(&mut self, expr: &Expression) {
         match &expr.kind {
             ExpressionKind::Match { scrutinee, arms } => {
+                // The context belongs to the match result. It must not leak
+                // into the scrutinee, whose type determines pattern checking.
+                let saved_expected = self.current_expected_type.clone();
+                self.current_expected_type = None;
                 self.analyze_expression(scrutinee);
                 let scrutinee_type = self.infer_expression_type(scrutinee);
+                self.current_expected_type = saved_expected.clone();
 
                 // A bare variant name is the readable spelling for a unit
                 // enum pattern (`when Pending then ...`).  Normalize a local
@@ -37,8 +42,11 @@ impl SemanticAnalyzer {
                     // so names such as `value` in `Some(value) if value > 0`
                     // resolve to the value captured by this arm.
                     if let Some(guard) = &arm.guard {
+                        let saved_guard_expected = self.current_expected_type.clone();
+                        self.current_expected_type = Some(Type::Bool);
                         self.analyze_expression(guard);
                         let guard_type = self.infer_expression_type(guard);
+                        self.current_expected_type = saved_guard_expected;
                         if !matches!(guard_type, Type::Bool | Type::Unknown) {
                             self.error_coded(
                                 "E040",

@@ -113,6 +113,7 @@ impl ASTLowering {
                     self.builder.set_current_block(arm_body_blocks[idx]);
 
                     // Create the pattern bindings before running the body.
+                    let arm_scope_depth = self.struct_var_map.scopes.len();
                     self.value_map.push_scope();
                     self.alloca_map.push_scope();
                     self.variable_types.push_scope();
@@ -135,12 +136,21 @@ impl ASTLowering {
                         let guard_val = self.lower_expression(guard_expr, ir_func);
                         let guard_body_block =
                             ir_func.add_block(format!("match_guard_body_{}", idx));
+                        let guard_failed_block =
+                            ir_func.add_block(format!("match_guard_failed_{}", idx));
                         self.builder.build_cond_branch(
                             ir_func,
                             guard_val,
                             guard_body_block,
-                            next_check,
+                            guard_failed_block,
                         );
+
+                        // Bindings are live while evaluating the guard. If
+                        // the guard rejects this arm, destroy those values
+                        // before trying the next pattern.
+                        self.builder.set_current_block(guard_failed_block);
+                        self.emit_scope_drops_to_depth(ir_func, &HashSet::new(), arm_scope_depth);
+                        self.builder.build_branch(ir_func, next_check);
                         self.builder.set_current_block(guard_body_block);
                     }
 
@@ -159,6 +169,14 @@ impl ASTLowering {
                         if let Some(result_alloca) = result_alloca {
                             self.builder.build_store(ir_func, result_alloca, body_value);
                         }
+
+                        // A match body may transfer a bound record into its
+                        // result (for example `Some(value) => value`). Preserve
+                        // those owners; all other droppable pattern bindings
+                        // belong to this arm and are cleaned up here.
+                        let mut moved_names = HashSet::new();
+                        Self::collect_moved_identifiers(&arm.body, &mut moved_names);
+                        self.emit_scope_drops_to_depth(ir_func, &moved_names, arm_scope_depth);
                         self.builder
                             .build_branch(ir_func, match_end.unwrap_or(exit_block));
                     }

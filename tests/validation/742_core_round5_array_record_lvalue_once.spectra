@@ -1,0 +1,25 @@
+module core_round5_array_record_lvalue_once
+
+static INDEX_CALLS: int = 0
+
+record Cell {
+    public value: int,
+}
+
+func next_index() returns int {
+    INDEX_CALLS = INDEX_CALLS + 1
+    return INDEX_CALLS - 1
+}
+
+public func main() returns int {
+    let cells = [Cell { value: 3 }, Cell { value: 8 }]
+    INDEX_CALLS = 0
+    cells[next_index()] .value = 21
+    if INDEX_CALLS != 1 {
+        return 1
+    }
+    if cells[0] .value != 21 or cells[1] .value != 8 {
+        return 2
+    }
+    return 0
+}

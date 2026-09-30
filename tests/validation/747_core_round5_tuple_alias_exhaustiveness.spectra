@@ -1,0 +1,20 @@
+module core_round5_tuple_alias_exhaustiveness
+
+type Point = (int, bool)
+
+func orient(point: Point) returns int {
+    return match point {
+        when(x, true) then x,
+        when(x, false) then -x
+    }
+}
+
+public func main() returns int {
+    if orient((7, true)) != 7 {
+        return 1
+    }
+    if orient((7, false)) != -7 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,19 @@
+module core_round4_generic_record_reordering
+
+record Pair<A, B> {
+    public first: A,
+    public second: B,
+}
+
+func reverse<A, B>(pair: Pair<A, B>) returns Pair<B, A> {
+    return Pair { first: pair.second, second: pair.first }
+}
+
+public func main() returns int {
+    let source: Pair<int, bool> = Pair { first: 42, second: true }
+    let result: Pair<bool, int> = reverse(source)
+    if not result.first or result.second != 42 {
+        return 1
+    }
+    return 0
+}

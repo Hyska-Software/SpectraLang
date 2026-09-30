@@ -1,0 +1,45 @@
+module core_round4_nested_field_drop_once
+
+static DROPS: int = 0
+static DROP_SUM: int = 0
+
+record Marker {
+    public id: int,
+}
+
+impl Drop for Marker {
+    func drop( & mut self) {
+        DROPS = DROPS + 1
+        DROP_SUM = DROP_SUM + self.id
+    }
+}
+
+record Bundle {
+    public first: Marker,
+    public second: Marker,
+}
+
+func make_bundle() returns Bundle {
+    return Bundle {
+        first: Marker { id: 3 },
+        second: Marker { id: 8 }
+    }
+}
+
+public func main() returns int {
+    DROPS = 0
+    DROP_SUM = 0
+    {
+        let bundle = make_bundle()
+        if bundle.first.id + bundle.second.id != 11 {
+            return 1
+        }
+        if DROPS != 0 {
+            return 2
+        }
+    }
+    if DROPS != 2 or DROP_SUM != 11 {
+        return 3
+    }
+    return 0
+}

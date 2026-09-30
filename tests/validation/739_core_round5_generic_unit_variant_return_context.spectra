@@ -1,0 +1,31 @@
+module core_round5_generic_unit_variant_return_context
+
+enum Maybe<T> {
+    Empty,
+    Value(T),
+}
+
+func empty<T>() returns Maybe<T> {
+    return Maybe::Empty
+}
+
+func make_empty_int() returns Maybe<int> {
+    return empty()
+}
+
+func unwrap(value: Maybe<int>) returns int {
+    return match value {
+        when Maybe::Empty then 0,
+        when Maybe::Value(number) then number
+    }
+}
+
+public func main() returns int {
+    if unwrap(make_empty_int()) != 0 {
+        return 1
+    }
+    if unwrap(Maybe::Value(17)) != 17 {
+        return 2
+    }
+    return 0
+}

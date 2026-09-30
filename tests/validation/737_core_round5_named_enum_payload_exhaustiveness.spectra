@@ -1,0 +1,27 @@
+module core_round5_named_enum_payload_exhaustiveness
+
+enum Event {
+    Data { active: bool, code: int },
+    Closed,
+}
+
+func classify(event: Event) returns int {
+    return match event {
+        when Event::Data { active: true, code } then code + 1,
+        when Event::Data { active: false, code } then -code,
+        when Event::Closed then 0
+    }
+}
+
+public func main() returns int {
+    if classify(Event::Data { active: true, code: 8 }) != 9 {
+        return 1
+    }
+    if classify(Event::Data { active: false, code: 5 }) != -5 {
+        return 2
+    }
+    if classify(Event::Closed) != 0 {
+        return 3
+    }
+    return 0
+}

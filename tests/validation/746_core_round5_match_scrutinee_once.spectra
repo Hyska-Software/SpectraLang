@@ -1,0 +1,31 @@
+module core_round5_match_scrutinee_once
+
+static CALLS: int = 0
+
+enum Choice {
+    Selected(int),
+    Rejected,
+}
+
+func choose() returns Choice {
+    CALLS = CALLS + 1
+    return Choice::Selected(9)
+}
+
+func classify() returns int {
+    return match choose() {
+        when Choice::Selected(value) then value * 2,
+        when Choice::Rejected then -1
+    }
+}
+
+public func main() returns int {
+    CALLS = 0
+    if classify() != 18 {
+        return 1
+    }
+    if CALLS != 1 {
+        return 2
+    }
+    return 0
+}

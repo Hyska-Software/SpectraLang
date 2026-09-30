@@ -1,0 +1,30 @@
+module core_round5_zero_arg_record_closure
+
+record Counter {
+    public value: int,
+}
+
+func make_counter(counter: Counter) returns func() returns int {
+    return || {
+        counter.value = counter.value + 1
+        return counter.value
+    }
+}
+
+public func main() returns int {
+    let counter = Counter { value: 10 }
+    let next    = make_counter(counter)
+    if next() != 11 {
+        return 1
+    }
+    {
+        let counter = Counter { value: 100 }
+        if counter.value != 100 or next() != 12 {
+            return 2
+        }
+    }
+    if next() != 13 or counter.value != 13 {
+        return 3
+    }
+    return 0
+}

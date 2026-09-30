@@ -181,6 +181,42 @@ impl ASTLowering {
                     }
                 }
             }
+            TypeAnnotationKind::Generic { name, type_args } => {
+                let actual_args = match (name.as_str(), actual_type) {
+                    ("array", IRType::Array { element_type, .. }) => {
+                        Some(vec![element_type.as_ref().clone()])
+                    }
+                    (
+                        expected_name,
+                        IRType::Generic {
+                            name: actual_name,
+                            args,
+                            ..
+                        },
+                    ) if expected_name == actual_name => Some(args.clone()),
+                    (
+                        expected_name,
+                        IRType::Struct {
+                            name: actual_name, ..
+                        },
+                    ) => self
+                        .instantiated_structs
+                        .get(actual_name)
+                        .filter(|(base_name, _)| base_name == expected_name)
+                        .map(|(_, args)| args.clone()),
+                    _ => None,
+                };
+                if let Some(actual_args) = actual_args {
+                    for (sub_template, sub_type) in type_args.iter().zip(actual_args.iter()) {
+                        self.fill_type_args_from_annotation(
+                            sub_template,
+                            sub_type,
+                            param_positions,
+                            inferred,
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -344,20 +380,55 @@ impl ASTLowering {
             ExpressionKind::StringLiteral(_) => Some(Self::simple_type_annotation("string")),
             ExpressionKind::BoolLiteral(_) => Some(Self::simple_type_annotation("bool")),
             ExpressionKind::StructLiteral {
-                name, type_args, ..
+                name,
+                type_args,
+                fields,
             } => {
-                if type_args.is_empty() {
+                let needs_inference = type_args.is_empty()
+                    || type_args
+                        .iter()
+                        .any(|argument| self.type_annotation_needs_refinement(argument));
+                let inferred_args = if needs_inference {
+                    self.infer_struct_type_args_from_fields(name, fields)
+                        .or_else(|| Some(type_args.clone()))
+                } else {
+                    Some(type_args.clone())
+                }?;
+                if inferred_args.is_empty() {
                     Some(Self::simple_type_annotation(name))
                 } else {
                     Some(TypeAnnotation {
                         kind: TypeAnnotationKind::Generic {
                             name: name.clone(),
-                            type_args: type_args.clone(),
+                            type_args: inferred_args,
                         },
                         span: Span::dummy(),
                     })
                 }
             }
+            ExpressionKind::TupleLiteral { elements } => {
+                let elements = elements
+                    .iter()
+                    .map(|element| self.infer_expr_type_annotation(element))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(TypeAnnotation {
+                    kind: TypeAnnotationKind::Tuple { elements },
+                    span: Span::dummy(),
+                })
+            }
+            ExpressionKind::ArrayLiteral { elements } => {
+                let element = elements
+                    .first()
+                    .and_then(|element| self.infer_expr_type_annotation(element))?;
+                Some(TypeAnnotation {
+                    kind: TypeAnnotationKind::Generic {
+                        name: "array".to_string(),
+                        type_args: vec![element],
+                    },
+                    span: Span::dummy(),
+                })
+            }
+            ExpressionKind::Grouping(inner) => self.infer_expr_type_annotation(inner),
             ExpressionKind::EnumVariant {
                 enum_name,
                 type_args,
@@ -408,6 +479,68 @@ impl ASTLowering {
             }
             _ => None,
         }
+    }
+
+    /// Infer generic struct arguments from their initialized fields, then use
+    /// a declared expression/return context to fill parameters that the
+    /// supplied fields do not determine.
+    pub(crate) fn infer_struct_type_args_from_fields(
+        &mut self,
+        struct_name: &str,
+        fields: &[(String, Expression)],
+    ) -> Option<Vec<TypeAnnotation>> {
+        let generic = self.generic_structs.get(struct_name)?.clone();
+        let parameter_positions = generic
+            .type_params
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| (parameter.name.clone(), index))
+            .collect::<HashMap<_, _>>();
+        let mut inferred = vec![Self::unknown_type_annotation(); generic.type_params.len()];
+
+        for (field_name, expression) in fields {
+            let Some(field) = generic
+                .fields
+                .iter()
+                .find(|field| field.name == *field_name)
+            else {
+                continue;
+            };
+            let actual_type = self.infer_expr_ir_type(expression);
+            self.fill_type_args_from_annotation(
+                &field.ty,
+                &actual_type,
+                &parameter_positions,
+                &mut inferred,
+            );
+        }
+
+        let contexts = [
+            self.current_expected_annotation.clone(),
+            self.current_function_return_annotation.clone(),
+        ];
+        for context in contexts.into_iter().flatten() {
+            let TypeAnnotationKind::Generic {
+                name,
+                type_args: context_args,
+            } = context.kind
+            else {
+                continue;
+            };
+            if name != struct_name || context_args.len() != inferred.len() {
+                continue;
+            }
+            for (argument, context_argument) in inferred.iter_mut().zip(context_args) {
+                if Self::is_unknown_annotation(argument) {
+                    *argument = context_argument;
+                }
+            }
+        }
+
+        inferred
+            .iter()
+            .all(|argument| !Self::is_unknown_annotation(argument))
+            .then_some(inferred)
     }
 
     pub(crate) fn infer_enum_type_args_from_named_fields(

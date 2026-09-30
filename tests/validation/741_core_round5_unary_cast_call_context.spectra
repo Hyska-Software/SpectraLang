@@ -1,0 +1,15 @@
+module core_round5_unary_cast_call_context
+
+func receive_small(value: i8) returns int {
+    return value as int
+}
+
+public func main() returns int {
+    if receive_small(-120 as i8) != -120 {
+        return 1
+    }
+    if receive_small((-17) as i8) != -17 {
+        return 2
+    }
+    return 0
+}

@@ -275,7 +275,10 @@ impl SemanticAnalyzer {
                 }
 
                 if let Some(ref value) = ret_stmt.value {
+                    let saved_expected = self.current_expected_type.clone();
+                    self.current_expected_type = self.current_return_type.clone();
                     self.analyze_expression(value);
+                    self.current_expected_type = saved_expected;
                 }
 
                 self.check_return_statement(ret_stmt.value.as_ref(), ret_stmt.span);

@@ -1,0 +1,36 @@
+module core_round5_nested_generic_boolean_exhaustiveness
+
+enum Maybe<T> {
+    Empty,
+    Value(T),
+}
+
+enum Signal<T> {
+    Offline,
+    Online(T),
+}
+
+func classify(signal: Signal<Maybe < (bool, bool)> >) returns int {
+    return match signal {
+        when Signal::Offline then -1,
+        when Signal::Online(Maybe::Empty) then 0,
+        when Signal::Online(Maybe::Value(( true, _))) then 1,
+        when Signal::Online(Maybe::Value(( false, _))) then 2
+    }
+}
+
+public func main() returns int {
+    if classify(Signal::Offline) != -1 {
+        return 1
+    }
+    if classify(Signal::Online(Maybe::Empty)) != 0 {
+        return 2
+    }
+    if classify(Signal::Online(Maybe::Value(( true, false)))) != 1 {
+        return 3
+    }
+    if classify(Signal::Online(Maybe::Value(( false, true)))) != 2 {
+        return 4
+    }
+    return 0
+}

@@ -45,6 +45,29 @@ impl ASTLowering {
             }
         }
 
+        // A generic parameter that appears only in the result cannot be
+        // inferred from call arguments. Use the expression's expected type
+        // (or the enclosing function's return contract for a direct return)
+        // as an additional unification source, e.g. `empty()` in a function
+        // returning `Maybe<int>`.
+        let expected_return = self
+            .current_expected_annotation
+            .as_ref()
+            .or(self.current_function_return_annotation.as_ref())
+            .map(|annotation| self.lower_type_annotation(annotation));
+        if let (Some(return_annotation), Some(expected_type)) =
+            (generic_func.return_type.as_ref(), expected_return.as_ref())
+        {
+            if !Self::ir_type_contains_unknown(expected_type) {
+                self.unify_annotation_with_ir_type(
+                    return_annotation,
+                    expected_type,
+                    &type_param_names,
+                    &mut bindings,
+                );
+            }
+        }
+
         generic_func
             .type_params
             .iter()

@@ -1,0 +1,32 @@
+module core_round4_nested_enum_match
+
+enum Option<T> {
+    None,
+    Some(T),
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+func summarize(value: Result<Option < (int, int)>, int >) returns int {
+    return match value {
+        when Result::Ok(Option::Some((left, right))) then left * 10 + right,
+        when Result::Ok(Option::None) then 0,
+        when Result::Err(code) then -code
+    }
+}
+
+public func main() returns int {
+    if summarize(Result::Ok(Option::Some((3, 8)))) != 38 {
+        return 1
+    }
+    if summarize(Result::Ok(Option::None)) != 0 {
+        return 2
+    }
+    if summarize(Result::Err(5)) != -5 {
+        return 3
+    }
+    return 0
+}

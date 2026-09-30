@@ -1,0 +1,22 @@
+module core_round4_lvalue_index_once
+
+static INDEX_CALLS: int = 0
+
+func next_index() returns int {
+    INDEX_CALLS = INDEX_CALLS + 1
+    return INDEX_CALLS - 1
+}
+
+public func main() returns int {
+    let values = [10, 20]
+    INDEX_CALLS = 0
+    values[next_index()] = 77
+
+    if INDEX_CALLS != 1 {
+        return 1
+    }
+    if values[0] != 77 or values[1] != 20 {
+        return 2
+    }
+    return 0
+}

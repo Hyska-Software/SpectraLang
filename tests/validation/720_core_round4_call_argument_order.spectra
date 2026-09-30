@@ -1,0 +1,23 @@
+module core_round4_call_argument_order
+
+static TRACE: int = 0
+
+func mark(value: int) returns int {
+    TRACE = TRACE * 10 + value
+    return value
+}
+
+func combine(first: int, second: int, third: int) returns int {
+    return first * 100 + second * 10 + third
+}
+
+public func main() returns int {
+    TRACE = 0
+    if combine(mark(1), mark(2), mark(3)) != 123 {
+        return 1
+    }
+    if TRACE != 123 {
+        return 2
+    }
+    return 0
+}
