@@ -1,0 +1,70 @@
+module std_round6_queue_graph_walk
+
+from std.collections import List, Map, Queue, Set
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let graph: Map<int, List<int>> = collections.map_new()
+    let edges_zero: List<int>      = collections.list_new()
+    collections.list_push(edges_zero, 1)
+    collections.list_push(edges_zero, 2)
+    let edges_one: List<int> = collections.list_new()
+    collections.list_push(edges_one, 3)
+    let edges_two: List<int> = collections.list_new()
+    collections.list_push(edges_two, 3)
+    collections.list_push(edges_two, 4)
+    let edges_three: List<int> = collections.list_new()
+    let edges_four: List<int>  = collections.list_new()
+    collections.map_set(graph, 0, edges_zero)
+    collections.map_set(graph, 1, edges_one)
+    collections.map_set(graph, 2, edges_two)
+    collections.map_set(graph, 3, edges_three)
+    collections.map_set(graph, 4, edges_four)
+
+    let pending: Queue<int> = collections.queue_new()
+    let visited: Set<int>   = collections.set_new()
+    let order: List<int>    = collections.list_new()
+    collections.queue_enqueue(pending, 0)
+
+    while let Option::Some(node) = collections.queue_dequeue(pending) {
+        if collections.set_contains(visited, node) {
+            continue
+        }
+        collections.set_insert(visited, node)
+        collections.list_push(order, node)
+
+        let maybe_edges = collections.map_get(graph, node)
+        if option.is_some(maybe_edges) {
+            let edges = option.option_unwrap(maybe_edges)
+            for neighbor in edges {
+                if not collections.set_contains(visited, neighbor) {
+                    collections.queue_enqueue(pending, neighbor)
+                }
+            }
+        }
+    }
+
+    if collections.list_len(order) != 5 or collections.set_len(visited) != 5 or
+    collections.queue_len(pending) != 0 {
+        return 1
+    }
+    if option.option_unwrap(collections.list_get(order, 0)) != 0 or
+    option.option_unwrap(collections.list_get(order, 1)) != 1 or
+    option.option_unwrap(collections.list_get(order, 2)) != 2 or
+    option.option_unwrap(collections.list_get(order, 3)) != 3 or
+    option.option_unwrap(collections.list_get(order, 4)) != 4 {
+        return 2
+    }
+
+    collections.map_free(graph)
+    collections.list_free(edges_zero)
+    collections.list_free(edges_one)
+    collections.list_free(edges_two)
+    collections.list_free(edges_three)
+    collections.list_free(edges_four)
+    collections.queue_free(pending)
+    collections.set_free(visited)
+    collections.list_free(order)
+    return 0
+}

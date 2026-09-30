@@ -3662,13 +3662,103 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/749_std_round6_map_mutates_source.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/74_tensor_phase7_device.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/750_std_round6_generic_iterator_option.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/751_std_round6_nested_list_control_flow.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/752_std_round6_filter_callback_control.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/753_std_round6_queue_graph_walk.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/754_std_round6_utf8_byte_boundaries.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/755_std_round6_split_option_closure.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/756_std_round6_integer_conversion_limits.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/757_std_round6_float_rounding_loop.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/758_std_round6_unicode_codepoint_case.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/759_std_round6_fs_result_try.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/75_tensor_phase7_gpu.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/760_std_round6_env_option_record.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/761_std_round6_arguments_loop.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/762_std_round6_time_calendar.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
+    "tests/validation/763_std_round6_fs_result_maps.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",

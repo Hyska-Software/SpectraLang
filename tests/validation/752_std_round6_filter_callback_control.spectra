@@ -1,0 +1,46 @@
+module std_round6_filter_callback_control
+
+import std.collections as collections
+import std.option as option
+
+static PREDICATE_CALLS: int = 0
+static RHS_CALLS: int = 0
+
+func mark_rhs(value: int) returns bool {
+    RHS_CALLS = RHS_CALLS + 1
+    return value > 1
+}
+
+func should_keep(value: int) returns bool {
+    PREDICATE_CALLS = PREDICATE_CALLS + 1
+    return value == -1 or(value > 1 and mark_rhs(value))
+}
+
+public func main() returns int {
+    PREDICATE_CALLS = 0
+    RHS_CALLS = 0
+
+    let values = collections.list_new()
+    collections.list_push(values, -1)
+    collections.list_push(values, 0)
+    collections.list_push(values, 1)
+    collections.list_push(values, 2)
+    collections.list_push(values, 3)
+
+    let predicate: func(int) returns bool = | value: int | should_keep(value)
+    let selected                          = collections.list_filter(values, predicate)
+
+    if PREDICATE_CALLS != 5 or RHS_CALLS != 2 {
+        return 1
+    }
+    if collections.list_len(selected) != 3 or
+    option.option_unwrap(collections.list_get(selected, 0)) != -1 or
+    option.option_unwrap(collections.list_get(selected, 1)) != 2 or
+    option.option_unwrap(collections.list_get(selected, 2)) != 3 {
+        return 2
+    }
+
+    collections.list_free(values)
+    collections.list_free(selected)
+    return 0
+}

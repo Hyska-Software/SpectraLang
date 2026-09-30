@@ -1,0 +1,36 @@
+module std_round6_float_rounding_loop
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let values: [float]       = [-3.7, -0.5, 2.5]
+    let floor_expected: [int] = [-4, -1, 2]
+    let trunc_expected: [int] = [-3, 0, 2]
+    let ceil_expected: [int]  = [-3, 0, 3]
+    let round_expected: [int] = [-4, -1, 3]
+
+    let mut checksum = 0
+    for index in 0 .. 3 {
+        let value       = values[index]
+        let floor_value = convert.float_to_int(math.floor_f(value))
+        let trunc_value = convert.float_to_int(value)
+        let ceil_value  = convert.float_to_int(math.ceil_f(value))
+        let round_value = convert.float_to_int(math.round_f(value))
+        if floor_value != floor_expected[index] or
+        trunc_value != trunc_expected[index] or
+        ceil_value != ceil_expected[index] or
+        round_value != round_expected[index] {
+            return index + 1
+        }
+        checksum = checksum + floor_value + trunc_value + ceil_value + round_value
+    }
+
+    if checksum != -6 {
+        return 4
+    }
+    if math.abs_f(-0.0) != 0.0 or math.floor_f(0.0) != 0.0 or math.ceil_f(0.0) != 0.0 {
+        return 5
+    }
+    return 0
+}

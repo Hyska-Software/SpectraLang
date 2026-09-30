@@ -1,0 +1,46 @@
+module std_round6_utf8_byte_boundaries
+
+import std.char as char
+import std.string as text
+
+public func main() returns int {
+    let sample = "Aé🙂Z"
+    if text.len(sample) != 8 {
+        return 1
+    }
+
+    let offsets: [int]  = [0, 1, 3, 7]
+    let expected: [int] = [65, 195, 240, 90]
+    let mut visited     = 0
+    for index in 0 .. 4 {
+        let offset = offsets[index]
+        let byte   = text.char_at(sample, offset)
+        if byte != expected[index] {
+            return 2
+        }
+        visited = visited + 1
+    }
+    if visited != 4 {
+        return 3
+    }
+
+    if text.substring(sample, 0, 3) != "Aé" or
+    text.substring(sample, 1, 3) != "é" or
+    text.substring(sample, 3, 7) != "🙂" {
+        return 4
+    }
+    if text.substring(sample, 2, 3) != "" or text.substring(sample, 7, 3) != "" {
+        return 5
+    }
+    if text.substring(sample, -8, 1) != "A" or text.substring(sample, 7, 99) != "Z" {
+        return 6
+    }
+    if text.index_of(sample, "🙂") != 3 or text.index_of(sample, "Z") != 7 {
+        return 7
+    }
+    if char.is_alpha(text.char_at(sample, 0)) != true or
+    char.is_alpha(text.char_at(sample, 7)) != true {
+        return 8
+    }
+    return 0
+}

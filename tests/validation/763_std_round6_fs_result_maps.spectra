@@ -1,0 +1,62 @@
+module std_round6_fs_result_maps
+
+from std.error import Error
+import std.error as error
+import std.fs as fs
+import std.result as result
+
+const ROOT = "target/stdlib-validation/round6-result-maps"
+const FILE = "target/stdlib-validation/round6-result-maps/value.txt"
+
+static OK_MAPS: int = 0
+static ERROR_MAPS: int = 0
+
+func decorate(value: string) returns string {
+    OK_MAPS = OK_MAPS + 1
+    return "[" + value + "]"
+}
+
+func describe(problem: Error) returns string {
+    ERROR_MAPS = ERROR_MAPS + 1
+    return error.operation(problem) + "|" + error.context(problem)
+}
+
+public func main() returns int {
+    fs.fs_remove(FILE)
+    fs.remove_dir(ROOT)
+    if result.is_err(fs.create_dir_all(ROOT)) or result.is_err(fs.fs_write(FILE, "payload")) {
+        return 1
+    }
+
+    OK_MAPS = 0
+    ERROR_MAPS = 0
+    let read_ok   = fs.fs_read(FILE)
+    let preserved = result.result_map_err(read_ok, describe)
+    if result.is_err(preserved) or ERROR_MAPS != 0 {
+        return 2
+    }
+    let decorated = result.result_map(preserved, decorate)
+    if result.is_err(decorated) or result.result_unwrap(decorated) != "[payload]" or OK_MAPS != 1 {
+        return 3
+    }
+
+    let read_missing = fs.fs_read(ROOT + "/missing.txt")
+    if result.is_ok(read_missing) {
+        return 4
+    }
+    let original_problem = result.result_unwrap_err(read_missing)
+    if error.code(original_problem) != 1 or error.operation(original_problem) != "fs_read" {
+        return 5
+    }
+    let labeled = result.result_map_err(read_missing, describe)
+    if result.is_ok(labeled) or result.result_unwrap_err(labeled) != "fs_read|" + ROOT + "/missing.txt" {
+        return 6
+    }
+    if ERROR_MAPS != 1 or OK_MAPS != 1 {
+        return 7
+    }
+
+    fs.fs_remove(FILE)
+    fs.remove_dir(ROOT)
+    return 0
+}

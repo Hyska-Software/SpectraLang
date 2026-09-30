@@ -1081,8 +1081,32 @@ impl ASTLowering {
         expected_type: &IRType,
         ir_func: &mut IRFunction,
     ) -> Value {
+        let saved_expected_ir_type = self.current_expected_ir_type.clone();
+        let saved_expected_annotation = self.current_expected_annotation.clone();
+        if Self::ir_type_contains_unknown(expected_type)
+            || matches!(expected_type, IRType::ExactFloat { .. })
+        {
+            // An unresolved aggregate slot must not inherit its parent's
+            // annotation (for example, the array type while lowering one
+            // element). There is also no contextual float-width propagation:
+            // float literals are semantically inferred as f64, and the final
+            // coercion below must be the single f64-to-f32 conversion for an
+            // exact-width destination.
+            self.current_expected_ir_type = None;
+            self.current_expected_annotation = None;
+        } else {
+            // Lowering a child with its known destination type lets composite
+            // expressions such as unary literals choose a representation that
+            // matches the slot they are stored into.  It also allows generic
+            // enum and record constructors to use the same context as semantic
+            // analysis.
+            self.current_expected_ir_type = Some(expected_type.clone());
+            self.current_expected_annotation = Some(self.ir_type_to_annotation(expected_type));
+        }
         let value = self.lower_expression(expr, ir_func);
         let actual_type = self.infer_expr_ir_type(expr);
+        self.current_expected_ir_type = saved_expected_ir_type;
+        self.current_expected_annotation = saved_expected_annotation;
         self.coerce_value_to_type(value, &actual_type, expected_type, ir_func)
     }
 }

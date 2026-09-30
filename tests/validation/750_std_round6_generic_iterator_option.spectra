@@ -1,0 +1,54 @@
+module std_round6_generic_iterator_option
+
+from std.collections import Iterator, List
+import std.collections as collections
+import std.option as option
+
+func copy_snapshot<T>(source: List<T>) returns List<T> {
+    let result: List<T>     = collections.list_new()
+    let cursor: Iterator<T> = collections.list_iter(source)
+    while let Option::Some(value) = collections.iterator_next(cursor) {
+        collections.list_push(result, value)
+    }
+    collections.iterator_free(cursor)
+    return result
+}
+
+public func main() returns int {
+    let maybe_numbers: List<Option<int>> = collections.list_new()
+    collections.list_push(maybe_numbers, Option::Some(10))
+    collections.list_push(maybe_numbers, Option::None)
+    collections.list_push(maybe_numbers, Option::Some(30))
+
+    let number_snapshot = copy_snapshot(maybe_numbers)
+    collections.list_set(maybe_numbers, 0, Option::Some(99))
+    let first_outer  = collections.list_get(number_snapshot, 0)
+    let second_outer = collections.list_get(number_snapshot, 1)
+    if option.is_none(first_outer) or option.is_none(second_outer) {
+        return 1
+    }
+    let first_inner  = option.option_unwrap(first_outer)
+    let second_inner = option.option_unwrap(second_outer)
+    if option.is_none(first_inner) or option.option_unwrap(first_inner) != 10 {
+        return 2
+    }
+    if option.is_some(second_inner) {
+        return 3
+    }
+
+    let words: List<string> = collections.list_new()
+    collections.list_push(words, "north")
+    collections.list_push(words, "south")
+    let word_snapshot = copy_snapshot(words)
+    collections.list_clear(words)
+    if collections.list_len(word_snapshot) != 2 or
+    option.option_unwrap(collections.list_get(word_snapshot, 1)) != "south" {
+        return 4
+    }
+
+    collections.list_free(maybe_numbers)
+    collections.list_free(number_snapshot)
+    collections.list_free(words)
+    collections.list_free(word_snapshot)
+    return 0
+}

@@ -1,0 +1,63 @@
+module std_round6_fs_result_try
+
+from std.error import Error
+import std.collections as collections
+import std.error as error
+import std.fs as fs
+import std.result as result
+
+const ROOT = "target/stdlib-validation/round6-fs-try"
+
+static PATH_EVALUATIONS: int = 0
+
+func selected_root() returns string {
+    PATH_EVALUATIONS = PATH_EVALUATIONS + 1
+    return ROOT
+}
+
+func entry_count(path: string) returns Result<int, Error> {
+    let entries = fs.read_dir(path) ?
+    let total   = collections.list_len(entries)
+    collections.list_free(entries)
+    return Result::Ok(total)
+}
+
+public func main() returns int {
+    let first  = ROOT + "/first.txt"
+    let second = ROOT + "/second.txt"
+    fs.fs_remove(first)
+    fs.fs_remove(second)
+    fs.remove_dir(ROOT)
+
+    if result.is_err(fs.create_dir_all(ROOT)) {
+        return 1
+    }
+
+    PATH_EVALUATIONS = 0
+    let empty = entry_count(selected_root())
+    if PATH_EVALUATIONS != 1 or result.is_err(empty) or result.result_unwrap(empty) != 0 {
+        return 2
+    }
+
+    if result.is_err(fs.fs_write(first, "alpha")) or result.is_err(fs.fs_write(second, "beta")) {
+        return 3
+    }
+    let populated = entry_count(selected_root())
+    if PATH_EVALUATIONS != 2 or result.is_err(populated) or result.result_unwrap(populated) != 2 {
+        return 4
+    }
+
+    let missing = entry_count(ROOT + "/missing")
+    if result.is_ok(missing) {
+        return 5
+    }
+    let problem = result.result_unwrap_err(missing)
+    if error.code(problem) != 1 or error.operation(problem) != "fs_read_dir" {
+        return 6
+    }
+
+    fs.fs_remove(first)
+    fs.fs_remove(second)
+    fs.remove_dir(ROOT)
+    return 0
+}

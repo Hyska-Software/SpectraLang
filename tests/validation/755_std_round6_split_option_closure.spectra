@@ -1,0 +1,66 @@
+module std_round6_split_option_closure
+
+import std.collections as collections
+import std.convert as convert
+import std.string as text
+
+func parse_canonical_integer(input: string) returns Option<int> {
+    let cleaned = text.trim(input)
+    if text.is_empty(cleaned) {
+        return Option::None
+    }
+
+    let minimum  = convert.string_to_int("-9223372036854775808")
+    let fallback = convert.string_to_int_or(cleaned, minimum)
+    if fallback == minimum and cleaned != convert.int_to_string(minimum) {
+        return Option::None
+    }
+    return Option::Some(fallback)
+}
+
+func label(value: Option<int>, prefix: string) returns Option<string> {
+    let number = value?
+    return Option::Some(text.concat(prefix, convert.int_to_string(number)))
+}
+
+public func main() returns int {
+    let prefix = "item="
+    let render: func(Option<int>) returns Option<string> =
+    | value: Option<int> | label(value, prefix)
+    let tokens = text.split_by("  +7 ,bad,-2,0,9223372036854775808,-9223372036854775808 ", ",")
+    let token_count = collections.list_len(tokens)
+    let mut output = ""
+    let mut accepted = 0
+    let mut rejected = 0
+
+    for index in 0 .. token_count {
+        if let Option::Some(token) = collections.list_get(tokens, index) {
+            if text.trim(token) == "bad" {
+                rejected = rejected + 1
+                continue
+            }
+            let formatted = render(parse_canonical_integer(token))
+            if let Option::Some(part) = formatted {
+                if accepted > 0 {
+                    output = text.concat(output, ",")
+                }
+                output = text.concat(output, part)
+                accepted = accepted + 1
+            } else {
+                rejected = rejected + 1
+            }
+        } else {
+            collections.list_free(tokens)
+            return 1
+        }
+    }
+
+    collections.list_free(tokens)
+    if accepted != 4 or rejected != 2 {
+        return 2
+    }
+    if output != "item=7,item=-2,item=0,item=-9223372036854775808" {
+        return 3
+    }
+    return 0
+}

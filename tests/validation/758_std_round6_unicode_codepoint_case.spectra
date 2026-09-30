@@ -1,0 +1,51 @@
+module std_round6_unicode_codepoint_case
+
+import std.char as char
+import std.convert as convert
+import std.string as text
+
+func apply_codepoint(value: int, transform: func(int) returns int) returns int {
+    return transform(value)
+}
+
+func classify(value: int) returns int {
+    return match value {
+        when 945 then 1,
+        when 26085 then 2,
+        when 66560 then 3,
+        when _ then 0
+    }
+}
+
+public func main() returns int {
+    let codepoints: [int]                = [945, 26085, 66560]
+    let lowercase_expected: [int]        = [945, 26085, 66600]
+    let lowercase: func(int) returns int = | value: int | char.to_lower_char(value)
+    let mut categories                   = 0
+
+    for index in 0 .. 3 {
+        let codepoint = codepoints[index]
+        if char.is_alpha(codepoint) != true {
+            return 1
+        }
+        let lowered = apply_codepoint(codepoint, lowercase)
+        if lowered != lowercase_expected[index] or char.is_alpha(lowered) != true {
+            return 2
+        }
+        categories = categories + classify(codepoint)
+    }
+
+    if char.is_upper_char(66560) != true or char.to_lower_char(66560) != 66600 {
+        return 3
+    }
+    if char.to_upper_char(66600) != 66560 or char.is_lower_char(66600) != true {
+        return 4
+    }
+    if categories != 6 or convert.int_to_string(categories) != "6" {
+        return 5
+    }
+    if text.to_upper("éab") != "ÉAB" {
+        return 6
+    }
+    return 0
+}

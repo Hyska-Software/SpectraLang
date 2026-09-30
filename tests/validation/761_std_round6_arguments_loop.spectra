@@ -1,0 +1,46 @@
+module std_round6_arguments_loop
+
+import std.env as env
+import std.option as option
+import std.string as string
+
+func argument_is_available(index: int) returns bool {
+    let argument = env.env_arg_option(index)
+    return match argument {
+        when Option::Some(value) if index == 0 then string.is_empty(value) == false,
+        when Option::Some(_value) then true,
+        when Option::None then false
+    }
+}
+
+public func main() returns int {
+    let count = env.env_args_count()
+    if count < 1 {
+        return 1
+    }
+
+    let first        = env.env_arg_option(0)
+    let first_length = option.option_map(first, | value: string | string.len(value))
+    if option.is_none(first_length) or option.option_unwrap(first_length) < 1 {
+        return 2
+    }
+
+    let index   = 0
+    let visited = 0
+    while index < count {
+        if argument_is_available(index) == false {
+            return 3
+        }
+        index = index + 1
+        visited = visited + 1
+    }
+    if visited != count {
+        return 4
+    }
+
+    let past_end = env.env_arg_option(count)
+    if option.is_some(past_end) {
+        return 5
+    }
+    return 0
+}

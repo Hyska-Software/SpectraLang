@@ -1,0 +1,55 @@
+module std_round6_nested_list_control_flow
+
+from std.collections import List
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let first: List<int> = collections.list_new()
+    collections.list_push(first, 1)
+    collections.list_push(first, 2)
+    collections.list_push(first, 3)
+
+    let second: List<int> = collections.list_new()
+    collections.list_push(second, 4)
+    collections.list_push(second, 0)
+    collections.list_push(second, 5)
+
+    let groups: List<List<int>> = collections.list_new()
+    collections.list_push(groups, first)
+    collections.list_push(groups, second)
+
+    let total       = 0
+    let consumed    = 0
+    let groups_seen = 0
+    for group in groups {
+        for value in group {
+            if value == 0 {
+                continue
+            }
+            if value == 3 or value == 5 {
+                break
+            }
+            total = total + value
+            consumed = consumed + 1
+        }
+        collections.list_push(group, 8)
+        groups_seen = groups_seen + 1
+    }
+
+    if total != 7 or consumed != 3 or groups_seen != 2 {
+        return 1
+    }
+    if collections.list_len(first) != 4 or collections.list_len(second) != 4 {
+        return 2
+    }
+    if option.option_unwrap(collections.list_get(first, 3)) != 8 or
+    option.option_unwrap(collections.list_get(second, 3)) != 8 {
+        return 3
+    }
+
+    collections.list_free(groups)
+    collections.list_free(first)
+    collections.list_free(second)
+    return 0
+}

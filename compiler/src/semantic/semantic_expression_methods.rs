@@ -31,15 +31,10 @@ impl SemanticAnalyzer {
                 );
                 for (index, arg) in arguments.iter().enumerate() {
                     let saved_expected = self.current_expected_type.clone();
-                    self.current_expected_type = if Self::is_contextual_integer_literal_expression(arg)
-                    {
-                        expected_params
-                            .as_ref()
-                            .and_then(|(params, offset)| params.get(index + offset))
-                            .cloned()
-                    } else {
-                        None
-                    };
+                    self.current_expected_type = expected_params
+                        .as_ref()
+                        .and_then(|(params, offset)| params.get(index + offset))
+                        .cloned();
                     self.analyze_expression(arg);
                     self.current_expected_type = saved_expected;
                 }
@@ -107,12 +102,7 @@ impl SemanticAnalyzer {
                                 arguments.iter().zip(signature.params.iter()).enumerate()
                             {
                                 let saved_expected = self.current_expected_type.clone();
-                                self.current_expected_type =
-                                    if Self::is_contextual_integer_literal_expression(arg) {
-                                        Some(expected_type.clone())
-                                    } else {
-                                        None
-                                    };
+                                self.current_expected_type = Some(expected_type.clone());
                                 let arg_type = self.infer_expression_type(arg);
                                 self.current_expected_type = saved_expected;
                                 if matches!(arg_type, Type::Unknown) {

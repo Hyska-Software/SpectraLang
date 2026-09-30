@@ -1,0 +1,77 @@
+module std_round6_env_option_record
+
+import std.env as env
+import std.option as option
+import std.string as string
+
+const PRESENT = "SPECTRALANG_ROUND6_CONFIG_PRESENT"
+const EMPTY = "SPECTRALANG_ROUND6_CONFIG_EMPTY"
+
+record ConfigValue {
+    public raw: string,
+    public length: int,
+}
+
+enum ConfigSource {
+    Environment(ConfigValue),
+    Fallback(ConfigValue),
+}
+
+static MAPPED_VALUES: int = 0
+
+func to_config(raw: string) returns ConfigValue {
+    MAPPED_VALUES = MAPPED_VALUES + 1
+    return ConfigValue { raw: raw, length: string.len(raw) }
+}
+
+func load_config(key: string, fallback: string) returns ConfigSource {
+    let raw        = env.env_get_option(key)
+    let configured = option.option_map(raw, to_config)
+    return match configured {
+        when Option::Some(value) then ConfigSource::Environment(value),
+        when Option::None then ConfigSource::Fallback(
+            ConfigValue { raw: fallback, length: string.len(fallback) }
+        )
+    }
+}
+
+public func main() returns int {
+    if env.env_set(PRESENT, "spectra") != true or env.env_set(EMPTY, "") != true {
+        return 1
+    }
+
+    MAPPED_VALUES = 0
+    let present = load_config(PRESENT, "fallback")
+    if match present {
+        when ConfigSource::Environment(value) then value.raw != "spectra" or value.length != 7,
+        when ConfigSource::Fallback(_) then true
+    } {
+        return 2
+    }
+    if MAPPED_VALUES != 1 {
+        return 3
+    }
+
+    let empty = load_config(EMPTY, "fallback")
+    if match empty {
+        when ConfigSource::Environment(value) then value.raw != "" or value.length != 0,
+        when ConfigSource::Fallback(_) then true
+    } {
+        return 4
+    }
+    if MAPPED_VALUES != 2 {
+        return 5
+    }
+
+    let absent = load_config("SPECTRALANG_ROUND6_CONFIG_MISSING", "default")
+    if match absent {
+        when ConfigSource::Environment(_) then true,
+        when ConfigSource::Fallback(value) then value.raw != "default" or value.length != 7
+    } {
+        return 6
+    }
+    if MAPPED_VALUES != 2 {
+        return 7
+    }
+    return 0
+}

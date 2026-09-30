@@ -1,0 +1,42 @@
+module std_round6_integer_conversion_limits
+
+import std.convert as convert
+import std.math as math
+
+public func main() returns int {
+    let minimum = convert.string_to_int("-9223372036854775808")
+    let maximum = convert.string_to_int("9223372036854775807")
+    if convert.int_to_string(minimum) != "-9223372036854775808" or
+    convert.int_to_string(maximum) != "9223372036854775807" {
+        return 1
+    }
+    if convert.string_to_int_or("9223372036854775808", 41) != 41 or
+    convert.string_to_int_or("-9223372036854775809", 42) != 42 {
+        return 2
+    }
+    if convert.string_to_int_or(" \t -42 \n", 0) != -42 or
+    convert.string_to_int("not-a-number") != 0 {
+        return 3
+    }
+
+    if math.sign(minimum) != -1 or math.sign(maximum) != 1 {
+        return 4
+    }
+    if math.gcd(minimum, 8) != 8 or math.gcd(maximum, 3) != 1 {
+        return 5
+    }
+    if math.gcd(0, 0) != 0 or math.lcm(0, minimum) != 0 or math.lcm(-24, 18) != 72 {
+        return 6
+    }
+
+    let signed_max: i8   = convert.string_to_int("127") as i8
+    let signed_min: i8   = convert.string_to_int("-128") as i8
+    let unsigned_max: u8 = convert.string_to_int("255") as u8
+    if signed_max as int != 127 or signed_min as int != -128 or unsigned_max as int != 255 {
+        return 7
+    }
+    if math.abs(signed_min as int) != 128 or convert.int_to_string(unsigned_max as int) != "255" {
+        return 8
+    }
+    return 0
+}

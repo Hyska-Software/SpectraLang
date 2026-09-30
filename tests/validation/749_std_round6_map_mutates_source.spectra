@@ -1,0 +1,47 @@
+module std_round6_map_mutates_source
+
+from std.collections import List
+import std.collections as collections
+import std.option as option
+
+public func main() returns int {
+    let source: List<int> = collections.list_new()
+    collections.list_push(source, 1)
+    collections.list_push(source, 2)
+    collections.list_push(source, 3)
+
+    let direct_doubled = collections.list_map(source, | value: int | {
+            return value * 2
+    })
+    // The map callback mutates its source; iteration must use the original snapshot.
+    let mapper: func(int) returns int = | value: int | {
+        collections.list_push(source, value + 10)
+        return value * 2
+    }
+    let doubled = collections.list_map(source, mapper)
+
+    if collections.list_len(source) != 6 or collections.list_len(doubled) != 3 or
+    collections.list_len(direct_doubled) != 3 {
+        return 1
+    }
+    if option.option_unwrap(collections.list_get(source, 3)) != 11 or
+    option.option_unwrap(collections.list_get(source, 4)) != 12 or
+    option.option_unwrap(collections.list_get(source, 5)) != 13 {
+        return 2
+    }
+    if option.option_unwrap(collections.list_get(doubled, 0)) != 2 or
+    option.option_unwrap(collections.list_get(doubled, 1)) != 4 or
+    option.option_unwrap(collections.list_get(doubled, 2)) != 6 {
+        return 3
+    }
+    if option.option_unwrap(collections.list_get(direct_doubled, 0)) != 2 or
+    option.option_unwrap(collections.list_get(direct_doubled, 1)) != 4 or
+    option.option_unwrap(collections.list_get(direct_doubled, 2)) != 6 {
+        return 4
+    }
+
+    collections.list_free(source)
+    collections.list_free(doubled)
+    collections.list_free(direct_doubled)
+    return 0
+}

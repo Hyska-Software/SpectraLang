@@ -1,0 +1,79 @@
+module std_round6_time_calendar
+
+import std.time as time
+
+enum EpochSide {
+    Before(int),
+    At(int),
+    After(int),
+}
+
+func classify(seconds: int) returns EpochSide {
+    if seconds < 0 {
+        return EpochSide::Before(seconds)
+    }
+    if seconds == 0 {
+        return EpochSide::At(seconds)
+    }
+    return EpochSide::After(seconds)
+}
+
+func date_matches(seconds: int, year: int, month: int, day: int) returns bool {
+    let utc = time.unix_to_utc(seconds)
+    return time.utc_year(utc) == year and time.utc_month(utc) == month and time.utc_day(utc) == day
+}
+
+public func main() returns int {
+    if match classify(-1) {
+        when EpochSide::Before(value) then value != -1,
+        when EpochSide::At(_) then true,
+        when EpochSide::After(_) then true
+    } {
+        return 1
+    }
+    if match classify(0) {
+        when EpochSide::Before(_) then true,
+        when EpochSide::At(value) then value != 0,
+        when EpochSide::After(_) then true
+    } {
+        return 2
+    }
+    if match classify(1) {
+        when EpochSide::Before(_) then true,
+        when EpochSide::At(_) then true,
+        when EpochSide::After(value) then value != 1
+    } {
+        return 3
+    }
+
+    if date_matches(951782400, 2000, 2, 29) == false {
+        return 4
+    }
+    if date_matches(951868800, 2000, 3, 1) == false {
+        return 5
+    }
+    if date_matches(4107542400, 2100, 3, 1) == false {
+        return 6
+    }
+
+    let before   = time.monotonic_millis()
+    let origin   = time.instant_now()
+    let zero     = time.duration_ms(0)
+    let deadline = time.instant_add(origin, zero)
+    if time.instant_has_elapsed(deadline) == false or time.instant_elapsed_ms(origin) < 0 {
+        return 7
+    }
+    let after = time.monotonic_millis()
+    if after < before {
+        return 8
+    }
+
+    let quarter   = time.duration_ms(250)
+    let second    = time.duration_secs(1)
+    let total     = time.duration_add(quarter, second)
+    let remainder = time.duration_sub(total, quarter)
+    if time.duration_millis(total) != 1250 or time.duration_millis(remainder) != 1000 {
+        return 9
+    }
+    return 0
+}
