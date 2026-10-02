@@ -1,6 +1,6 @@
 # Spectra complete example projects
 
-30 complete `.spectra` projects. Projects 01–17 are self-validating and print an
+29 complete `.spectra` projects. Projects 01–16 are self-validating and print an
 `ok` line; `18-spectragit` is a local version-control CLI, `19-spectraboard` is
 a local task-board CLI, `20-spectraledger` is a local personal-finance CLI,
 `21-spectrahabit` is a local habit tracker, and `22-spectravision` is an
@@ -59,7 +59,7 @@ spectralang run examples/complete/22-spectravision
 | 14 | `14-data-platform` | Data platform slice: CSV/JSONL ingestion, schema, normalization, filtering, aggregation, join, partitioning, batching, catalog/index/query/cache, quality, lineage, report and cleanup (`DATA PLATFORM ok`) |
 | 15 | `15-ml-training-platform` | Training platform: dataset readers, feature transforms, autodiff/Adam training, checkpoint artifacts, tokenizer/RAG index, guarded serving, monitoring, experiment reproducibility, report and cleanup (`ML TRAINING PLATFORM ok`) |
 | 16 | `16-api-service-platform` | API service: domain JSON, SQLite repository/migrations, query validation, routing, handlers, middleware, security policy, events, OpenAPI, server lifecycle, report and cleanup (`API SERVICE PLATFORM ok`) |
-| 17 | `17-agent-operations-center` | Agent operations: governed tools, capability policy, memory, journal, approval, budget, taint, compensation/rollback, MCP surface, telemetry, and durable replay (`AGENT OPERATIONS CENTER ok`) |
+
 | 18 | `18-spectragit` | Local text version control CLI in SpectraLang: blobs/trees/commits, branches, line diff, restore, timelines, snapshots, inspection, and deterministic self-tests |
 | 19 | `19-spectraboard` | Independent task-board CLI with nested modules, task lifecycle, filtering, UTF-8 persistence, atomic writes, backup recovery and AOT integration |
 | 20 | `20-spectraledger` | Personal-finance CLI with nested modules, income and expense tracking, exact cent arithmetic, monthly category budgets, reports, UTF-8 persistence, backup recovery and AOT integration |

@@ -760,37 +760,7 @@ impl VectorIndex {
         self.dimension
     }
 
-    /// Attaches a caller-owned metadata entry (for example the provenance
-    /// ledger of `std.agent` memory). Unlike [`Self::set_metadata`], the key
-    /// is not restricted; the entry survives `artifact_data`/`from_artifact`
-    /// because both clone the metadata map verbatim.
-    pub fn set_custom_metadata(&mut self, key: &str, value: &str) {
-        self.metadata.insert(key.to_owned(), value.to_owned());
-    }
 
-    /// Reads a caller-owned metadata entry written by
-    /// [`Self::set_custom_metadata`].
-    pub fn custom_metadata(&self, key: &str) -> Option<&str> {
-        self.metadata.get(key).map(String::as_str)
-    }
-}
-
-/// Writes `index` to `path` in the standard vector-index artifact encoding
-/// (`artifact_role = "vector_index"`, `index_version = v2`).
-///
-/// Public seam for `std.agent` memory (R-3212): the artifact is the same one
-/// `spectra.std.ml.vector_index_persist` produces, so a memory store and a
-/// vector index are interchangeable on disk.
-pub fn write_artifact(path: &std::path::Path, index: &VectorIndex) -> Result<(), String> {
-    let data = index.artifact_data().map_err(|error| error.to_string())?;
-    crate::artifact::write_atomic(path, &data).map_err(|error| error.to_string())
-}
-
-/// Reads a vector index written by [`write_artifact`] (or by
-/// `spectra.std.ml.vector_index_persist`).
-pub fn read_artifact(path: &std::path::Path) -> Result<VectorIndex, String> {
-    let data = crate::artifact::read(path).map_err(|error| error.to_string())?;
-    VectorIndex::from_artifact(&data).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

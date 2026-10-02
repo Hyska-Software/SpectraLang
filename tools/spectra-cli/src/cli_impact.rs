@@ -168,7 +168,7 @@ fn impact_fixtures(root: &Path, symbol: &str) -> Vec<String> {
 /// Eval cases that mention the symbol, when an eval directory exists.
 fn impact_eval_cases(root: &Path, symbol: &str) -> Vec<String> {
     let mut cases: Vec<String> = Vec::new();
-    let mut directories = vec![root.join("examples/agent/evals"), root.join("evals")];
+    let mut directories = vec![root.join("evals")];
     directories.retain(|directory| directory.is_dir());
 
     for directory in directories {

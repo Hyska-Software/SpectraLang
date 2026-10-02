@@ -557,13 +557,6 @@ pub(crate) fn ml_token_set(text: &str) -> HashSet<String> {
     ml_text_tokens(text).collect()
 }
 
-/// Token count produced by the std.ml text tokenizer, exposed for the
-/// `std.agent` namespace (`std.agent.token_count`). Reusing
-/// [`ml_text_tokens`] keeps a single tokenization definition in the runtime.
-pub fn text_token_count(text: &str) -> usize {
-    ml_text_tokens(text).count()
-}
-
 pub(crate) fn ml_f1_overlap(answer: &str, expected: &str) -> f64 {
     let answer_tokens = ml_token_set(answer);
     let expected_tokens = ml_token_set(expected);

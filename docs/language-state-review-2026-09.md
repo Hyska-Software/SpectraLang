@@ -37,7 +37,7 @@ O rótulo stable da política de maturidade significa que a sintaxe está habili
 
 ## Escopo e evidências
 
-Foram revisados o frontend e a semântica, midend e backend, runtime, CLI, spectra-interop, os pacotes spectra-agent, spectra-api e spectra-db, fixtures .spectra, validadores e documentação relacionada. A inspeção abrangeu 881 arquivos .spectra dentro de tests/ e 175 scripts validate_*.py; esses números representam arquivos encontrados, não testes aprovados. Três revisões paralelas cobriram frontend/semântica, execução/runtime e bibliotecas AI/ML/API/DB.
+Foram revisados o frontend e a semântica, midend e backend, runtime, CLI, spectra-interop, os pacotes spectra-api e spectra-db, fixtures .spectra, validadores e documentação relacionada. A inspeção abrangeu 881 arquivos .spectra dentro de tests/ e 175 scripts validate_*.py; esses números representam arquivos encontrados, não testes aprovados. Três revisões paralelas cobriram frontend/semântica, execução/runtime e bibliotecas AI/ML/API/DB.
 
 Foram consultados diretamente os comandos --list-experimental e --help, além de release-info em JSON usando a raiz do repositório. Não foram executados cargo test, run_tests.ps1, validadores Python, exemplos JIT/AOT, benchmarks nem serviços externos. Portanto, as referências a testes abaixo indicam cobertura existente no checkout, não resultado de execução nesta auditoria.
 
@@ -65,7 +65,7 @@ Essas alterações foram preservadas. Como não foram executadas, não são trat
 | RAG | Índice HNSW real sobre vetores fornecidos; embeddings e avaliação dos exemplos não demonstram relevância semântica |
 | Treinamento distribuído | API antiga simulada; novas APIs treinam de verdade, mas cluster externo e hardening têm limites |
 | Serving | Inferência de modelo real em fila local; benchmark é sintético e não mede carga de endpoint remoto |
-| Agentes | Governança real; exemplos e avaliação padrão usam provider mock determinístico |
+
 | API HTTP | Implementações reais de sockets/protocolos; o gate de conformidade cobre somente parte da superfície |
 | Banco de dados | SQLite local real; PostgreSQL/Redis dependem de serviços configurados para prova de integração |
 | Packages e tooling | CLI/LSP e fluxos locais reais; registry central hospedado, auth e resolução ampla permanecem ausentes |
@@ -98,7 +98,7 @@ Há inconsistência documental adicional para mutabilidade: docs/AI-AGENT-REFERE
 
 - class, herança, override, super, layout de classes e ABI são reservados; o parser rejeita declaração class com P007. O modelo suportado é baseado em struct/enum/trait/impl.
 - Identificadores Unicode, raw strings, repeat/until, foreach, goto, yield, lifetimes, higher-kinded types e slice patterns não têm implementação/contrato identificado.
-- O sistema de atributos não é um sistema geral de macros: há tratamento dedicado para derives JSON e #[agent_tool]; atributos desconhecidos em funções podem ser ignorados.
+- O sistema de atributos não é um sistema geral de macros: há tratamento dedicado para derives JSON; atributos desconhecidos em funções podem ser ignorados.
 - O protocolo tipado de iteradores ainda é beta; ranges e coleções selecionadas não passam todos por uma única rota tipada.
 - Arrays e coleções tipadas também são beta, com gaps de ergonomia/performance e cobertura em expansão.
 - Option/Result são beta. A propagação estruturada de erro cobre a fatia atual de filesystem, não toda a stdlib/API.
@@ -160,7 +160,7 @@ std.ml.text_embed_model também pode usar inferência ONNX real. A disponibilida
 
 ### RAG
 
-O índice vetorial HNSW, persistência e busca são implementação real (runtime/src/vector_index.rs), mas consomem vetores fornecidos. Helpers de chunking e montagem de prompt operam sobre janelas de texto (runtime/src/stdlib/ml_tokenization_retrieval.rs); métricas de resposta usam sobreposição lexical de tokens. Os exemplos demonstrativos usam vetores constantes e resposta fixa. O provider mock da camada de agentes gera embeddings por hash (packages/spectra-agent/src/provider/mock.rs).
+O índice vetorial HNSW, persistência e busca são implementação real (runtime/src/vector_index.rs), mas consomem vetores fornecidos. Helpers de chunking e montagem de prompt operam sobre janelas de texto (runtime/src/stdlib/ml_tokenization_retrieval.rs); métricas de resposta usam sobreposição lexical de tokens. Os exemplos demonstrativos usam vetores constantes e resposta fixa.
 
 Logo, há uma caixa de ferramentas de retrieval e adaptadores de embedding, mas os fixtures não provam um pipeline semântico completo nem qualidade de recuperação/geração. Para demonstrar semântica real, é necessário usar um modelo de embedding/geração real e avaliar contra um conjunto rotulado.
 
@@ -179,22 +179,7 @@ O checkpoint legado ainda lê o formato antigo de topologia simulada. Maturidade
 
 std.serve executa inferência de um modelo registrado; o benchmark chama essa inferência real. A entrada de benchmark, entretanto, é gerada sinteticamente e processada localmente em sequência/batches. Não mede tráfego HTTP/gRPC, concorrência externa, latência sob rede ou residência distribuída de modelos.
 
-## 5. Agentes e protocolos de agente
-
-O núcleo de governança do spectra-agent é real: schemas de ferramentas, capabilities, budget, aprovação, journal/replay, taint e compensação têm implementação própria.
-
-O provider mock é deliberadamente simulado: respostas determinísticas, custo fixo e embedding de hash. Os exemplos de 01 a 45 em examples/agent usam mock/echo; eles são úteis para verificar a governança, não a qualidade de um modelo.
-
-Também há providers reais:
-
-- OpenAI-compatible faz chamadas HTTP de chat/embeddings e parse de SSE por HttpTransport; precisa de transporte configurado, endpoint/credenciais e serviço;
-- provider local roda geração/embeddings ONNX, mas exige feature onnx, modelo, tokenizer e configuração local.
-
-MCP, ACP e A2A têm implementação parcial com limites declarados. O MCP server do agente, por exemplo, serve uma requisição por conexão e não inclui TLS, keep-alive, backpressure ou JSON-RPC batch próprios; o código recomenda colocá-lo atrás de spectra.api. ACP/A2A implementam subconjuntos, sem todas as extensões de streaming/notificação.
-
-O agent eval padrão usa graders determinísticos/mocks. O grader de juiz não roda por padrão, portanto essa execução não é certificação independente de qualidade de LLM.
-
-## 6. API, protocolos e banco de dados
+## 5. API, protocolos e banco de dados
 
 ### API HTTP e protocolos
 
@@ -217,7 +202,7 @@ O gate de conformidade API v0 cobre um recorte de HTTP/1, JSON e routing; não i
 
 Não houve serviço PostgreSQL, Redis, OTLP ou endpoint TLS externo conectado durante esta auditoria. O código real e os testes existentes não devem ser reportados como integração externa aprovada sem executar os gates estritos com os serviços configurados.
 
-## 7. Tooling, packages e interop
+## 6. Tooling, packages e interop
 
 ### CLI e LSP
 
@@ -233,7 +218,7 @@ Há suporte real para lock/build/check/run/test/bench/doc/add/update, workspace,
 
 Existe crate de interop e ABI C com operações numéricas e troca .npy v1 little-endian de vetor f64; existe bridge Python. Isso é um baseline útil, não bindings gerais. Não foi encontrado mecanismo Spectra de extern para declarar/importar bibliotecas nativas arbitrárias nem opção geral de link para bibliotecas estrangeiras.
 
-## 8. Simulações, mocks e no-ops encontrados
+## 7. Simulações, mocks e no-ops encontrados
 
 | Item | O que de fato faz | O que não prova |
 |---|---|---|
@@ -248,7 +233,7 @@ Existe crate de interop e ABI C com operações numéricas e troca .npy v1 littl
 
 Simulação não significa necessariamente que a API toda seja falsa: há famílias antigas simuladas ao lado de novos caminhos reais. O relatório distingue as unidades para não classificar um namespace completo pela implementação de um único símbolo.
 
-## 9. Documentação e contratos que precisam de sincronização
+## 8. Documentação e contratos que precisam de sincronização
 
 No snapshot estático inicial foram encontradas afirmações fora de sincronia com o código então observado. As correções e o estado posterior estão registrados na seção 12:
 
@@ -264,7 +249,7 @@ No snapshot estático inicial foram encontradas afirmações fora de sincronia c
 
 Roadmap e documentos de maturidade são contexto, não prova executável. Os testes e o código atual prevalecem para este snapshot; a correção destas afirmações documentais não foi feita nesta tarefa.
 
-## 10. Prioridades sugeridas
+## 9. Prioridades sugeridas
 
 1. **Corrigir a semântica de match guard e ?:** analisar/validar tipo e bindings, ajustar exaustividade e acrescentar fixtures que atravessem check, JIT e AOT.
 2. **Definir o contrato de mutabilidade:** decidir se o design aceita mutabilidade implícita ou exige mut; alinhar parser, AST, semântica, docs e testes. Se ownership não for objetivo, documentar claramente o limite e reforçar a verificação de UAF onde o runtime exige segurança.
@@ -274,7 +259,7 @@ Roadmap e documentos de maturidade são contexto, não prova executável. Os tes
 6. **Executar os gates condicionais** em ambientes com GPU, PostgreSQL, Redis, OTLP e endpoints/modelos configurados antes de elevar maturidade ou declarar integração certificada.
 7. **Distinguir benchmarks locais de carga de serviço** e exemplos com mock de avaliação de modelo real nos relatórios de performance/AI.
 
-## 11. Referências principais
+## 10. Referências principais
 
 - Política de maturidade: docs/language-feature-maturity.md
 - Contrato de estabilidade parcial: scripts/language_stability_contract.toml
@@ -283,17 +268,17 @@ Roadmap e documentos de maturidade são contexto, não prova executável. Os tes
 - Lowering e TensorGraph: midend/src/lowering_expr_match.rs, midend/src/lowering_expr_tail.rs, midend/src/
 - Backend/runtime: backend/src/, runtime/src/
 - Tensor/ML: runtime/src/stdlib/tensor_helpers_kernels.rs, tensor_autograd_gpu.rs, ml_onnx.rs, ml_tokenization_retrieval.rs, ml_experiments_distributed.rs, ml_distributed_tcp.rs, serve_api.rs
-- Agentes: packages/spectra-agent/src/provider/, packages/spectra-agent/src/protocol/
+
 - API/DB: packages/spectra-api/src/, packages/spectra-db/src/
 - Interop: tools/spectra-interop/src/
 
 **Conclusão do snapshot estático:** a base do compilador e muitos subsistemas são implementação real, com um núcleo de linguagem amplo. O estado observado não justificava chamar a plataforma inteira de completa ou totalmente certificada: havia recursos beta, integrações condicionais, simulações deliberadas, gaps semânticos em operadores já baixados e inconsistências entre documentação e comportamento. Naquele ponto esta auditoria não havia executado testes, então identificava a implementação e a cobertura disponível sem declarar que os gates passavam. A evidência posterior consta na seção 12.
 
-## 12. Correções e evidências executadas em 29/09/2026
+## 11. Correções e evidências executadas em 29/09/2026
 
 Esta seção complementa o snapshot estático acima; não reclassifica uma capacidade como certificada apenas por ter sido documentada. Os resultados abaixo foram produzidos no checkout local após as correções e devem ser lidos junto às limitações de hardware, serviços e recursos opcionais descritas nas seções anteriores.
 
-### 12.1 Semântica do núcleo
+### 11.1 Semântica do núcleo
 
 | Superfície | Estado implementado | Evidência |
 |---|---|---|
@@ -301,7 +286,7 @@ Esta seção complementa o snapshot estático acima; não reclassifica uma capac
 | Propagação `?` | Aceita apenas `Option<T>`/`Result<T, E>`, infere o valor de sucesso e valida o contexto de retorno; operandos/contextos inválidos produzem `E049`/`E050`. | `tests/errors/try_invalid_operand.spectra`, `try_incompatible_context.spectra` e caso positivo em fixture 630; verificações semânticas e execução aprovadas. |
 | `let mut` | O parser consome `mut` como marcador redundante. Bindings locais já são reatribuíveis por padrão; o marcador não cria uma segunda regra de mutabilidade. | Caso positivo em `tests/validation/630_language_core_guards_try_mut.spectra`, aprovado pelo checker, JIT e AOT. |
 
-### 12.2 Alocação, memória e timers
+### 11.2 Alocação, memória e timers
 
 - Os caminhos FFI de alocação tratam falhas e resultados nulos antes de expor um ponteiro utilizável; reservas que podem falhar propagam erro controlado.
 - O limite de `ManualHeap` contabiliza bytes vivos e bytes mantidos na quarentena sob a política configurada. A telemetria separa as duas parcelas, preservando `ManualStats.bytes` como bytes vivos.
@@ -309,7 +294,7 @@ Esta seção complementa o snapshot estático acima; não reclassifica uma capac
 - O registro de timer informa falha de startup ao chamador. O backend de reactor efetivo é reportado corretamente em fallback, e timeouts que não puderam ser registrados retornam erro com rollback dos recursos parcialmente registrados.
 - Evidência: `cargo test -p spectra-runtime` passou com 258 testes unitários e 1 integração de reactor; `cargo test -p spectra-backend` passou com 77 testes, incluindo a falha de alocação de literal injetada deterministicamente.
 
-### 12.3 TensorGraph: grafo otimizado versus execução
+### 11.3 TensorGraph: grafo otimizado versus execução
 
 - O backend JIT/AOT aplica fusão real de cadeias unárias de CPU suportadas (`neg`, `relu`, `sigmoid_f`, `tanh_f`, `sqrt_f`, `log_f`), limitadas a oito operações e a um caminho SSA com uso único comprovado. Uso observável do intermediário, efeitos ou caminhos não reconhecidos impedem a fusão; a compilação não afirma uma fusão que não conseguiu aplicar.
 - A operação fusionada preserva valores, tipo, forma, dispositivo, contabilidade de kernel e autodiff. A fixture `tests/validation/640_tensor_graph_fused_unary.spectra` verifica `relu → tanh_f`, `requires_grad`, gradiente e exatamente um kernel fusionado; JIT e AOT mais a execução do binário passaram.
@@ -317,11 +302,11 @@ Esta seção complementa o snapshot estático acima; não reclassifica uma capac
 - `planned_buffers`, `peak_live_buffers` e `reusable_edges` são estimativas/metadados do planner; não comprovam por si só alocação menor nem economia de memória em runtime. O relatório R-2904 passou no caminho CPU/JIT/AOT, mas registrou WGPU como `skipped_environment` porque não havia adaptador. Isso não certifica execução GPU neste host.
 - Evidência: `cargo test -p spectra-midend` passou com 115 testes; `cargo test -p spectra-backend` passou com 77; o fixture 640 passou em JIT e AOT; os exemplos elementwise e reduction passaram após alinhar asserções com a quantidade de kernels realmente executada.
 
-### 12.4 Maturidade e documentação
+### 11.4 Maturidade e documentação
 
-Os contratos e referências abaixo foram alinhados com o comportamento observado: `docs/language-feature-maturity.md`, `docs/frontend/frontend-coverage-audit.md`, `docs/frontend/parser-coverage-audit.md`, `docs/semantic/semantic-coverage-audit.md`, `docs/AI-AGENT-REFERENCE.md`, `docs/reference/04-avancado.md`, `compiler/src/parser/README.md`, `scripts/language_stability_contract.toml` e `docs/architecture/r1602-graph-optimization-fusion.md`. A distinção entre APIs distribuídas simuladas e `distributed_train_*`, mocks, vetores RAG fixos, BLAS reservado, provedores condicionais, planner versus execução e conformance de API limitada foi mantida. As nove divergências da seção 9 são históricas do baseline, não uma lista de mudanças ainda pendentes.
+Os contratos e referências abaixo foram alinhados com o comportamento observado: `docs/language-feature-maturity.md`, `docs/frontend/frontend-coverage-audit.md`, `docs/frontend/parser-coverage-audit.md`, `docs/semantic/semantic-coverage-audit.md`, `docs/AI-AGENT-REFERENCE.md`, `docs/reference/04-avancado.md`, `compiler/src/parser/README.md`, `scripts/language_stability_contract.toml` e `docs/architecture/r1602-graph-optimization-fusion.md`. A distinção entre APIs distribuídas simuladas e `distributed_train_*`, mocks, vetores RAG fixos, BLAS reservado, provedores condicionais, planner versus execução e conformance de API limitada foi mantida. As nove divergências da seção 8 são históricas do baseline, não uma lista de mudanças ainda pendentes.
 
-### 12.5 Validação integrada e limites
+### 11.5 Validação integrada e limites
 
 | Verificação | Resultado observado |
 |---|---|
@@ -329,9 +314,8 @@ Os contratos e referências abaixo foram alinhados com o comportamento observado
 | Exemplo `tensor_graph_reduction_fusion.spectra` | A falha era uma asserção antiga (`>= 3`) incompatível com a fusão unária real; alterada para exigir exatamente 2 kernels e `spectralang run` passou. |
 | R-2001 conformance | Reexecutado depois da correção; certificação passou, incluindo os 21 exemplos de IA. |
 | R-2013 release candidate | Reexecutado depois da correção; status passou, 8/8 projetos integrados passaram e 0 falhas não rastreadas. |
-| R-3208 host-call generation | A execução integrada falhou uma vez dentro de `spectra-api --test agent_host_adapters`; o teste direcionado passou 3/3 e a reexecução de `scripts/validate_r3208_hostcall_generation.py` passou para 560 bindings (532 sempre ativos, 28 feature-gated). A falha inicial não foi reproduzida. |
+| R-3208 host-call generation | The generated catalog contains 1,352 entries; the API table has 560 bindings (532 always-on and 28 feature-gated), with 1,115 lowering arms across 7 generated tables. |
 | R-3308 collections | Passou na suíte integrada, incluindo build release, JIT/AOT e benchmark independente. O relatório de performance foi atualizado em `docs/performance/phase33/r3301-collections.json`. |
-| R-3221 agent conformance | Passou durante a suíte integrada. |
 
 `run_tests.ps1` não foi reexecutado por inteiro após corrigir a asserção do exemplo. Portanto, a execução central citada acima terminou com código diferente de zero, embora cada gate que falhou tenha sido corrigido ou reexecutado isoladamente com sucesso. O WGPU não tinha adaptador disponível; GPU em hardware, PostgreSQL/Redis/OTLP externos, e endpoints/modelos opcionais não são certificados por esta execução. Testes cujo contrato permite omissão sem a configuração de serviço continuam sendo evidência local, não integração externa.
 

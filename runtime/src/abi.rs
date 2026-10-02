@@ -128,10 +128,6 @@ pub enum RuntimeImport {
     CoroutineError,
     CoroutineCancelled,
     CoroutinePollReturn,
-    /// Fatal capability-denial reporter used by the generic host-call lowering
-    /// when the dispatcher returns `HOST_STATUS_DENIED`. Prints
-    /// `capability denied: <message>` and exits with 101.
-    HostDenied,
     ListNew,
     ListPush,
     ListLen,
@@ -198,7 +194,7 @@ pub enum RuntimeImport {
 }
 
 impl RuntimeImport {
-    pub const COUNT: usize = 117;
+    pub const COUNT: usize = 116;
 
     pub const ALL: &'static [Self] = &[
         Self::ManualAlloc,
@@ -257,7 +253,6 @@ impl RuntimeImport {
         Self::CoroutineError,
         Self::CoroutineCancelled,
         Self::CoroutinePollReturn,
-        Self::HostDenied,
         Self::ListNew,
         Self::ListPush,
         Self::ListLen,
@@ -381,7 +376,6 @@ impl RuntimeImport {
             Self::CoroutineError => "spectra_rt_coroutine_error",
             Self::CoroutineCancelled => "spectra_rt_coroutine_cancelled",
             Self::CoroutinePollReturn => "spectra_rt_coroutine_poll_return",
-            Self::HostDenied => "spectra_rt_capability_denied",
             Self::ListNew => "spectra_rt_list_new_fast",
             Self::ListPush => "spectra_rt_list_push_value_fast",
             Self::ListLen => "spectra_rt_list_len_fast",
@@ -487,7 +481,6 @@ impl RuntimeImport {
             Self::ChannelClose => (I64, I32),
             Self::ChannelLen => (I64, I64),
             Self::SpectraPanic => (I64, EMPTY),
-            Self::HostDenied => (I64, EMPTY),
             Self::ListNew => (EMPTY, I64),
             Self::ListPush => (I64_I64, I64),
             Self::ListLen => (I64, I64),
@@ -616,7 +609,6 @@ impl RuntimeImport {
             Self::HostInvokeCached => ffi::spectra_rt_host_invoke_cached as *const u8,
             Self::HostInvokeCachedBatch => ffi::spectra_rt_host_invoke_cached_batch as *const u8,
             Self::SpectraPanic => crate::panic::spectra_rt_panic as *const u8,
-            Self::HostDenied => crate::panic::spectra_rt_capability_denied as *const u8,
             Self::ListNew => crate::ffi::spectra_rt_list_new_fast as *const u8,
             Self::ListPush => crate::ffi::spectra_rt_list_push_value_fast as *const u8,
             Self::ListLen => crate::ffi::spectra_rt_list_len_fast as *const u8,
@@ -1298,16 +1290,12 @@ mod tests {
     }
 
     /// Host-call namespace prefixes whose calls touch the outside world and
-    /// therefore require the generic dispatch path, where capability policy is
-    /// enforced and denial can be reported (ADR 0016, decisions D2/D4).
+    /// therefore require the generic dispatch path for standard error handling.
     ///
     /// The set is derived from the host functions registered by
     /// `runtime/src/stdlib/registration.rs` and
-    /// `runtime/src/stdlib/stdlib_bindings.rs`. `spectra.agent.*` is included
-    /// preemptively: the namespace is allocated by ADR 0017 and its calls are
-    /// effect-bearing by construction.
+    /// `runtime/src/stdlib/stdlib_bindings.rs`.
     const EFFECT_HOST_NAMESPACES: &[&str] = &[
-        "spectra.agent.",
         "spectra.api.",
         "spectra.async.",
         "spectra.std.env.",

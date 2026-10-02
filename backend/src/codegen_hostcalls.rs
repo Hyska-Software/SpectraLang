@@ -19,29 +19,6 @@ impl CodeGenerator {
         )
     }
 
-    /// Emits a call to `spectra_rt_capability_denied` with an interned message
-    /// literal and terminates the current block.
-    ///
-    /// The generic host-call lowering uses this when the dispatcher returns
-    /// `HOST_STATUS_DENIED` (ADR 0016 D4). The runtime prefixes the message
-    /// with `capability denied: ` and appends the policy evaluator's recorded
-    /// reason, so the trap is distinguishable from the generic host-failure
-    /// panic emitted by [`Self::emit_runtime_panic`].
-    pub(crate) fn emit_capability_denied<M: Module>(
-        module: &mut M,
-        hostcall: &mut HostCallLoweringContext<'_>,
-        builder: &mut FunctionBuilder,
-        message: &str,
-    ) -> BackendResult<()> {
-        Self::emit_fatal_message(
-            module,
-            hostcall,
-            builder,
-            RuntimeImport::HostDenied,
-            message,
-        )
-    }
-
     /// Emits a fatal runtime call carrying one interned message literal.
     ///
     /// Unlike `ConstString` literals — which resolve through heap storage in

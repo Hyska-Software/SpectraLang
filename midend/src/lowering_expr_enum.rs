@@ -136,8 +136,6 @@ impl ASTLowering {
                         }
                         return self.lower_derive_from_json(enum_name, call_args[0], ir_func);
                     }
-                    // R-3210: `json_schema()` takes no arguments; the schema is
-                    // a compile-time string literal built from the derive data.
                     if variant_name == "json_schema"
                         && self.json_struct_schemas.contains_key(enum_name.as_str())
                     {

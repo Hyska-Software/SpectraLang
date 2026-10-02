@@ -40,9 +40,9 @@ Runtime failures (malformed documents, missing required fields, wrong field
 types, and unknown enum values) print
 `spectra.api.json decode error at '<path>'` to stderr and abort with
 `runtime error: host call 'spectra.api.json.decode_field_by_key' failed`
-(exit 101) for direct `from_json` calls. Generated `#[agent_tool]` wrappers run
-`json_error_field` first and return the typed tool failure to the caller
-instead of aborting the process.
+(exit 101) for direct `from_json` calls. Callers can use `json_error_field`
+before invoking application logic and handle the typed error result instead
+of aborting the process.
 
 ## Field Options
 
@@ -86,5 +86,5 @@ R-2209 is validated by:
 - `spectralang check tests/errors/json_derive_wrong_type.spectra`
 - `spectralang check tests/errors/json_derive_duplicate_rename.spectra`
 - `spectralang check tests/errors/json_derive_invalid_attribute.spectra`
-- `spectralang run tests/validation/425_agent_option_enum_tool.spectra`
+- `spectralang run tests/validation/357_json_derive_roundtrip.spectra`
 - `scripts/validate_r2209_json_derive.py`

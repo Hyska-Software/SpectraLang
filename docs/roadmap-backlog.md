@@ -2445,6 +2445,145 @@ Packaging and documentation:
 
 ---
 
+## R-3202 spectralang surface --json
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: none
+
+Emit the project and builtin public surface as machine-readable JSON with a token budget.
+
+A coding agent must answer 'what does this project expose' in one call instead of reading every file, and must be able to fit the answer into a context window.
+
+
+### Acceptance
+
+- surface --json on a real project lists every public module, function and type with stable ordering.
+- Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed.
+- Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic.
+- scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1.
+
+## R-3203 spectralang impact --json
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: none
+
+Answer 'what breaks if I change this symbol' from the call graph, not from text search.
+
+Impact analysis is the single most valuable signal for a coding agent editing an unfamiliar project, and text search systematically misses indirect callers.
+
+
+### Acceptance
+
+- impact --json returns the full caller set for a changed function, including cross-module callers.
+- Field-level impact returns the functions that read or construct the type.
+- Unresolved dynamic sites are reported, not silently omitted.
+- scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1.
+
+## R-3204 Diagnostics with Repair Information
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `frontend`
+- Risk: `medium`
+- Dependencies: none
+
+Add expected, actual and fix to the JSON diagnostic contract and expose explain --json.
+
+Repair efficiency dominates one-shot generation quality in AI-assisted workflows; a diagnostic that states the fix removes an entire investigation round trip.
+
+
+### Acceptance
+
+- check --json on a type mismatch emits expected, actual and fix.
+- explain --json returns the documented description for every code in the reference file.
+- SARIF output remains schema-valid with and without fixes.
+- scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1.
+
+## R-3205 Version-Matched Language Reference from the CLI
+
+- Status: `complete`
+- Priority: `P2`
+- Owner: `tooling`
+- Risk: `low`
+- Dependencies: none
+
+spectralang docs --json serves the reference of the installed binary, not of the repository.
+
+Training-data scarcity is the largest single handicap of a young language; shipping the reference inside the binary removes the stale-knowledge failure mode.
+
+
+### Acceptance
+
+- docs --json reports the version and hash of the embedded reference.
+- --section returns a strict subset of the full output.
+- Changing the reference file changes the reported hash after rebuild.
+- scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1.
+
+## R-3206 Extended Contract Catalog Schema
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `ecosystem`
+- Risk: `high`
+- Dependencies: none
+
+Define the typed catalog metadata needed to generate midend lowering tables and the Rust host-call table, while retaining effects and general type, ABI, and feature metadata.
+
+A single typed contract prevents each standard-library host function from requiring repeated manual edits across semantic, lowering, runtime, and API inventories.
+
+
+### Acceptance
+
+- Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.
+- The auditor rejects malformed signatures, IR return types, and missing API host-call bindings.
+- scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.
+
+## R-3207 Generate Midend Lowering Tables from the Catalog
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `midend`
+- Risk: `high`
+- Dependencies: `R-3206`
+
+Replace the hand-written lowering tables with checked-in generated files plus a staleness check.
+
+Removes one of the four copies. The remaining manual work is the semantic signature and the Rust implementation, which are the two things a human must write anyway.
+
+
+### Acceptance
+
+- The seven lowering files are generated; a manual edit makes --check fail.
+- All existing contract_drift tests pass unchanged.
+- Full validation suite unchanged: no fixture regresses.
+- scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1.
+
+## R-3208 Generate the Host-Call Table and Remove the Manual Count
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `web`
+- Risk: `medium`
+- Dependencies: `R-3206`
+
+Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it.
+
+Removes the second copy; the count assertion at api_tests.rs:93-95 becomes computed, eliminating a recurring manual edit that silently rots.
+
+
+### Acceptance
+
+- The host-call table is generated; the count assertion is computed.
+- spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations.
+- validate_r2202_spectra_api_hostcalls.py still passes.
+- scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1.
+
 # Phase 11: Concurrency and Serving
 
 ## R-1101 Concurrency Model
@@ -9837,534 +9976,6 @@ Register async API handler contracts so dynamic `AsyncHandler` calls lower as
 - `scripts/validate_language_bug_hunt.py` validates the async API contract
 
 ---
-
-# Phase 32: Agent Platform
-
-The native agent-first surface of SpectraLang. `std.agent` gives Spectra programs a
-governed way to call models, expose tools, remember context, enforce capabilities at the
-host-call dispatch point, funnel untrusted content through an explicit provenance ledger,
-journal every side effect for replay, declare compensation for irreversible steps, and be
-evaluated as a regression suite — while the compiler gains a machine-readable view of what
-a project exposes.
-
-Phase 32 refuses four things on purpose: a second native staticlib, a second new
-attribute, effect annotations, and (in this phase) automatic rollback from the fatal
-panic path. Native surface is aggregated into the existing `spectra-api` registration,
-tools are one attribute over the existing JSON derive, effects are derived from the IR,
-and compensation is declared by the author and executed explicitly.
-
-Delivery is organized in six milestones (M0 surface and decisions, M1 single source of
-truth, M2 namespace seam, M3 core library, M4 governance, M5 interop/eval/release) across
-24 items. Complete specification, decisions, adaptations and per-item tasks with file
-anchors: `docs/agent-platform-plan.md`.
-
-## R-3201 ADR and Invariants for Agent Governance
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `medium`
-- Dependencies: none
-
-Fix the architecture before code: single dispatch hook, fast-path exclusion, denial channel, run context, tool-dispatch ABI and catalog-driven surface.
-
-Prevent the two failure modes that would be expensive later: a policy that can be bypassed, and a surface that must be edited in four places.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3201)
-
-### Acceptance
-
-- Four ADRs exist (0016-0019), are Accepted, and each records rationale plus consequence.
-- The fast-path invariant test exists and fails when a fast host call is temporarily reclassified into an effect namespace.
-- The E3201-E3209 diagnostics family is allocated in docs/diagnostics/error-code-reference.md.
-- scripts/validate_r3201_agent_platform_adr.py checks the ADRs, the invariant test, and the phase_32 registration in roadmap.toml.
-
-## R-3202 spectralang surface --json
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `tooling`
-- Risk: `medium`
-- Dependencies: `R-3201`
-
-Emit the project and builtin public surface as machine-readable JSON with a token budget.
-
-A coding agent must answer 'what does this project expose' in one call instead of reading every file, and must be able to fit the answer into a context window.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3202)
-
-### Acceptance
-
-- surface --json on a real project lists every public module, function and type with stable ordering.
-- Output is byte-identical across runs; --tokens trims deterministically and reports what was trimmed.
-- Unknown module or missing project root fails with exit 64/65 and a JSON diagnostic, not a panic.
-- scripts/validate_r3202_surface_json.py passes and is registered in run_tests.ps1.
-
-## R-3203 spectralang impact --json
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `tooling`
-- Risk: `medium`
-- Dependencies: `R-3201`
-
-Answer 'what breaks if I change this symbol' from the call graph, not from text search.
-
-Impact analysis is the single most valuable signal for a coding agent editing an unfamiliar project, and text search systematically misses indirect callers.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3203)
-
-### Acceptance
-
-- impact --json returns the full caller set for a changed function, including cross-module callers.
-- Field-level impact returns the functions that read or construct the type.
-- Unresolved dynamic sites are reported, not silently omitted.
-- scripts/validate_r3203_impact_json.py passes and is registered in run_tests.ps1.
-
-## R-3204 Diagnostics with Repair Information
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `frontend`
-- Risk: `medium`
-- Dependencies: none
-
-Add expected, actual and fix to the JSON diagnostic contract and expose explain --json.
-
-Repair efficiency dominates one-shot generation quality in agent workflows; a diagnostic that states the fix removes an entire investigation round trip.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3204)
-
-### Acceptance
-
-- check --json on a type mismatch emits expected, actual and fix.
-- explain --json returns the documented description for every code in the reference file.
-- SARIF output remains schema-valid with and without fixes.
-- scripts/validate_r3204_diagnostics_repair.py passes and is registered in run_tests.ps1.
-
-## R-3205 Version-Matched Language Reference from the CLI
-
-- Status: `complete`
-- Priority: `P2`
-- Owner: `tooling`
-- Risk: `low`
-- Dependencies: none
-
-spectralang docs --json serves the reference of the installed binary, not of the repository.
-
-Training-data scarcity is the largest single handicap of a young language; shipping the reference inside the binary removes the stale-knowledge failure mode.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3205)
-
-### Acceptance
-
-- docs --json reports the version and hash of the embedded reference.
-- --section returns a strict subset of the full output.
-- Changing the reference file changes the reported hash after rebuild.
-- scripts/validate_r3205_embedded_docs.py passes and is registered in run_tests.ps1.
-
-## R-3206 Extended Contract Catalog Schema
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `ecosystem`
-- Risk: `high`
-- Dependencies: `R-3201`
-
-Add the fields the catalog needs to generate the midend lowering tables, the Rust host-call table, and the sink/scope classification consumed by governance.
-
-Until this lands, every agent function costs eight to ten hand edits across four files, which is the dominant risk of building the library at all.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3206)
-
-### Acceptance
-
-- Catalog parses with the extended schema; existing entries gained the new fields with no semantic change.
-- The auditor rejects a function entry missing ir_return, returns_value or rust_symbol, and rejects an unknown scope key.
-- scripts/validate_r3206_catalog_schema.py passes and is registered in run_tests.ps1.
-
-## R-3207 Generate Midend Lowering Tables from the Catalog
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `midend`
-- Risk: `high`
-- Dependencies: `R-3206`
-
-Replace the hand-written lowering tables with checked-in generated files plus a staleness check.
-
-Removes one of the four copies. The remaining manual work is the semantic signature and the Rust implementation, which are the two things a human must write anyway.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3207)
-
-### Acceptance
-
-- The seven lowering files are generated; a manual edit makes --check fail.
-- All existing contract_drift tests pass unchanged.
-- Full validation suite unchanged: no fixture regresses.
-- scripts/validate_r3207_lowering_generation.py passes and is registered in run_tests.ps1.
-
-## R-3208 Generate the Host-Call Table and Remove the Manual Count
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `web`
-- Risk: `medium`
-- Dependencies: `R-3206`
-
-Generate the Rust host-call table from the catalog and derive its size instead of hardcoding it.
-
-Removes the second copy; the count assertion at api_tests.rs:93-95 becomes computed, eliminating a recurring manual edit that silently rots.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3208)
-
-### Acceptance
-
-- The host-call table is generated; the count assertion is computed.
-- spectra_api_host_call_count() matches HOST_CALLS.len() in both feature configurations.
-- validate_r2202_spectra_api_hostcalls.py still passes.
-- scripts/validate_r3208_hostcall_generation.py passes and is registered in run_tests.ps1.
-
-## R-3209 std.agent Namespace and packages/spectra-agent Crate
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3207`, `R-3208`
-
-Land the namespace and the crate with exactly one function, proving every layer end to end before scaling.
-
-The cost of a native module lives in the seam between compiler, midend, runtime and catalog. This item measures that cost once so the remaining twelve functions are mechanical.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3209)
-
-### Acceptance
-
-- `import std.agent` resolves, token_count type-checks, lowers, and returns the same value in JIT and AOT.
-- Adding a second function afterwards requires the documented three-edit path, evidenced in the PR description.
-- Contract catalog, snapshot and probe are consistent; validate_r3007 passes with --require-catalog.
-- scripts/validate_r3209_agent_namespace.py passes and is registered in run_tests.ps1.
-
-## R-3210 agent_tool Attribute and Derived JSON Schema
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `semantic`
-- Risk: `high`
-- Dependencies: `R-3209`
-
-One function attribute that turns a public async function into a model-callable tool, with name, schema, effects and capabilities derived; tool names are unique project-wide.
-
-A tool declaration that a human writes once and a model consumes must not be able to lie. Everything derivable is derived; only the description is authored.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3210)
-
-### Acceptance
-
-- A public async function with the attribute appears in surface --json with derived name, input_schema, effects and capabilities.
-- Each rejection case produces a stable code (E3203, E3204) and a hint; fixtures exist under tests/errors/.
-- fmt is idempotent on attributed functions; LSP does not flag the attribute.
-- scripts/validate_r3210_agent_tool.py passes and is registered in run_tests.ps1.
-
-## R-3211 Model Gateway, Run and Provider Abstraction
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `web`
-- Risk: `high`
-- Dependencies: `R-3209`
-
-AgentSpec, Run, ask, ask_stream, ask_json, embed, agent_start and agent_end over the existing HTTP client.
-
-The only thing a real agent needs from a language is a governed way to talk to a model and a place to record what happened. Everything else is composition.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3211)
-
-### Acceptance
-
-- An agent that calls ask twice and ends cleanly reports tokens and cost consistent with the mock provider.
-- ask_json rejects a schema-violating response with a typed error even when the provider claims compliance.
-- ask_stream returns a chunk stream consumed with stream_next/stream_close; embed returns a 1-D float tensor.
-- Run lifecycle misuse (double end, use after end, unknown run) returns typed errors.
-- scripts/validate_r3211_model_gateway.py passes and is registered in run_tests.ps1.
-
-## R-3212 Agent Memory over std.ml
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `ml`
-- Risk: `medium`
-- Dependencies: `R-3211`
-
-remember and recall as a thin, provenance-carrying layer over the existing vector index and RAG toolkit.
-
-Long-running agents need memory that survives a restart and can be audited. The storage primitive already exists and is validated; building a second one would be waste.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3212)
-
-### Acceptance
-
-- Stores are goal-scoped: a second run with the same goal recalls the entries of the first, and every entry still names the run that wrote it.
-- Recall ordering is identical for identical inputs (cosine score, ties broken by insertion order) and the payload is capped by tokens, not only by `top_k`.
-- Every recalled entry reports its tier, origin, run identity, goal and timestamp.
-- `MemoryStore::persist`/`load` reuse the vector-index artifact format; the spectra-agent regression test drops the writer before loading, so the restart path shares no in-process state.
-- scripts/validate_r3212_agent_memory.py passes and is registered in run_tests.ps1.
-
-## R-3213 Run Context and Propagation
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3209`
-
-An active-run context that the runtime can consult on every dispatch, with explicit propagation and fail-closed behavior for detached work.
-
-Enforcement without a reliable notion of the current run is theater. This item is the precondition for R-3214.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3213)
-
-### Acceptance
-
-- A tool invoked by a run sees the run; a host call inside it is attributable to that run.
-- Work spawned by a run carries the context; detached work does not and is rejected without a grant.
-- No ABI change: the repr(C) call context is untouched.
-- scripts/validate_r3213_run_context.py passes and is registered in run_tests.ps1.
-
-## R-3214 Capability Enforcement at the Dispatch Point
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3213`, `R-3206`
-
-One policy decision, applied at every generic dispatch entrypoint, with a dedicated denial path and no fast-path hole.
-
-This is the only capability in this roadmap that a competitor cannot match by adding a library: the language controls every effect, so the boundary can be total while a run is active.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3214)
-
-### Acceptance
-
-- A host call outside the grant fails, through all four generic entrypoints, including the cached and batch paths.
-- The fast-path invariant test from R-3201 still passes and would fail if a fast call were effect-bearing.
-- authorize() reports the same decision the dispatch enforces.
-- Programs without an active run behave exactly as before.
-- scripts/validate_r3214_capability_enforcement.py passes and is registered in run_tests.ps1.
-
-## R-3215 Capability Vocabulary Validated by the Compiler
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `semantic`
-- Risk: `medium`
-- Dependencies: `R-3214`, `R-3206`
-
-Capability strings are validated against the registered host-call namespaces, with did-you-mean, instead of being free-form strings.
-
-The most common failure of permission systems is a grant that matches nothing and nobody notices. The compiler can catch it at build time because the compiler already depends on the catalog.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3215)
-
-### Acceptance
-
-- An unknown capability fails compilation with a near-match suggestion.
-- A scoped capability on a host call without an extractor fails with its own code.
-- The generated capability reference matches the catalog.
-- scripts/validate_r3215_capability_vocabulary.py passes and is registered in run_tests.ps1.
-
-## R-3216 Budget, Accounting and Cooperative Cancellation
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `medium`
-- Dependencies: `R-3213`
-
-Hard ceilings on tokens, cost, wall time and tool calls, enforced by cancelling the run.
-
-An agent loop without a ceiling is a financial incident waiting to happen. This is a default, not an option.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3216)
-
-### Acceptance
-
-- No run exceeds a declared ceiling; the report states which ceiling was hit.
-- Cancellation propagates to in-flight model calls and tool executions.
-- Accounting matches the mock provider's reported usage exactly.
-- scripts/validate_r3216_agent_budget.py passes and is registered in run_tests.ps1.
-
-## R-3217 Journal, Replay, Approval, Assertions and Tracing
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3213`, `R-3211`
-
-Every side effect recorded once, replayable without repeating effects, with human approval, governed assertions and OpenTelemetry GenAI spans.
-
-Durability is what makes an agent operable: a crash resumes instead of restarting, and a behavior can be reproduced instead of argued about.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3217)
-
-### Acceptance
-
-- Killing the process mid-run and resuming completes the run without duplicating any effect, proven by a counting test server.
-- A replayed run produces identical tool ordering and outputs.
-- Approval decisions survive replay and are attributed; require(false) returns a typed error naming the assertion message and the run goal.
-- Spans validate against the pinned conventions version; content is absent unless opted in.
-- scripts/validate_r3217_agent_journal.py passes and is registered in run_tests.ps1.
-
-## R-3218 std.agent.mcp Client and Server
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `web`
-- Risk: `medium`
-- Dependencies: `R-3211`, `R-3214`
-
-Consume and expose Model Context Protocol tools over HTTP transport, with untrusted-description handling.
-
-MCP is where the tool ecosystem already lives. Exposing Spectra functions as MCP tools makes a Spectra service usable by any agent, and consuming MCP tools removes the need to reimplement integrations.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3218)
-
-### Acceptance
-
-- A Spectra agent calls a remote MCP tool through the governed dispatch path and the journal records it.
-- A Spectra project exposes its tools over MCP and a third-party client can call them.
-- Untrusted descriptions never influence control flow: covered by a fixture that feeds a hostile description.
-- scripts/validate_r3218_mcp.py passes and is registered in run_tests.ps1.
-
-## R-3219 std.agent.protocol: A2A and ACP Exposure
-
-- Status: `complete`
-- Priority: `P2`
-- Owner: `web`
-- Risk: `medium`
-- Dependencies: `R-3217`, `R-3218`
-
-Expose a Spectra agent as an A2A server and as an ACP agent, reusing the approval primitive for permission requests.
-
-Interop is an adapter, not an architecture. It lands last because the primitives it needs, run, journal and approval, already exist by then.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3219)
-
-### Acceptance
-
-- A remote A2A client can delegate a task and observe completion or failure with a stable reason.
-- ACP permission denial aborts the action and is journaled.
-- Neither adapter bypasses the capability dispatch path.
-- scripts/validate_r3219_agent_protocols.py passes and is registered in run_tests.ps1.
-
-## R-3220 Evaluation Harness and spectralang agent eval
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `tooling`
-- Risk: `medium`
-- Dependencies: `R-3217`, `R-3203`
-
-Agent behavior measured as regression, with deterministic graders, judge graders and pass@k.
-
-Governance is tested deterministically; behavior is evaluated statistically. Mixing them produces suites that fail on model variance and pass by luck.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3220)
-
-### Acceptance
-
-- agent eval runs a suite, reports pass@1 and pass^k, and fails the build on regression against the recorded baseline.
-- Judge-based grading is opt-in and never runs in the default CI path.
-- Governance assertions are covered by deterministic tests, not by evals.
-- scripts/validate_r3220_agent_eval.py passes and is registered in run_tests.ps1.
-
-## R-3221 Agent Platform Integration, Conformance and Release
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `ecosystem`
-- Risk: `high`
-- Dependencies: `R-3210`, `R-3211`, `R-3212`, `R-3214`, `R-3215`, `R-3216`, `R-3217`, `R-3218`, `R-3219`, `R-3220`, `R-3222`, `R-3223`, `R-3224`
-
-Prove the platform works with the rest of the language, document it, publish it and gate the release.
-
-A library that is not integrated with the formatter, LSP, package flow, docs and conformance suite is a prototype, not a product.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3221)
-
-### Acceptance
-
-- The package is publishable to the local registry and consumable by another project through the normal package flow.
-- Formatter, LSP, lint and REPL handle the new attribute and namespace without special cases.
-- Conformance suite passes (capability denial on all four dispatch entrypoints, journal replay, taint policy, compensation exactly-once, surface determinism) and its report is required by the release gate.
-- The integrated project runs in JIT and AOT, including interruption and resume.
-- scripts/validate_r3221_agent_package.py, scripts/validate_r3221_agent_conformance.py and scripts/validate_r3221_integrated_agent_service.py pass and are registered in run_tests.ps1.
-
-## R-3222 Tool Loop and Governed Dispatch (act)
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3210`, `R-3211`
-
-act(run, prompt) runs model-to-tool turns, invoking the project's agent_tool functions through synthesized marshalling wrappers, proven by an ABI spike in JIT and AOT before the loop is built.
-
-The tool loop is the difference between a chatbot and an agent; it must exist before governance, so that every later guarantee (capabilities, taint, budget, journal) is proven against the real execution path.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3222)
-
-### Acceptance
-
-- The dispatcher spike proves JIT and AOT tool invocation by address with two tools in two modules, including one async tool; ADR 0019 carries the evidence.
-- A tool chain completes end to end against the mock provider with every invocation journaled and capability-checked once R-3214 lands.
-- Malformed arguments are repaired by feeding the typed error back to the model; unknown tool names never crash.
-- scripts/validate_r3222_agent_act.py passes and is registered in run_tests.ps1.
-
-## R-3223 Message and Handle Taint
-
-- Status: `complete`
-- Priority: `P0`
-- Owner: `runtime`
-- Risk: `high`
-- Dependencies: `R-3213`, `R-3214`, `R-3217`, `R-3211`
-
-Provenance for everything entering a run, explicit audited declassification (untrusted/trust), and gating of catalog-classified sensitive sinks under a per-run block/approve/allow policy.
-
-Prompt injection cannot be prevented, but damage can be bounded: capabilities bound what a run may do; taint bounds what it may do without a human noticing once external content is in context.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3223)
-
-### Acceptance
-
-- With untrusted content in context, sensitive sinks are never reached silently; the policy decides and the decision is journaled.
-- Declassification requires a reason and is attributable; the documented limits (message granularity, no string-level flow) appear in docs/agent-platform.md.
-- The hostile tool-description fixture never influences control flow.
-- scripts/validate_r3223_agent_taint.py passes and is registered in run_tests.ps1.
-
-## R-3224 Compensation Declaration and Execution
-
-- Status: `complete`
-- Priority: `P1`
-- Owner: `runtime`
-- Risk: `medium`
-- Dependencies: `R-3214`, `R-3217`, `R-3222`
-
-compensate declares how to undo an irreversible step; rollback executes declarations in LIFO order through the governed dispatch, exactly once and replay-safe.
-
-The runtime cannot invent how to undo a POST, but it can remember that the author said how — and it can refuse to lose that declaration across a crash.
-
-- Detailed tasks: `docs/agent-platform-plan.md` (R-3224)
-
-### Acceptance
-
-- Compensation executes exactly once in LIFO order; crash plus replay does not duplicate it, proven by a counting server.
-- Compensations run through the governed dispatch (capability and taint decisions apply).
-- Unknown literal tool names fail compilation with E3205; agent_end surfaces pending compensations.
-- scripts/validate_r3224_agent_compensation.py passes and is registered in run_tests.ps1.
 
 # Phase 33: High-Performance General-Purpose Collections
 

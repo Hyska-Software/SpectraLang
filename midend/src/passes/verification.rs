@@ -143,10 +143,8 @@ pub fn verify_module(module: &Module) -> Result<(), Vec<String>> {
         //
         // A *bare* (non-`Pointer`) parameter used as an address is an
         // out-parameter whose declared type describes the address word, not
-        // the pointee — the synthesized agent-tool wrappers pass `Int`
-        // out-slots that receive `String`s and work because every address
-        // is one machine word — so bare parameters are deliberately
-        // excluded from these rules.
+        // the pointee. Every address is one machine word, so bare parameters
+        // are deliberately excluded from these rules.
         let mut address_types: HashMap<usize, Type> = HashMap::new();
         for parameter in &function.params {
             if let Type::Pointer(inner) = &parameter.ty {

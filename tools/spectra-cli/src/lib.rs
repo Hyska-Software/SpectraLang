@@ -219,18 +219,6 @@ struct ReleaseInfoOptions {
 }
 
 #[derive(Debug)]
-struct AgentEvalOptions {
-    suite: PathBuf,
-    /// Baseline path; `None` means the suite's sibling
-    /// `<stem>.baseline.json`.
-    baseline: Option<PathBuf>,
-    /// Replaces every case's own repeat count when set.
-    repeat: Option<usize>,
-    json: bool,
-    judge: bool,
-}
-
-#[derive(Debug)]
 struct DbInvocation {
     command: DbCommand,
     database: PathBuf,
@@ -257,7 +245,6 @@ enum CliAction {
     Repl(ReplOptions),
     NewProject(NewProjectOptions),
     ReleaseInfo(ReleaseInfoOptions),
-    AgentEval(AgentEvalOptions),
     Surface(SurfaceOptions),
     Impact(ImpactOptions),
     Docs(DocsOptions),
@@ -274,7 +261,6 @@ enum HelpTopic {
     Repl,
     NewProject,
     ReleaseInfo,
-    AgentEval,
     Surface,
     Impact,
     Docs,
@@ -374,7 +360,6 @@ include!("cli_aot.rs");
 include!("repl_session.rs");
 include!("cli_repl_project.rs");
 include!("cli_package.rs");
-include!("cli_agent_eval.rs");
 include!("cli_diagnostics.rs");
 include!("cli_surface.rs");
 include!("cli_impact.rs");

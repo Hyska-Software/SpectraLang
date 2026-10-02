@@ -142,7 +142,7 @@ def validate_planning() -> None:
     block = backlog.split("## R-3205 Version-Matched Language Reference from the CLI", 1)[1].split(
         "## R-3206", 1
     )[0]
-    for term in ["Status: `complete`", "docs/agent-platform-plan.md", "validate_r3205_embedded_docs.py"]:
+    for term in ["Status: `complete`", "validate_r3205_embedded_docs.py"]:
         require(term in block, f"backlog R-3205 missing {term}")
 
     runner = read("run_tests.ps1")

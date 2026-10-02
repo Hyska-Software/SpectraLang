@@ -7,7 +7,6 @@ members = [
     "packages/spectra-contract",
     "packages/spectra-db",
     "packages/spectra-api",
-    "packages/spectra-agent",
     "tools/spectra-cli",
     "tools/spectra-interop",
     "tools/spectra-lsp",

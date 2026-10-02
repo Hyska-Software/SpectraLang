@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """Validate the extended STD/API catalog schema introduced by R-3206.
 
-The catalog is the single source of truth for the midend lowering tables, the
-Rust host-call table and the governance sink/scope classification, so this
-validator fails closed on any entry that cannot feed those generators:
+The catalog is the single source of truth for the midend lowering tables and
+the Rust host-call table, so this validator fails closed on entries that cannot feed those generators:
 
 * function entries must carry ``params``, ``returns``, ``ir_return``,
   ``returns_value`` and (for ``std.api.*``) ``rust_symbol``;
 * ``ir_return`` must match the module-level IR type grammar;
-* ``scope_keys`` must come from the governance scope vocabulary;
-* ``sink`` must agree with the entry's ``effects`` classification.
 """
 
 from __future__ import annotations
@@ -40,8 +37,6 @@ def catalog_errors(catalog: dict[str, object]) -> tuple[list[str], dict[str, obj
     paths: list[str] = []
     functions = 0
     rust_symbols = 0
-    sink_entries = 0
-    scoped_entries = 0
     cfg_features: set[str] = set()
     for entry in entries:
         if not isinstance(entry, dict):
@@ -63,20 +58,6 @@ def catalog_errors(catalog: dict[str, object]) -> tuple[list[str], dict[str, obj
             for param in params:
                 if not isinstance(param, dict) or not param.get("name") or not param.get("ty"):
                     errors.append(f"{path} has a malformed param {param!r}")
-        if entry.get("sink") not in (None, True, False):
-            errors.append(f"{path} sink must be a boolean")
-        if entry.get("sink") and "mutation" not in entry.get("effects", []):
-            errors.append(f"{path} sink must be backed by a mutation effect")
-        if entry.get("sink"):
-            sink_entries += 1
-        scope_keys = entry.get("scope_keys", [])
-        if not isinstance(scope_keys, list):
-            errors.append(f"{path} scope_keys must be a list")
-        for scope_key in scope_keys:
-            if scope_key not in audit.ALLOWED_SCOPE_KEYS:
-                errors.append(f"{path} has an unknown scope key {scope_key!r}")
-        if scope_keys:
-            scoped_entries += 1
         if kind != "function":
             continue
         functions += 1
@@ -105,8 +86,6 @@ def catalog_errors(catalog: dict[str, object]) -> tuple[list[str], dict[str, obj
         "entry_count": len(paths),
         "function_count": functions,
         "api_rust_symbols": rust_symbols,
-        "sink_entries": sink_entries,
-        "scoped_entries": scoped_entries,
         "cfg_features": sorted(cfg_features),
     }
     return errors, summary

@@ -106,16 +106,11 @@ mod tests {
     fn register_adds_all_api_host_calls_to_runtime_registry() {
         let _guard = test_guard();
         clear_host_functions();
-        // `register()` also aggregates namespace crates (`std.agent`, ...).
-        // Measure the aggregated crate contribution first so the total stays
-        // an exact equality instead of a superset check.
-        let namespace_inserted = spectra_agent::register();
-        clear_host_functions();
         let inserted = register();
         assert_eq!(
             inserted,
-            HOST_CALLS.len() + namespace_inserted,
-            "register() must insert the API table plus the aggregated namespace crates"
+            HOST_CALLS.len(),
+            "register() must insert exactly the API host-call table"
         );
         for spec in HOST_CALLS {
             assert!(lookup_host_function(spec.name).is_some(), "{}", spec.name);

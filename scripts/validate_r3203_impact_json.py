@@ -144,7 +144,7 @@ def validate_cli_contract() -> None:
 def validate_planning() -> None:
     backlog = read("docs/roadmap-backlog.md")
     block = backlog.split("## R-3203 spectralang impact --json", 1)[1].split("## R-3204", 1)[0]
-    for term in ["Status: `complete`", "docs/agent-platform-plan.md", "validate_r3203_impact_json.py"]:
+    for term in ["Status: `complete`", "validate_r3203_impact_json.py"]:
         require(term in block, f"backlog R-3203 missing {term}")
 
     runner = read("run_tests.ps1")

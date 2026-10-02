@@ -1,7 +1,8 @@
 module async_scalar_slots
 
-// Three code-generation regressions found while writing the agent examples and
-// fixtures, pinned here so they cannot come back.
+// Three code-generation regressions found while exercising generic payloads
+// and values carried across async suspension, pinned here so they cannot come
+// back.
 //
 // 1. **A float payload in a generic enum.** `Result<float, E>` construction
 //    (`Result::Ok(1.5)`) passed the raw `f64` to the runtime helper that keeps
@@ -26,12 +27,10 @@ module async_scalar_slots
 //    `-1` instead of `0`. Silent wrong answers are worse than a rejection, which
 //    is why this one is pinned with exact values and not only with "it runs".
 
+from std.api.db.sqlite import SqliteConnection, open as sqlite_open, close as sqlite_close, execute_async as sqlite_execute_async
 from std.io import println
-import std.agent
 import std.convert as convert
-import std.error as error
 import std.math as math
-import std.tensor as tensor
 
 // The float-payload shapes: a declared return type, both variants, a match, and
 // an if-let unwrap.
@@ -94,22 +93,30 @@ async func value_across_a_suspension() returns int {
 }
 
 async func half_async(seed: int) returns float {
+    // Await a real background database task that materializes an 8 MiB row.
+    // This keeps the coroutine pending while its scalar slots stay in frame storage.
+    let connection: SqliteConnection = sqlite_open(":memory:")
+    let affected: int = await sqlite_execute_async(connection, "SELECT randomblob(8388608)")
+    sqlite_close(connection)
+    if affected != 0 {
+        return-1.0
+    }
     return half(seed)
 }
 
 async func reassignment_across_a_suspension() returns int {
     let count = 0
-    count = count + zero(await half_async(1))
+    count = count + zero( await half_async(1))
     if count != 0 {
         println("first update: " + convert.int_to_string(count))
         return 1
     }
-    count = count + zero(await half_async(1))
+    count = count + zero( await half_async(1))
     if count != 0 {
         println("second update: " + convert.int_to_string(count))
         return 2
     }
-    count = count + 5 + zero(await half_async(3))
+    count = count + 5 + zero( await half_async(3))
     if count != 5 {
         println("third update: " + convert.int_to_string(count))
         return 3
@@ -188,45 +195,6 @@ func float_payloads() returns int {
     return 0
 }
 
-// The same payload shapes through the runtime that motivated the report: an
-// embedding is a float tensor, and its first component is read back into a
-// float local that outlives a suspension.
-async func embedding_across_a_suspension() returns int {
-    let started = agent_start("{\"goal\":\"async-scalar-slots\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"journal\":\"\"}")
-    if let Result::Err(problem) = started {
-        println("start failed: " + error.message(problem))
-        return 1
-    }
-    if let Result::Ok(run) = started {
-        let embedded = await embed(run, "alpha")
-        if let Result::Err(problem) = embedded {
-            println("embed failed: " + error.message(problem))
-            return 2
-        }
-        if let Result::Ok(vector) = embedded {
-            if tensor.len(vector) != 8 {
-                return 3
-            }
-            let component = tensor.get_f(vector, 0)
-            let answer = await ask(run, "hello")
-            if let Result::Err(problem) = answer {
-                println("ask failed: " + error.message(problem))
-                return 4
-            }
-            if math.abs_f(component - tensor.get_f(vector, 0)) > 0.000000001 {
-                println("the component moved across the suspension")
-                return 5
-            }
-        }
-        let ended = agent_end(run)
-        if let Result::Err(problem) = ended {
-            println("end failed: " + error.message(problem))
-            return 6
-        }
-    }
-    return 0
-}
-
 public func main() returns int {
     let payloads = float_payloads()
     if payloads != 0 {
@@ -239,10 +207,6 @@ public func main() returns int {
     let reassignment = block_on(reassignment_across_a_suspension())
     if reassignment != 0 {
         return 20 + reassignment
-    }
-    let embedding = block_on(embedding_across_a_suspension())
-    if embedding != 0 {
-        return 30 + embedding
     }
     return 0
 }

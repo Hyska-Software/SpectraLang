@@ -250,7 +250,6 @@ def main() -> int:
         for name, command in (
             ("lowering_generation", [sys.executable, "scripts/generate_lowering_tables.py", "--check"]),
             ("host_call_generation", [sys.executable, "scripts/generate_host_calls.py", "--check"]),
-            ("capability_reference_generation", [sys.executable, "scripts/generate_capability_reference.py", "--check"]),
             (
                 "catalog_schema",
                 [sys.executable, "scripts/validate_r3206_catalog_schema.py", "--report", "target/r3308-collections/catalog-schema.json"],

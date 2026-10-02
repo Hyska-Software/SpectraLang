@@ -224,9 +224,8 @@ pub extern "C" fn spectra_rt_coroutine_poll_child(task: i64) -> i64 {
             Err(_) => AsyncPollStatus::Failed as i64,
         };
     }
-    // Name the outcome before the parent collapses it: without this line a
-    // failed run says only that `block_on` failed, never which child failed or
-    // why (see docs/architecture/agent-block-on-flake-known-failure.md).
+    // Name the outcome before the parent collapses it: without this line the
+    // parent says only that `block_on` failed, never which child failed or why.
     if matches!(
         outcome,
         Ok(AsyncPollOutcome::Failed | AsyncPollOutcome::Stale) | Err(_)
@@ -379,10 +378,9 @@ mod tests {
     #[test]
     fn child_poll_status_maps_every_outcome() {
         // The mapping is what the parent's `await` observes. `AlreadyPolling`
-        // and `AffinityRejected` are contention, not failure: a background tool
-        // worker drives the same task tree as the waiting caller, so treating
-        // them as terminal turns a healthy concurrent poll into a failed run
-        // (`docs/architecture/agent-block-on-flake-known-failure.md`).
+        // and `AffinityRejected` are contention, not failure: a background
+        // async worker drives the same task tree as the waiting caller, so
+        // treating them as terminal fails a healthy concurrent poll.
         assert_eq!(
             child_poll_status(Ok(AsyncPollOutcome::Ready)),
             AsyncPollStatus::Ready

@@ -1,6 +1,6 @@
 # An aggregate result outlives its coroutine frame
 
-Status: **fixed** (found 2026-09-12 while adding the Phase 32 verification
+Status: **fixed** (found 2026-09-12 while extending coroutine verification
 fixtures; fixed in `midend/src/lowering_async.rs`, regression test
 `tests/validation/388_async_aggregate_result_lifetime.spectra`).
 
@@ -31,10 +31,9 @@ public func main() returns int {
 }
 ```
 
-The agent tool surface hit it too (a tool returning a record, dispatched by
-`tool_call`), which is how the certification gate found it: its
-`verification_fixtures_jit_and_aot` check failed about half the time before the
-fix. JIT runs survived (the released block stayed mapped); AOT runs faulted.
+The aggregate-result regression reproduced it: the AOT check failed about
+half the time before the fix. JIT runs survived (the released block stayed
+mapped); AOT runs faulted.
 
 ## Cause
 

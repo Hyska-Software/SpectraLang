@@ -3,7 +3,6 @@ use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime};
 
 pub mod abi;
-pub mod agent;
 pub(crate) mod artifact;
 pub(crate) mod async_abi;
 pub(crate) mod async_frame;
@@ -11,7 +10,6 @@ pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod handles;
-pub mod local_model;
 pub mod health;
 pub mod memory;
 pub mod metrics;

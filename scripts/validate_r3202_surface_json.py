@@ -116,8 +116,32 @@ def validate_cli_contract() -> None:
 
     report = parse_json_line(output)
 
+    require(
+        set(report)
+        == {
+            "schema",
+            "success",
+            "package",
+            "include_builtins",
+            "estimated_tokens",
+            "trimmed",
+            "modules",
+        },
+        "surface report fields differ from the stable schema",
+    )
     require(report.get("schema") == "spectralang.surface.v1", "schema field mismatch")
     require(report.get("success") is True, "success must be true for a valid project")
+    require(
+        set(report.get("trimmed", {}))
+        == {
+            "applied",
+            "functions_dropped",
+            "types_dropped",
+            "traits_dropped",
+            "modules_dropped",
+        },
+        "surface trimming fields differ from the stable schema",
+    )
     require(report.get("trimmed", {}).get("applied") == [], "unbudgeted run must not trim")
 
     modules = report.get("modules")
@@ -180,7 +204,6 @@ def validate_planning() -> None:
     block = backlog.split("## R-3202 spectralang surface --json", 1)[1].split("## R-3203", 1)[0]
     for term in [
         "Status: `complete`",
-        "docs/agent-platform-plan.md",
         "validate_r3202_surface_json.py",
     ]:
         require(term in block, f"backlog R-3202 missing {term}")

@@ -1,14 +1,7 @@
 pub fn register() -> usize {
     spectra_runtime::initialize();
     spectra_runtime::register();
-    // The host owns the HTTP stack and the tracer, so it installs the two
-    // `std.agent` adapters before any program can open a run (plan adaptation
-    // 12). Both seams are process-global and idempotent; a test that installed
-    // its own seam keeps it.
-    crate::agent_transport::install_agent_host_adapters();
-    // Namespace crates aggregate here, in dependency order, so a single
-    // `spectra_api_register_host_calls` call wires every host surface.
-    let mut inserted = spectra_agent::register();
+    let mut inserted = 0;
     for spec in HOST_CALLS {
         if register_host_function(spec.name, spec.function) {
             inserted += 1;

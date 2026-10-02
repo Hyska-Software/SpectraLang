@@ -1,5 +1,0 @@
-module prompt
-
-public func aoc_prompt() returns string {
-    return "summarize the governed operational run"
-}

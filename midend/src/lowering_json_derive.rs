@@ -971,15 +971,6 @@ fn list_element_type(field_type: &IRType) -> Option<&IRType> {
     args.first()
 }
 
-/// The scalar kind of a `List<element>`'s element, or `None` for any other
-/// type.
-///
-/// `spectra.api.json.encode_list` takes this form (the bare element kind);
-/// `list_json_kind` wraps it in the `list:` token the struct encoder expects.
-pub(crate) fn list_element_json_kind(field_type: &IRType) -> Option<&'static str> {
-    scalar_json_kind(list_element_type(field_type)?)
-}
-
 /// The `list:<element>` kind token for a `List<element>` field.
 ///
 /// Scalars take their own token, so one host call encodes the whole array; a

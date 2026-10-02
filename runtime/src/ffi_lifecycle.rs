@@ -407,7 +407,6 @@ pub extern "C" fn spectra_rt_host_invoke(
     };
 
     dispatch_generic(
-        name,
         resolve_registered_host(name),
         args_ptr,
         arg_len,
@@ -446,7 +445,7 @@ pub extern "C" fn spectra_rt_host_invoke_cached(
     };
 
     let function = resolve_cached_host(unsafe { &*cache_ptr }, name);
-    dispatch_generic(name, function, args_ptr, arg_len, results_ptr, result_len)
+    dispatch_generic(function, args_ptr, arg_len, results_ptr, result_len)
 }
 
 /// Invokes a bounded sequence of generic hostcalls in source order.
@@ -480,7 +479,6 @@ pub extern "C" fn spectra_rt_host_invoke_batch(
             return HOST_STATUS_INVALID_ARGUMENT;
         };
         let status = dispatch_generic(
-            name,
             resolve_registered_host(name),
             call.args_ptr,
             call.arg_len,
@@ -528,7 +526,6 @@ pub extern "C" fn spectra_rt_host_invoke_cached_batch(
             let function =
                 resolve_cached_host_for_batch(unsafe { &*call.cache_ptr }, name, batch_generation);
             let status = dispatch_generic(
-                name,
                 function,
                 call.args_ptr,
                 call.arg_len,

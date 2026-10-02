@@ -37,8 +37,8 @@
 27. [Interop Baseline](#27-interop-baseline)
 28. [Package Manager Baseline](#28-package-manager-baseline)
 29. [Tooling Baseline](#29-tooling-baseline)
-30. [Agent Platform (std.agent)](#30-agent-platform-stdagent)
-31. [Async Essentials (await, Task, block_on)](#31-async-essentials-await-task-block_on)
+
+30. [Async Essentials (await, Task, block_on)](#30-async-essentials-await-task-block_on)
 
 ---
 
@@ -136,7 +136,6 @@ public from std.io import println
 | `import std.char;` | Char classification |
 | `import std.time;` | Timestamps, sleep |
 | `import std.range;` | Stored range handles |
-| `import std.agent;` | Governed agent runs, model calls and tools (see section 30) |
 
 ### User Module Import
 
@@ -1809,7 +1808,7 @@ let exists_result = fs.fs_exists("output.txt")
 import std.error as error
 from std.error import ErrorCode
 
-let failure = error.new(ErrorCode::NotFound, "missing", "fs_read", "data.txt", "agent", false)
+let failure = error.new(ErrorCode::NotFound, "missing", "fs_read", "data.txt", "caller", false)
 let code = error.code(failure)
 let operation = error.operation(failure)
 ```
@@ -2069,11 +2068,10 @@ let credit = TxKind::Credit(100)
 | `spectralang fmt <files>` | Format source files |
 | `spectralang repl` | Start interactive REPL |
 | `spectralang new <name>` | Scaffold new project |
-| `spectralang surface --json [path]` | Public surface of a project, including derived agent tools |
+| `spectralang surface --json [path]` | Public modules, functions, and types in a project |
 | `spectralang impact --json <symbol> [path]` | What changing a symbol affects (SIR call graph) |
 | `spectralang explain [--json] <CODE>` | Explain a diagnostic code |
 | `spectralang docs [--json] [--section <name>]` | Language reference embedded in the binary |
-| `spectralang agent eval [--json] [--suite <path>]` | Run an agent evaluation suite against a baseline |
 | `spectralang help` | Show help |
 
 ### Common Flags
@@ -2708,242 +2706,9 @@ For the full tooling contract, see `docs/tooling.md`.
 
 ---
 
-## 30. Agent Platform (`std.agent`)
+## 30. Async Essentials (`await`, `Task`, `block_on`)
 
-`std.agent` is the native, governed agent runtime. An agent is an ordinary
-Spectra program: model and tool calls run inside a **run** that owns the
-capability set, the budget, the journal, the approval decisions and the
-transcript.
-
-```spectra
-import std.agent
-```
-
-### The Run
-
-`agent_start(spec_json: string) -> Result<Run, Error>` takes the run contract as
-a JSON document (the ABI carries records as JSON; the `AgentSpec` record type
-documents the shape). `agent_end(run) -> Result<string, Error>` returns the
-report JSON.
-
-`AgentSpec` fields: `goal`, `model`, `endpoint`, `allow`, `max_tokens`,
-`max_cost_micros`, `max_seconds`, `max_tool_calls`, `untrusted`, `seed`,
-`journal`, `journal_payloads`, `run_id`.
-
-`Report` fields: `status`, `steps`, `tool_calls`, `tokens_in`, `tokens_out`,
-`cost_micros`, `elapsed_ms`, `compensations_pending`; the JSON adds `ceiling`
-(the name of the ceiling that cancelled the run) and `replay` (the run resumed
-an existing journal).
-
-### The Surface
-
-| Function | Signature (source view) | Role |
-| --- | --- | --- |
-| `agent_start` | `(spec_json: string) -> Result<Run, Error>` | validate grants, allocate the run, open the journal |
-| `agent_end` | `(run: Run) -> Result<string, Error>` | close the run, return the report JSON |
-| `ask` | `(run, prompt: string) -> Result<string, Error>` *async* | one model turn |
-| `ask_json` | `(run, prompt: string, schema: string) -> Result<string, Error>` *async* | schema-constrained turn, validated client-side |
-| `ask_stream` | `(run, prompt: string) -> Result<ChunkStream, Error>` *async* | chunked turn |
-| `stream_next` | `(stream: ChunkStream) -> Result<string, Error>` *async* | next chunk; empty string ends |
-| `stream_close` | `(stream: ChunkStream) -> Result<bool, Error>` *async* | release the stream |
-| `act` | `(run, prompt: string) -> Result<string, Error>` *async* | model/tool loop until a final answer or a ceiling |
-| `tool_call` | `(run, name: string, args_json: string) -> Result<string, Error>` *async* | governed dispatch of one tool |
-| `embed` | `(run, text: string) -> Result<Tensor, Error>` *async* | 1-D float embedding |
-| `remember` | `(run, text: string) -> Result<bool, Error>` | append to run memory |
-| `recall` | `(run, query: string, top_k: int) -> Result<string, Error>` | deterministic retrieval |
-| `approve` | `(run, action: string) -> Result<bool, Error>` | ask the approver; default deny |
-| `require` | `(run, condition: bool, message: string) -> Result<bool, Error>` | governed assertion |
-| `budget_remaining` | `(run: Run) -> Result<int, Error>` | tokens left before `max_tokens` |
-| `untrusted` | `(run, value: string, origin: string) -> Result<string, Error>` | record provenance |
-| `trust` | `(run, value: string, reason: string) -> Result<string, Error>` | audited declassification |
-| `compensate` | `(run, tool: string, args_json: string) -> Result<bool, Error>` | journal a pending compensation (LIFO) |
-| `rollback` | `(run, reason: string) -> Result<int, Error>` | execute pending compensations, LIFO |
-| `mcp_connect` | `(run, url: string) -> Result<string, Error>` *async* | discover a remote MCP server over HTTP and register its tools |
-| `mcp_handle` | `(run, request: string) -> Result<string, Error>` | answer one MCP JSON-RPC request from this project's tools |
-| `mcp_serve` | `(run, bind: string) -> Result<string, Error>` | start the in-crate HTTP listener; returns the bound address |
-| `a2a_card` | `(run, description: string) -> Result<string, Error>` | the A2A agent card: authored strings + derived tool skills |
-| `a2a_handle` | `(run, request: string) -> Result<string, Error>` | answer one A2A JSON-RPC request (`message/send`, `tasks/get`, `tasks/cancel`) |
-| `a2a_serve` | `(run, bind: string, description: string) -> Result<string, Error>` | start the in-crate A2A listener (card over GET, JSON-RPC over POST) |
-| `acp_handle` | `(run, request: string) -> Result<string, Error>` | answer one ACP request (`initialize`, `session/new`, `session/prompt`, `session/cancel`) |
-| `acp_permission` | `(run, action: string) -> Result<bool, Error>` | ask the attached ACP client and journal the decision; false aborts |
-| `token_count` | `(text: string) -> int` | shared tokenizer count |
-
-`Run` and `ChunkStream` are opaque handles. `T::json_schema()` on a
-`#[derive(Serialize)]` record emits the JSON Schema that `#[agent_tool]`
-derives for a payload.
-
-### Provider and Example Boundaries
-
-The deterministic mock provider is intentionally a test/demo provider. It
-returns canned text, deterministic accounting and hash-based embeddings; its
-vectors do not represent semantic similarity. The agent examples use mock
-providers to make governance and protocol behavior reproducible, so they do not
-establish model quality or prove an online provider integration.
-
-The OpenAI-compatible provider issues actual HTTP requests through an installed
-`HttpTransport` and parses chat, embeddings and streaming responses. It needs a
-configured endpoint, credentials and a live service. The local provider uses
-the runtime's ONNX generation/embedding paths and needs the opt-in `onnx`
-feature plus model/tokenizer files. Governance checks apply to these providers
-independently of whether the model is mocked or real.
-
-### The Tool Attribute
-
-Exactly one attribute exists: `#[agent_tool("description")]` on a
-`public async` function whose first parameter is `run: Run`. The tool name is
-the function name, the input schema comes from the payload parameter through
-the JSON derive, and effects/capabilities are read from the IR call graph —
-only the description is authored.
-
-```spectra
-#[derive(Serialize, Deserialize)]
-public record AddArgs {
-    a: int,
-    b: int,
-}
-
-#[agent_tool("Adds two integers")]
-public async func add(run: Run, args: AddArgs) returns int {
-    return args.a + args.b
-}
-```
-
-### Governance
-
-- `AgentSpec.allow` grants a namespace prefix (`spectra.std.fs`), a full host
-  call (`spectra.std.fs.fs_read`) or a scoped form
-  (`spectra.api.client.request:host=api.example.com`). A grant matching nothing
-  fails `E3201`; an unsupported scope key fails `E3202`; a bad tool declaration
-  fails `E3203`/`E3204`; a literal `compensate` tool name that names no
-  `#[agent_tool]` fails `E3205`. Enforcement is at the one generic host-call
-  dispatch function, so the cached and batch entrypoints cannot bypass it.
-- `untrusted`/`trust` maintain a digest-keyed provenance ledger; catalog
-  entries classified as sinks are gated while the run holds untrusted content,
-  per the run's `untrusted` policy (`block` | `approve` | `allow`).
-- Ceilings are enforced by cooperative cancellation: the crossing call is
-  accounted and answered, later calls are refused, and the report names the
-  ceiling. A ceiling that could never be enforced is refused at `agent_start`.
-- `approve` with no approver attached is a deny (journaled); `require(false)`
-  returns `assertion_failed` with the message and the run goal.
-- The journal is append-only at `<journal>/<run_id>.jsonl` with digests and an
-  idempotency key, flushed before an effecting call returns. A run with the
-  same `run_id` replays recorded outputs instead of re-executing effects and
-  reports `"replay":true`.
-
-### MCP
-
-HTTP is the MCP transport; there is no stdio transport (the language has no
-subprocess primitive). `mcp_connect(run, url)` speaks `initialize` and
-`tools/list` over the run's injected `HttpTransport` and registers every
-discovered tool as a governed registry entry named
-`mcp__<sanitized authority>__<remote name>`, with the derived effect
-`mcp.<authority>` (the lowercased `host[:port]` of the URL) — so `allow:
-["mcp"]` grants every server and `allow: ["mcp.api.example.com"]` grants one.
-Remote descriptions and schemas are recorded as untrusted provenance before
-they are returned, and a remote invocation flows through the same governed
-dispatch a compiled tool does. `mcp_handle(run, request)` answers one
-`initialize`/`ping`/`tools/list`/`tools/call` request from this project's
-registered tools (`tools/call` executes inside the run through that dispatch),
-and `mcp_serve(run, bind)` wraps it in a minimal HTTP/1.1 listener and returns
-the bound `host:port`.
-
-### A2A and ACP
-
-Both are adapters over the same primitives — the run, its journal and the
-approval registry — and both dispatch through the one governed path.
-
-**A2A.** `a2a_card(run, description)` renders the AgentCard from an authored
-description record (`name`, `description`, `version`, `url`; a missing field
-defaults, a non-string field is a typed failure) plus the **derived** tool
-surface: each `#[agent_tool]` becomes a skill whose id, description and tags
-come from the compiler's descriptor and effect set. Only implemented
-capabilities are advertised (`streaming`/`pushNotifications` are false; the
-journal is the state history). `a2a_handle(run, request)` serves one JSON-RPC
-request of the `0.3` binding: `message/send` delegates a task, `tasks/get`
-reads and resumes it, `tasks/cancel` closes it.
-
-A delegated task **is** a run: the task id is the run id, created with the
-serving run's spec, so the host's grants, model and ceilings apply. The request
-and the terminal state are `task` journal steps; `message/send` drives the task
-through `act` (grant enforcement, the tool-call ceiling, the journal and the
-taint gate), and the terminal Task carries a stable reason — `completed`, or
-`failed`/`rejected` with the typed error (`capability_denied`,
-`budget_exceeded`, …) and the run report as metadata. `tasks/get` returns the
-recorded state, and an interrupted task is resumed forward from its journal
-rather than re-delegated, so no effect executes twice. Without a journal
-(`"journal": ""`) a task can be delegated but not polled or cancelled.
-`a2a_serve(run, bind, description)` wraps the handler in the crate's shared
-HTTP/1.1 listener: `GET /.well-known/agent-card.json` returns the card (its
-`url` is the bound endpoint), `POST` any path answers JSON-RPC.
-
-**ACP.** `acp_handle(run, request)` answers `initialize` (advertising only
-implemented capabilities: no session loading, no image/audio/embedded-context
-prompts, no MCP-over-ACP), `session/new` (one session per run; the ACP
-`sessionId` is the run id) and `session/prompt` (the same `act` loop, returning
-a `stopReason`, with the agent text under the protocol's `_meta` extension
-because a request/response transport cannot stream `session/update`).
-`session/cancel` is a notification.
-
-`acp_permission(run, action)` is the permission bridge: it builds the ACP
-`session/request_permission` request (the action as the tool call, with
-allow-once / allow-always / reject options), asks the attached `AcpClient`
-(installed by the embedding application with `set_acp_client`, which owns the
-pipe) and hands the mapped decision to `approve_with`, so the decision is
-journaled with its attribution, `allow-always` is cached on the run, and a
-replayed run never re-asks the client. `false` means the caller must not perform
-the action. With no client attached the answer is the journaled
-`default-deny (no ACP client attached)`; a selected option the adapter never
-offered, or an answer with no usable outcome, is a typed failure and never an
-allow.
-
-### Commands
-
-```powershell
-spectralang surface --json [path]                     # modules, functions, types, derived tools
-spectralang impact --json <symbol> [path]             # what changing a symbol affects
-spectralang explain [--json] <CODE>                   # diagnostic code reference
-spectralang docs [--json] [--section <name>]          # language reference embedded in the binary
-spectralang agent eval [--json] [--suite <path>] [--repeat <n>] [--judge]
-```
-
-`surface` reports each `#[agent_tool]` with its `input_schema`, `effects` and
-`capabilities`; `agent eval` runs a case suite with deterministic graders
-(`approval`, `refusal`, `tool_set`, `budget`, `schema`) and exits `65` on a
-regression against the checked-in baseline.
-
-### Limits
-
-Taint is message-granular; there is no string-level flow tracking. `require` is
-a runtime assertion, not static verification. Compensation runs only on an
-explicit `rollback`. Entry points stay synchronous. MCP, A2A and ACP are
-HTTP/host-transport only (no stdio: the language has no subprocess primitive).
-A2A does not implement streaming or push notifications, and ACP does not
-implement session loading, non-text prompts or MCP-over-ACP; the card and
-`initialize` report exactly that.
-
-List fields (`List<int>`, `List<string>`, `List<bool>`, `List<float>`,
-`List<char>`) cross the boundary as JSON arrays in both directions: `json_schema`
-renders `{"type":"array","items":...}`, `to_json` writes the array, `from_json`
-builds the collection, and an agent tool may take or return a bare list of those
-scalars. Nested lists, `Map` and `Option` fields are not supported and are
-reported by the compiler rather than half-encoded.
-
-Runnable projects: `examples/agent/01-tool-and-run`,
-`examples/agent/02-approval-and-budget`, `examples/agent/03-mcp-and-memory`,
-`examples/agent/04-durable-replay`, `examples/agent/05-streaming-and-schema`,
-`examples/agent/06-capabilities-and-taint`, `examples/agent/07-protocol-surface`,
-`examples/agent/08-memory-and-recall`, `examples/agent/09-compensation-saga`,
-`examples/agent/10-list-payloads`, `examples/agent/11-tool-call-budget`,
-`examples/agent/12-structured-output`, `examples/agent/13-embeddings-and-ranking`,
-`examples/agent/14-acp-and-permissions`,
-`examples/agent/15-mcp-service-surface`, `examples/agent/16-a2a-task-lifecycle`
-and `examples/agent/17-token-budgeting`; see `docs/book/11-agents.md`.
-
----
-
-## 31. Async Essentials (`await`, `Task`, `block_on`)
-
-The async surface the agent functions use is part of the core language.
+The async surface is part of the core language.
 
 ```spectra
 async func fetch_total(base: int) returns int {
@@ -2968,7 +2733,7 @@ Rules:
 - `await expr` is valid only inside an async context (`async func`, an
   `async { ... }` block, or an async closure); awaiting yields the task's value.
 - `block_on(task)` is the sync bridge: it drives a task to completion. Entry
-  points stay synchronous (`public func main() returns int`), so agent programs
+  points stay synchronous (`public func main() returns int`), so programs
   call `block_on` in `main` or in a sync helper.
 - `async { ... }` is a task literal: its last expression is the value.
 
@@ -3222,4 +2987,4 @@ external kernels, and production checkpoint formats remain future adoption work.
 
 ---
 
-*End of SpectraLang AI Agent Reference*
+*End of SpectraLang AI Coding Reference*

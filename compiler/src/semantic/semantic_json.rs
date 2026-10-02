@@ -293,8 +293,8 @@ impl SemanticAnalyzer {
             definitions.insert("to_json".to_string(), span);
             visibilities.insert("to_json".to_string(), Visibility::Public);
 
-            // R-3210: the schema is emitted from the same field data that
-            // produces `to_json`, so it cannot drift from the wire form.
+            // The schema is emitted from the same field data that produces
+            // `to_json`, so it cannot drift from the wire form.
             type_methods.insert(
                 "json_schema".to_string(),
                 FunctionSignature {

@@ -1553,9 +1553,8 @@ mod tests {
             .is_ok());
     }
 
-    /// Builds `fn name() -> int { return host(-7) }` with a generic host call
-    /// so the lowering emits both the generic failure panic and the
-    /// capability-denial branch.
+    /// Builds a function with a generic host call that checks the normal
+    /// runtime-failure path is present in AOT output.
     fn generic_host_call_function(name: &str) -> IRFunction {
         use spectra_midend::ir::{InstructionKind, Terminator, Value};
 
@@ -1581,8 +1580,8 @@ mod tests {
     }
 
     #[test]
-    fn aot_generic_host_call_references_capability_denial_symbol() {
-        let name = "aot_capability_denied";
+    fn aot_generic_host_call_references_runtime_panic_symbol() {
+        let name = "aot_host_call_failure";
         let mut module = IRModule::new(name);
         module.add_function(generic_host_call_function(name));
 
@@ -1590,24 +1589,17 @@ mod tests {
             .compile_to_object(&module, &crate::AotOptions::default())
             .expect("AOT compile of generic host-call module");
         let haystack = String::from_utf8_lossy(&bytes);
-        // HOST_STATUS_DENIED must branch to the dedicated fatal symbol rather
-        // than reusing the generic `spectra_rt_panic` failure path.
-        assert!(
-            haystack.contains("spectra_rt_capability_denied"),
-            "AOT object does not reference spectra_rt_capability_denied"
-        );
         assert!(
             haystack.contains("spectra_rt_panic"),
             "AOT object does not reference spectra_rt_panic"
         );
-        // The denial message is the call-site text without the failure suffix.
-        let expected: Vec<u8> = "host call 'spectra.std.math.abs'"
+        let expected: Vec<u8> = "host call 'spectra.std.math.abs' failed"
             .bytes()
             .chain(std::iter::once(0))
             .collect();
         assert!(
             bytes.windows(expected.len()).any(|window| window == expected),
-            "AOT object does not embed the denial message"
+            "AOT object does not embed the host-call failure message"
         );
     }
     // -----------------------------------------------------------------------

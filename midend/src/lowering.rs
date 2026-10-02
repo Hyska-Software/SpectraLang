@@ -4,7 +4,7 @@
 use crate::builder::IRBuilder;
 use crate::ir::{
     ArrayBound, Constant, ExternalFunction, FloatWidth as IRFloatWidth, Function as IRFunction,
-    Global, Instruction, IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter,
+    Global, IntWidth as IRIntWidth, LocalDebugInfo, Module as IRModule, Parameter,
     SourceSpan, Terminator, Type as IRType, Value,
 };
 use crate::layout;
@@ -675,10 +675,6 @@ mod lowering_std_host_math_io_error;
 mod lowering_std_host_numeric;
 #[path = "lowering_std_host_tensor_ml.rs"]
 mod lowering_std_host_tensor_ml;
-#[path = "lowering_std_agent.rs"]
-mod lowering_std_agent;
-#[path = "lowering_agent_tools.rs"]
-mod lowering_agent_tools;
 
 /// Public re-export preserved from the pre-split layout: consumed by
 /// `packages/spectra-api` (contract-drift test) as
@@ -687,7 +683,7 @@ pub use lowering_std_api::std_api_host_call_target;
 
 #[allow(unused_imports)]
 use {
-    lowering_agent_tools::*, lowering_builtins::*, lowering_default::*, lowering_expr_aggregates::*,
+    lowering_builtins::*, lowering_default::*, lowering_expr_aggregates::*,
     lowering_expr_binary::*, lowering_expr_calls::*, lowering_expr_cast::*, lowering_expr_enum::*,
     lowering_expr_fields::*, lowering_expr_literals::*, lowering_expr_match::*,
     lowering_expr_method::*, lowering_expr_struct::*, lowering_expr_tail::*, lowering_handles::*,
@@ -697,7 +693,7 @@ use {
     lowering_impl_module::*, lowering_impl_monomorphization::*, lowering_impl_patterns::*,
     lowering_impl_statements::*, lowering_impl_substitution::*, lowering_impl_type_inference::*,
     lowering_impl_types::*, lowering_impl_types_tail::*, lowering_json_derive::*,
-    lowering_std_agent::*, lowering_std_api::*, lowering_std_host::*,
+    lowering_std_api::*, lowering_std_host::*,
     lowering_std_host_collections_string::*,
     lowering_std_host_convert_time::*, lowering_std_host_fs_env_result::*,
     lowering_std_host_math_io_error::*, lowering_std_host_numeric::*,

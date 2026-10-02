@@ -21,9 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_SCHEMA = "spectralang.r3007_stdlib_contract.v1"
 ALLOWED_CLASSIFICATIONS = {"production", "baseline", "simulation", "unsupported", "incomplete"}
 ALLOWED_OWNERS = {"frontend", "semantic", "midend", "backend", "runtime", "numerics", "ml", "web", "db", "tooling", "ecosystem"}
-# Scope predicate keys consumed by the governance layer (URL host, path prefix,
-# table name, HTTP method); see R-3214.
-ALLOWED_SCOPE_KEYS = {"host", "method", "table", "path_prefix"}
 # Compiler-level aliases resolve to a sibling host call (`std.api.routing.router`
 # lowers to `spectra.api.routing.router_new`), so they own no `HostCallSpec` and
 # carry no `rust_symbol`.
@@ -542,11 +539,6 @@ def validate_manifest(root: Path, manifest: dict[str, Any]) -> list[str]:
                         ):
                             errors.append(
                                 f"typed catalog entry {path} is missing rust_symbol"
-                            )
-                    for scope_key in entry.get("scope_keys", []):
-                        if scope_key not in ALLOWED_SCOPE_KEYS:
-                            errors.append(
-                                f"typed catalog entry {path} has an unknown scope key {scope_key}"
                             )
     roadmap_ids = load_roadmap_ids(root)
     prefixes: list[str] = []

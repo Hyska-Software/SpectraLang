@@ -99,14 +99,6 @@ fn native_function_symbol(name: &str, rename_main: bool) -> String {
     }
 }
 
-fn is_module_scoped_synthetic_function(name: &str) -> bool {
-    // Agent registration functions already carry their sanitized declaring
-    // module in the source-level name. Imported callers use that exact name,
-    // so adding a second module prefix here would break the relocatable
-    // symbol pair.
-    name.starts_with("__spectra_agent_register_tools_")
-}
-
 type AotCompileOutput = (
     Vec<u8>,
     Vec<DebugLocation>,
@@ -489,9 +481,7 @@ impl AotCodeGenerator {
         // Keep the executable entry-point convention for `main`, but qualify
         // every ordinary function with its source module so two relocatable
         // objects may export the same source-level name safely.
-        let logical_name = if ir_func.name == "main"
-            || is_module_scoped_synthetic_function(&ir_func.name)
-        {
+        let logical_name = if ir_func.name == "main" {
             ir_func.name.clone()
         } else {
             format!("{}::{}", module_name, ir_func.name)

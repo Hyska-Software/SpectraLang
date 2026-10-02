@@ -1690,18 +1690,6 @@
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/365_agent_surface.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/366_agent_model_surface.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/367_async_bool_loop.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
@@ -1709,12 +1697,6 @@
       "kind": "exec"
     },
     "tests/validation/368_async_await_loop.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/369_agent_memory.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -1732,52 +1714,10 @@
       "jit": "exit:0",
       "kind": "exec"
     },
-    "tests/validation/371_agent_tool_surface.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/372_agent_budget.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/373_record_reassign_in_loop.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/374_agent_capability_vocabulary.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/375_agent_act.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/376_agent_journal.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/377_agent_taint.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/378_agent_eval_harness.spectra": {
-      "aot": "exit:2",
-      "expected_exit": 2,
-      "jit": "exit:2",
       "kind": "exec"
     },
     "tests/validation/379_qualified_io_print.spectra": {
@@ -1790,52 +1730,6 @@
       "aot": "exit:42",
       "expected_exit": 42,
       "jit": "exit:42",
-      "kind": "exec"
-    },
-    "tests/validation/380_agent_compensation.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/381_agent_mcp.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/382_agent_protocol.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/383_agent_host_adapters.spectra": {
-      "kind": "skip",
-      "reason": "requires the host-installed agent adapter environment (environment-dependent R-3221 fixture)"
-    },
-    "tests/validation/384_agent_stream_lifecycle.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/385_agent_capabilities_in_practice.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/386_agent_journal_artifact.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/387_agent_introspection.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
       "kind": "exec"
     },
     "tests/validation/388_async_aggregate_result_lifetime.spectra": {
@@ -1856,127 +1750,13 @@
       "jit": "exit:22",
       "kind": "exec"
     },
-    "tests/validation/390_agent_nested_dispatch.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/391_agent_concurrent_runs.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/392_agent_payload_scale.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/393_agent_tool_call_ceiling.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/394_agent_structured_output.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/395_agent_memory_limits.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/396_agent_stream_in_tool.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/397_agent_nested_dispatch_stress.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/398_agent_dead_handle_matrix.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/399_agent_spec_rejection.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/39_method_chaining.spectra": {
       "aot": "exit:126",
       "expected_exit": 126,
       "jit": "exit:126",
       "kind": "exec"
     },
-    "tests/validation/400_agent_stream_teardown.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/401_agent_provider_routing.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/402_agent_script_directives.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/403_async_scalar_slots_and_float_payloads.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/404_agent_memory_edges.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/405_agent_ceiling_combinations.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/406_agent_replay_divergence.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/407_agent_a2a_task_states.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/408_agent_taint_ledger_edges.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/409_agent_nested_payloads.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,
       "jit": "exit:0",
@@ -1988,172 +1768,16 @@
       "jit": "exit:60",
       "kind": "exec"
     },
-    "tests/validation/410_agent_schema_recovery.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/411_agent_journal_payloads.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/412_agent_replay_tool_once.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/413_agent_stream_interleave.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/414_agent_memory_ties.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/415_agent_capability_boundary.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/416_agent_compensation_failure.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/417_agent_mcp_replay.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/418_agent_protocol_negatives.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/419_agent_taint_policy_matrix.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/41_static_constructors.spectra": {
       "aot": "exit:10",
       "expected_exit": 10,
       "jit": "exit:10",
       "kind": "exec"
     },
-    "tests/validation/420_agent_cost_ceiling.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/421_agent_unsafe_run_id.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/422_agent_corrupt_journal.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/423_agent_stream_replay.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/424_agent_schema_booleans.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/425_agent_option_enum_tool.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/426_agent_nested_compensation.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/427_agent_mcp_remote_errors.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/428_agent_a2a_idempotency.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/429_agent_remote_scope.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
     "tests/validation/42_traits_parse.spectra": {
       "aot": "exit:42",
       "expected_exit": 42,
       "jit": "exit:42",
-      "kind": "exec"
-    },
-    "tests/validation/430_agent_empty_stream.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/431_agent_a2a_card_defaults.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/432_agent_unicode_tool_payload.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/433_agent_remote_act.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/434_agent_stream_after_run.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
-      "kind": "exec"
-    },
-    "tests/validation/435_agent_concurrent_runs.spectra": {
-      "aot": "exit:0",
-      "expected_exit": 0,
-      "jit": "exit:0",
       "kind": "exec"
     },
     "tests/validation/436_stdlib_collections_snapshot.spectra": {

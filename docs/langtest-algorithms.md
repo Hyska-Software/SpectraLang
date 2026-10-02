@@ -287,7 +287,7 @@ checagem. Cobertura nova:
 
 Validação final da leva: os 130 arquivos da suíte passaram em default, `-O0`,
 `-O3`, `check`, `fmt --check` e `lint`; os arquivos novos também passaram em
-AOT, e as crates do compilador, runtime, API, agente e CLI permaneceram verdes.
+AOT, e as crates do compilador, runtime, API e CLI permaneceram verdes.
 
 ## Décima sétima leva (118–123): correções nos próprios algoritmos
 

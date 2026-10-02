@@ -64,7 +64,7 @@ simulação intencional e recurso reservado.
 1. Classificar APIs de treinamento distribuído por símbolo: os helpers legados de contadores
    continuam identificados como simulação; `distributed_train_*` continua descrito como
    treinamento real com limites de cluster e transporte documentados.
-2. Manter explícitos os limites de mocks de agente, fixtures de RAG, benchmark local de
+2. Manter explícitos os limites de fixtures de RAG, benchmark local de
    serving, BLAS reservado e integrações condicionais. Corrigir qualquer texto que atribua
    a esses fluxos uma evidência que não produzem.
 3. Não elevar maturidade por documentação. GPU, ONNX, serviços externos e protocolos
@@ -128,16 +128,17 @@ verificação, não como aprovação.
 
 - Fases 0–5: concluídas. Guards/`?`/`let mut`, caminhos de falha do runtime,
   fusão unária consumida pelo JIT/AOT e documentação foram implementados.
-- Evidência central: compiler (133 testes), midend (115), backend (77), runtime
-  (258 unitários + 1 integração); o corpus completo chegou a 1.010 aprovações,
-  3 falhas e 1 ignorado por ambiente. A validação R-3308 de collections e a
-  conformance integrada R-3221 passaram.
-- Triagem dos 3 resultados negativos do `run_tests.ps1`: duas falhas eram a
-  mesma expectativa antiga de kernels em `tensor_graph_reduction_fusion`, já
-  corrigida; R-2001 foi recertificado com 22/22 gates e 21/21 exemplos de IA,
-  e R-2013 foi recertificado com 8/8 projetos. A falha inicial de R-3208 não
-  foi reproduzida: o teste direcionado de host adapters passou 3/3 e o validador
-  R-3208 passou com 560 bindings.
+- Evidência central: no baseline anterior, compiler (133 testes), midend (115),
+  backend (77), runtime (258 unitários + 1 integração) passaram; o corpus chegou
+  a 1.010 aprovações, 3 falhas e 1 ignorado por ambiente. A validação R-3308
+  também passou naquele baseline.
+- Triagem dos 3 resultados negativos do run_tests.ps1 no baseline: duas falhas
+  eram a mesma expectativa antiga de kernels em
+  tensor_graph_reduction_fusion, já corrigida; R-2001 foi recertificado com
+  22/22 gates e 21/21 exemplos de IA, e R-2013 com 8/8 projetos. O gate R-3208
+  foi validado contra o catálogo reduzido: 1.352 entradas, 560 host calls da
+  API (532 sempre ativos e 28 condicionados por feature) e 1.115 braços de
+  lowering em 7 tabelas geradas.
 - Limite de repetição: `run_tests.ps1` não foi reexecutado por inteiro após a
   última correção. Os gates que falharam foram reexecutados isoladamente com
   sucesso; portanto, não se declara um resultado zero de falhas para uma

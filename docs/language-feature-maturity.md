@@ -254,10 +254,6 @@ There are currently no active experimental syntax gates. `spectralang --list-exp
   `SPECTRA_POSTGRES_URL` and `SPECTRA_REDIS_URL`; tests may return without
   exercising a service when those variables are absent. OTLP export likewise
   requires a configured collector.
-- Agent `mock/` providers are deterministic fixtures; their canned responses,
-  fixed accounting and hash-based embeddings do not prove model quality or
-  semantic similarity. OpenAI-compatible transport and local ONNX inference are
-  separate real providers with external configuration/model requirements.
 - RAG example fixtures use fixed vectors and answers. Chunking, prompt assembly
   and lexical overlap scoring are real helpers, but those fixtures do not
   certify end-to-end semantic retrieval or answer grounding.

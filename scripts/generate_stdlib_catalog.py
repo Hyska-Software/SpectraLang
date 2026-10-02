@@ -24,10 +24,6 @@ Extended-field provenance (R-3206)
   ``HostCallSpec`` and instead take the sibling host binding recorded by the
   lowering table, while every other function is registered by the runtime crate
   and intentionally carries no ``rust_symbol``.
-* ``sink`` is the write-side effect classification: true when the entry's
-  ``effects`` contain ``mutation``.
-* ``scope_keys`` come from the explicit override table below (empty by default),
-  keeping governance scope predicates explicit and reviewable.
 """
 
 from __future__ import annotations
@@ -48,11 +44,10 @@ def dump_contract_command() -> list[str]:
     """The command that prints the compiler's contract snapshot.
 
     Defaults to `cargo run`, which builds the compiler from the sources being
-    audited. A caller that has already built the binary (the R-3221
-    certification gate) points `SPECTRA_CONTRACT_DUMP` at it: eleven catalog
-    probes run inside one gate run, and re-entering cargo from each of them
-    flips the shared build directory between cargo's test and non-test feature
-    sets, which costs minutes per flip.
+    audited. Callers that already built the binary can point
+    `SPECTRA_CONTRACT_DUMP` at it so repeated catalog probes reuse the same
+    dump instead of switching Cargo's shared build directory between test and
+    non-test feature sets.
     """
     prebuilt = os.environ.get("SPECTRA_CONTRACT_DUMP")
     if prebuilt and Path(prebuilt).is_file():
@@ -135,17 +130,6 @@ IR_WIDTH_TYPES = {
     "f32": "ExactFloat<f32>",
     "f64": "ExactFloat<f64>",
 }
-ALLOWED_SCOPE_KEYS = {"host", "method", "table", "path_prefix"}
-# Scope predicates consumed by the governance layer (R-3214).  Keep this table
-# small: an entry belongs here only when a scope extractor exists beside the
-# host call.
-SCOPE_KEY_OVERRIDES = {
-    # HTTP client requests are scoped by destination host and method.
-    "std.api.client.request": ["host", "method"],
-    # Schema migrations write the tracked migration table.
-    "std.api.db.migrate.apply_sqlite": ["table"],
-}
-
 
 def read_expression(text: str, index: int) -> str:
     """Return the Rust expression starting at ``index`` up to its comma."""
@@ -534,7 +518,6 @@ def main() -> int:
         returns_value = False
         rust_symbol = ""
         cfg_feature = ""
-        scope_keys: list[str] = []
         if kind == "function":
             params, returns = signature_parts(signature)
             descriptor = lowering.get(path)
@@ -561,10 +544,6 @@ def main() -> int:
                     raise RuntimeError(
                         f"std.api function without a HostCallSpec rust_symbol: {path}"
                     )
-            scope_keys = list(SCOPE_KEY_OVERRIDES.get(path, []))
-            unknown = [key for key in scope_keys if key not in ALLOWED_SCOPE_KEYS]
-            if unknown:
-                raise RuntimeError(f"unknown scope keys for {path}: {unknown}")
         entry = {
             "path": path,
             "kind": kind,
@@ -584,8 +563,6 @@ def main() -> int:
                 "semantic descriptor" if kind != "function" else "host(ctx: SpectraHostCallContext) -> i32",
             ),
             "effects": effects,
-            "sink": "mutation" in effects,
-            "scope_keys": scope_keys,
             "error_model": old.get(
                 "error_model",
                 "none" if kind != "function" else (
@@ -629,14 +606,6 @@ def main() -> int:
         lines.append(f"abi = {toml_string(str(entry['abi']))}")
         effects = entry["effects"]
         lines.append("effects = [" + ", ".join(toml_string(str(value)) for value in effects) + "]")
-        if entry["sink"]:
-            lines.append("sink = true")
-        if entry["scope_keys"]:
-            lines.append(
-                "scope_keys = ["
-                + ", ".join(toml_string(str(key)) for key in entry["scope_keys"])
-                + "]"
-            )
         for key in ("error_model", "binding", "maturity", "owner", "docs", "fixture"):
             lines.append(f"{key} = {toml_string(str(entry[key]))}")
     # `newline="\n"` keeps the artifact byte-identical across platforms:

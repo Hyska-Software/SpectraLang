@@ -648,20 +648,6 @@ impl SemanticAnalyzer {
             }
         }
 
-        for (name, tool) in &self.agent_tools {
-            exports.tools.insert(
-                name.clone(),
-                ExportedTool {
-                    name: tool.name.clone(),
-                    description: tool.description.clone(),
-                    input_schema: tool.input_schema.clone(),
-                    payload_param: tool.payload_param.clone(),
-                    payload_type: tool.payload_type_text.clone(),
-                    span: tool.span,
-                },
-            );
-        }
-
         exports
     }
 

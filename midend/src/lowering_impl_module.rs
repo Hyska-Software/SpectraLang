@@ -718,11 +718,6 @@ impl ASTLowering {
         for lambda in lambdas {
             ir_module.add_function(lambda);
         }
-        // R-3222: synthesize the marshalling wrappers declared by this module
-        // and the registration that hands their addresses to the runtime. Runs
-        // after every user function and coroutine exists, because the wrapper
-        // calls the tool ramp and reuses its lowered parameter/return types.
-        self.synthesize_agent_tools(ast_module, &mut ir_module);
 
         // Mark direct self-tail-recursion so the backend can emit native
         // Cranelift `return_call`s (see passes::tail_call_marking).

@@ -149,7 +149,7 @@ def validate_planning() -> None:
     backlog = read("docs/roadmap-backlog.md")
     block = backlog.split(
         "## R-3208 Generate the Host-Call Table and Remove the Manual Count", 1
-    )[1].split("## R-3209", 1)[0]
+    )[1].split("# Phase 11:", 1)[0]
     for term in ["Status: `complete`", "scripts/validate_r3208_hostcall_generation.py"]:
         require(term in block, f"backlog R-3208 missing {term}")
     require(

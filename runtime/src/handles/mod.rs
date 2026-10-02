@@ -119,12 +119,6 @@ pub enum HandleKind {
     ApiGraphqlSchema = 106,
     ApiGraphqlSubscription = 107,
     ApiGraphqlResponse = 108,
-    /// `std.agent` run handle allocated by `agent_start` (R-3211).
-    AgentRun = 109,
-    /// `std.agent` chunk stream handle returned by `ask_stream` (R-3211).
-    AgentChunkStream = 110,
-    /// `std.agent` tool registry handle reserved for the R-3222 dispatch table.
-    AgentToolRegistry = 111,
     /// `std.collections.Stack` storage handle.
     Stack = 112,
     /// `std.collections.Queue` storage handle.
@@ -238,9 +232,6 @@ impl HandleKind {
             106 => Self::ApiGraphqlSchema,
             107 => Self::ApiGraphqlSubscription,
             108 => Self::ApiGraphqlResponse,
-            109 => Self::AgentRun,
-            110 => Self::AgentChunkStream,
-            111 => Self::AgentToolRegistry,
             112 => Self::Stack,
             113 => Self::Queue,
             114 => Self::HashSet,

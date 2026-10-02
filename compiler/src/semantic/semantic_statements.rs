@@ -52,7 +52,7 @@ impl SemanticAnalyzer {
                             } else {
                                 // E003: let-binding type mismatch carries the
                                 // expected/actual pair plus a concrete fix so
-                                // agent workflows can repair in one round trip.
+                                // tooling can act on the diagnostic in one round trip.
                                 let expected = type_name(&declared_type);
                                 let actual = type_name(&inferred_type);
                                 let fix = self

@@ -547,12 +547,11 @@ pub(crate) fn ml_generate_inner(
 /// The same generation, reporting each produced token to `on_token` as it is
 /// selected and stopping early when the callback returns `false`.
 ///
-/// This is the engine behind `std.agent`'s local provider streaming: one
-/// callback per model token, in generation order, with the token already
-/// appended to the sequence (so a caller that stops early still holds a
-/// complete prefix). Both execution modes — KV-cache and full re-feed — share
-/// this contract, so a streaming caller cannot observe a different sequence
-/// from a non-streaming one.
+/// Calls `on_token` once per produced token, in generation order, with the
+/// token already appended to the sequence (so a caller that stops early still
+/// holds a complete prefix). Both execution modes — KV-cache and full re-feed
+/// — share this contract, so a streaming caller cannot observe a different
+/// sequence from a non-streaming one.
 #[cfg(feature = "onnx")]
 pub(crate) fn ml_generate_with(
     session_id: u64,

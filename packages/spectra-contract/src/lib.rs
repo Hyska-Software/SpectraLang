@@ -51,12 +51,6 @@ pub struct CatalogEntry {
     /// Cargo feature gating the host call (`http3`), empty when unconditional.
     #[serde(default)]
     pub cfg_feature: String,
-    /// Write-side effect classification (`effects` contains `mutation`).
-    #[serde(default)]
-    pub sink: bool,
-    /// Scope predicate keys consumed by governance; empty when scoped globally.
-    #[serde(default)]
-    pub scope_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -150,15 +144,6 @@ mod tests {
                     "{} must declare rust_symbol",
                     item.path
                 );
-            }
-            assert_eq!(
-                item.sink,
-                item.effects.iter().any(|effect| effect == "mutation"),
-                "{} sink must follow the effects classification",
-                item.path
-            );
-            for key in &item.scope_keys {
-                assert!(!key.is_empty(), "{} has an empty scope key", item.path);
             }
         }
     }

@@ -13,7 +13,19 @@ record Pair {
     b: int
 }
 
-import std.agent
+from std.api.db.sqlite import SqliteConnection, open as sqlite_open, close as sqlite_close, execute_async as sqlite_execute_async
+
+async func delayed_tick(value: int) returns int {
+    // Await a real background database task that materializes an 8 MiB row.
+    // This keeps the child pending while the parent coroutine suspends.
+    let connection: SqliteConnection = sqlite_open(":memory:")
+    let affected: int = await sqlite_execute_async(connection, "SELECT randomblob(8388608)")
+    sqlite_close(connection)
+    if affected != 0 {
+        return-1
+    }
+    return value
+}
 
 func sync_reassign_in_loop() returns int {
     let p = Pair { a: 0, b: 0 }
@@ -31,34 +43,23 @@ func sync_reassign_in_loop() returns int {
     return 0
 }
 
-func spec_json() returns string {
-    return "{\"goal\":\"fixture\",\"model\":\"mock/echo\",\"endpoint\":\"mock:\",\"allow\":[],\"max_tokens\":0,\"max_cost_micros\":0,\"max_seconds\":0,\"max_tool_calls\":0,\"untrusted\":\"approve\",\"seed\":7,\"journal\":\"\"}"
-}
-
 async func async_reassign_across_await() returns int {
-    let start = agent_start(spec_json())
-    if let Result::Ok(run) = start {
-        let p = Pair { a: 0, b: 0 }
-        let n = 0
-        while n < 3 {
-            p = Pair { a: p.a + 1, b: p.b }
-            let reply = await ask(run, "tick")
-            if let Result::Ok(text) = reply {
-                p = Pair { a: p.a, b: p.b + 2 }
-            } else {
-                return 5
-            }
-            n = n + 1
+    let p = Pair { a: 0, b: 0 }
+    let n = 0
+    while n < 3 {
+        p = Pair { a: p.a + 1, b: p.b }
+        let tick = await delayed_tick(n)
+        if tick == n {
+            p = Pair { a: p.a, b: p.b + 2 }
         }
-        // Read after the final suspension, outside the loop scope.
-        if p.a != 3 {
-            return 6
-        }
-        if p.b != 6 {
-            return 7
-        }
-    } else {
-        return 1
+        n = n + 1
+    }
+    // Read after the final suspension, outside the loop scope.
+    if p.a != 3 {
+        return 6
+    }
+    if p.b != 6 {
+        return 7
     }
     return 0
 }

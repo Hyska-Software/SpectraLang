@@ -146,7 +146,7 @@ pub fn with_device_queue<R>(
 
 /// Mirror of the runtime's `TensorDevice` enum used to key the device
 /// buffer pool. Only `Wgpu` is exercised by the arena today; the others
-/// are reserved for future native backends (R-3201..R-3204).
+/// are reserved for future native backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PoolDevice {
     Wgpu,
