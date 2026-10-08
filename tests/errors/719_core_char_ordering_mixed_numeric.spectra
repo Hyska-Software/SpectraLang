@@ -1,0 +1,11 @@
+// Regression: `char` ordering stays char-vs-char. Mixing a char with a
+// numeric operand is rejected; callers cast explicitly (`code as char`).
+module core_char_ordering_mixed_numeric
+
+public func main() returns int {
+    let letter = 65 as char
+    if letter < 66 {
+        return 1
+    }
+    return 0
+}

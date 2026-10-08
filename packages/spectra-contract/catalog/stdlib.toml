@@ -19,6 +19,120 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.algorithms.binary_search_int"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(List<int>, int) -> int"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.binary_search_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.binomial"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.binomial"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.collatz_steps"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.collatz_steps"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.digit_sum"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.digit_sum"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.factorial"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.factorial"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.from_base"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string, int) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.from_base"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
 path = "std.algorithms.gcd_nonnegative"
 kind = "function"
 namespace = "std.algorithms"
@@ -55,6 +169,101 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/794_std_source_algorithms.spectra"
+
+[[entry]]
+path = "std.algorithms.levenshtein"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string, string) -> int"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.levenshtein"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.mod_inverse"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.mod_inverse"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.roman_decode"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.roman_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.roman_encode"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> Option<string>"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.roman_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.to_base"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int, int) -> Option<string>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.to_base"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
 
 [[entry]]
 path = "std.api"
@@ -3169,7 +3378,7 @@ binding = "spectra.api.graphql.execute"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.execute_http"
@@ -3188,7 +3397,7 @@ binding = "spectra.api.graphql.execute_http"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.execute_named"
@@ -3207,7 +3416,7 @@ binding = "spectra.api.graphql.execute_named"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_data_json"
@@ -3226,7 +3435,7 @@ binding = "spectra.api.graphql.response_data_json"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_drop"
@@ -3245,7 +3454,7 @@ binding = "spectra.api.graphql.response_drop"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_errors_json"
@@ -3264,7 +3473,7 @@ binding = "spectra.api.graphql.response_errors_json"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_is_ok"
@@ -3283,7 +3492,7 @@ binding = "spectra.api.graphql.response_is_ok"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_json"
@@ -3302,7 +3511,7 @@ binding = "spectra.api.graphql.response_json"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.response_status"
@@ -3321,7 +3530,7 @@ binding = "spectra.api.graphql.response_status"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_drop"
@@ -3340,7 +3549,7 @@ binding = "spectra.api.graphql.schema_drop"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_field_callback"
@@ -3359,7 +3568,7 @@ binding = "spectra.api.graphql.schema_field_callback"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_field_json"
@@ -3378,7 +3587,7 @@ binding = "spectra.api.graphql.schema_field_json"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_finish"
@@ -3397,7 +3606,7 @@ binding = "spectra.api.graphql.schema_finish"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_new"
@@ -3416,7 +3625,7 @@ binding = "spectra.api.graphql.schema_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_sdl"
@@ -3435,7 +3644,7 @@ binding = "spectra.api.graphql.schema_sdl"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_set_introspection"
@@ -3454,7 +3663,7 @@ binding = "spectra.api.graphql.schema_set_introspection"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_set_max_complexity"
@@ -3473,7 +3682,7 @@ binding = "spectra.api.graphql.schema_set_max_complexity"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_set_max_depth"
@@ -3492,7 +3701,7 @@ binding = "spectra.api.graphql.schema_set_max_depth"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_set_subscription_capacity"
@@ -3511,7 +3720,7 @@ binding = "spectra.api.graphql.schema_set_subscription_capacity"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_set_workers"
@@ -3530,7 +3739,7 @@ binding = "spectra.api.graphql.schema_set_workers"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_subscription_callback"
@@ -3549,7 +3758,7 @@ binding = "spectra.api.graphql.schema_subscription_callback"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.schema_subscription_json"
@@ -3568,7 +3777,7 @@ binding = "spectra.api.graphql.schema_subscription_json"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscribe"
@@ -3587,7 +3796,7 @@ binding = "spectra.api.graphql.subscribe"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_cancel"
@@ -3606,7 +3815,7 @@ binding = "spectra.api.graphql.subscription_cancel"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_capacity"
@@ -3625,7 +3834,7 @@ binding = "spectra.api.graphql.subscription_capacity"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_drop"
@@ -3644,7 +3853,7 @@ binding = "spectra.api.graphql.subscription_drop"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_is_cancelled"
@@ -3663,7 +3872,7 @@ binding = "spectra.api.graphql.subscription_is_cancelled"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_next"
@@ -3682,7 +3891,7 @@ binding = "spectra.api.graphql.subscription_next"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.graphql.subscription_pending"
@@ -3701,7 +3910,7 @@ binding = "spectra.api.graphql.subscription_pending"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc"
@@ -3734,7 +3943,7 @@ binding = "spectra.api.grpc.client_bidi_streaming"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.client_client_streaming"
@@ -3753,7 +3962,7 @@ binding = "spectra.api.grpc.client_client_streaming"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.client_connect"
@@ -3772,7 +3981,7 @@ binding = "spectra.api.grpc.client_connect"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.client_connect_tls"
@@ -3791,7 +4000,7 @@ binding = "spectra.api.grpc.client_connect_tls"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.client_server_streaming"
@@ -3810,7 +4019,7 @@ binding = "spectra.api.grpc.client_server_streaming"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.client_unary"
@@ -3829,7 +4038,7 @@ binding = "spectra.api.grpc.client_unary"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.error_code"
@@ -3848,7 +4057,7 @@ binding = "spectra.api.grpc.error_code"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.error_details_base64"
@@ -3867,7 +4076,7 @@ binding = "spectra.api.grpc.error_details_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.error_free"
@@ -3886,7 +4095,7 @@ binding = "spectra.api.grpc.error_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.error_message"
@@ -3905,7 +4114,7 @@ binding = "spectra.api.grpc.error_message"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.message_free"
@@ -3924,7 +4133,7 @@ binding = "spectra.api.grpc.message_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.message_from_base64"
@@ -3943,7 +4152,7 @@ binding = "spectra.api.grpc.message_from_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.message_len"
@@ -3962,7 +4171,7 @@ binding = "spectra.api.grpc.message_len"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.message_to_base64"
@@ -3981,7 +4190,7 @@ binding = "spectra.api.grpc.message_to_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_append"
@@ -4000,7 +4209,7 @@ binding = "spectra.api.grpc.metadata_append"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_free"
@@ -4019,7 +4228,7 @@ binding = "spectra.api.grpc.metadata_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_get"
@@ -4038,7 +4247,7 @@ binding = "spectra.api.grpc.metadata_get"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_insert"
@@ -4057,7 +4266,7 @@ binding = "spectra.api.grpc.metadata_insert"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_len"
@@ -4076,7 +4285,7 @@ binding = "spectra.api.grpc.metadata_len"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.metadata_new"
@@ -4095,7 +4304,7 @@ binding = "spectra.api.grpc.metadata_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.response_free"
@@ -4114,7 +4323,7 @@ binding = "spectra.api.grpc.response_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.response_message"
@@ -4133,7 +4342,7 @@ binding = "spectra.api.grpc.response_message"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.response_metadata"
@@ -4152,7 +4361,7 @@ binding = "spectra.api.grpc.response_metadata"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.response_status"
@@ -4171,7 +4380,7 @@ binding = "spectra.api.grpc.response_status"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.server_bind"
@@ -4190,7 +4399,7 @@ binding = "spectra.api.grpc.server_bind"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.server_bind_tls"
@@ -4209,7 +4418,7 @@ binding = "spectra.api.grpc.server_bind_tls"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.server_free"
@@ -4228,7 +4437,7 @@ binding = "spectra.api.grpc.server_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.server_local_port"
@@ -4247,7 +4456,7 @@ binding = "spectra.api.grpc.server_local_port"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.server_shutdown"
@@ -4266,7 +4475,7 @@ binding = "spectra.api.grpc.server_shutdown"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.service_create"
@@ -4342,7 +4551,7 @@ binding = "spectra.api.grpc.status_code"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.status_details_base64"
@@ -4361,7 +4570,7 @@ binding = "spectra.api.grpc.status_details_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.status_free"
@@ -4380,7 +4589,7 @@ binding = "spectra.api.grpc.status_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.status_message"
@@ -4399,7 +4608,7 @@ binding = "spectra.api.grpc.status_message"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.status_new"
@@ -4418,7 +4627,7 @@ binding = "spectra.api.grpc.status_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.status_set_details_base64"
@@ -4437,7 +4646,7 @@ binding = "spectra.api.grpc.status_set_details_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.stream_cancel"
@@ -4456,7 +4665,7 @@ binding = "spectra.api.grpc.stream_cancel"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.stream_finish"
@@ -4475,7 +4684,7 @@ binding = "spectra.api.grpc.stream_finish"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.stream_free"
@@ -4494,7 +4703,7 @@ binding = "spectra.api.grpc.stream_free"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.stream_recv"
@@ -4513,7 +4722,7 @@ binding = "spectra.api.grpc.stream_recv"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.grpc.stream_send"
@@ -4532,7 +4741,7 @@ binding = "spectra.api.grpc.stream_send"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/350_api_protocol_bindings.spectra"
 
 [[entry]]
 path = "std.api.handler"
@@ -4854,7 +5063,7 @@ binding = "spectra.api.handler.register_async_callback"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/330_api_handler_callbacks.spectra"
+fixture = "tests/validation/139_api_handler_response_return.spectra"
 
 [[entry]]
 path = "std.api.handler.register_sync"
@@ -4892,7 +5101,7 @@ binding = "spectra.api.handler.register_sync_callback"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/330_api_handler_callbacks.spectra"
+fixture = "tests/validation/139_api_handler_response_return.spectra"
 
 [[entry]]
 path = "std.api.handler.status"
@@ -5184,7 +5393,7 @@ binding = "spectra.api.http.cookie_domain"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_error_code"
@@ -5203,7 +5412,7 @@ binding = "spectra.api.http.cookie_error_code"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_error_message"
@@ -5222,7 +5431,7 @@ binding = "spectra.api.http.cookie_error_message"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_header"
@@ -5241,7 +5450,7 @@ binding = "spectra.api.http.cookie_header"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_http_only"
@@ -5260,7 +5469,7 @@ binding = "spectra.api.http.cookie_http_only"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_is_expired"
@@ -5279,7 +5488,7 @@ binding = "spectra.api.http.cookie_is_expired"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_max_age"
@@ -5298,7 +5507,7 @@ binding = "spectra.api.http.cookie_max_age"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_name"
@@ -5336,7 +5545,7 @@ binding = "spectra.api.http.cookie_path"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_same_site"
@@ -5355,7 +5564,7 @@ binding = "spectra.api.http.cookie_same_site"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_secure"
@@ -5374,7 +5583,7 @@ binding = "spectra.api.http.cookie_secure"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_sign"
@@ -5393,7 +5602,7 @@ binding = "spectra.api.http.cookie_sign"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_value"
@@ -5431,7 +5640,7 @@ binding = "spectra.api.http.cookie_verify"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.cookie_with_options"
@@ -5450,7 +5659,7 @@ binding = "spectra.api.http.cookie_with_options"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.header"
@@ -6039,7 +6248,7 @@ binding = "spectra.api.http.response_with_cookie"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-cookie.md"
-fixture = "tests/validation/338_api_cookie.spectra"
+fixture = "tests/validation/134_http_core_types.spectra"
 
 [[entry]]
 path = "std.api.http.status"
@@ -6567,7 +6776,7 @@ binding = "spectra.api.http3.client_config_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_connect"
@@ -6587,7 +6796,7 @@ binding = "spectra.api.http3.client_connect"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_cancel"
@@ -6607,7 +6816,7 @@ binding = "spectra.api.http3.client_request_cancel"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_finish"
@@ -6627,7 +6836,7 @@ binding = "spectra.api.http3.client_request_finish"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_header"
@@ -6647,7 +6856,7 @@ binding = "spectra.api.http3.client_request_header"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_new"
@@ -6667,7 +6876,7 @@ binding = "spectra.api.http3.client_request_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_open"
@@ -6687,7 +6896,7 @@ binding = "spectra.api.http3.client_request_open"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_receive_response"
@@ -6707,7 +6916,7 @@ binding = "spectra.api.http3.client_request_receive_response"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_send_body"
@@ -6727,7 +6936,7 @@ binding = "spectra.api.http3.client_request_send_body"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_request_send_trailers"
@@ -6747,7 +6956,7 @@ binding = "spectra.api.http3.client_request_send_trailers"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.client_shutdown"
@@ -6767,7 +6976,7 @@ binding = "spectra.api.http3.client_shutdown"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.handle_drop"
@@ -6787,7 +6996,7 @@ binding = "spectra.api.http3.handle_drop"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.handler_text"
@@ -6807,7 +7016,7 @@ binding = "spectra.api.http3.handler_text"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.response_body_base64"
@@ -6827,7 +7036,7 @@ binding = "spectra.api.http3.response_body_base64"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.response_body_len"
@@ -6847,7 +7056,7 @@ binding = "spectra.api.http3.response_body_len"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.response_header"
@@ -6867,7 +7076,7 @@ binding = "spectra.api.http3.response_header"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.response_status"
@@ -6887,7 +7096,7 @@ binding = "spectra.api.http3.response_status"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.response_trailer"
@@ -6907,7 +7116,7 @@ binding = "spectra.api.http3.response_trailer"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.result_error_code"
@@ -6927,7 +7136,7 @@ binding = "spectra.api.http3.result_error_code"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.result_error_message"
@@ -6947,7 +7156,7 @@ binding = "spectra.api.http3.result_error_message"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.result_ok"
@@ -6967,7 +7176,7 @@ binding = "spectra.api.http3.result_ok"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.result_value"
@@ -6987,7 +7196,7 @@ binding = "spectra.api.http3.result_value"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.server_config_new"
@@ -7007,7 +7216,7 @@ binding = "spectra.api.http3.server_config_new"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.server_local_port"
@@ -7027,7 +7236,7 @@ binding = "spectra.api.http3.server_local_port"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.server_shutdown"
@@ -7047,7 +7256,7 @@ binding = "spectra.api.http3.server_shutdown"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.server_start"
@@ -7067,7 +7276,7 @@ binding = "spectra.api.http3.server_start"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.task_cancel"
@@ -7087,7 +7296,7 @@ binding = "spectra.api.http3.task_cancel"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.http3.task_result"
@@ -7107,7 +7316,7 @@ binding = "spectra.api.http3.task_result"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/352_api_http3_bindings.spectra"
 
 [[entry]]
 path = "std.api.json"
@@ -7656,7 +7865,7 @@ binding = "spectra.api.middleware.api_key_add"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/333_api_key_auth.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.api_key_revoke"
@@ -7675,7 +7884,7 @@ binding = "spectra.api.middleware.api_key_revoke"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/333_api_key_auth.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.chain"
@@ -7808,7 +8017,7 @@ binding = "spectra.api.middleware.logging_len"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/331_api_structured_logging.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.logging_line"
@@ -7827,7 +8036,7 @@ binding = "spectra.api.middleware.logging_line"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/331_api_structured_logging.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.logging_request_id"
@@ -7846,7 +8055,7 @@ binding = "spectra.api.middleware.logging_request_id"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/331_api_structured_logging.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.rate_limit_update"
@@ -7865,7 +8074,7 @@ binding = "spectra.api.middleware.rate_limit_update"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/332_api_rate_limiting.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_api_key"
@@ -7884,7 +8093,7 @@ binding = "spectra.api.middleware.register_api_key"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/333_api_key_auth.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_async"
@@ -7941,7 +8150,7 @@ binding = "spectra.api.middleware.register_compression"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/std-api-middleware.md"
-fixture = "tests/validation/336_api_compression.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_logging"
@@ -7960,7 +8169,7 @@ binding = "spectra.api.middleware.register_logging"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/331_api_structured_logging.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_rate_limit"
@@ -7979,7 +8188,7 @@ binding = "spectra.api.middleware.register_rate_limit"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/332_api_rate_limiting.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_security_headers"
@@ -7998,7 +8207,7 @@ binding = "spectra.api.middleware.register_security_headers"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/334_api_security_headers.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.register_sync"
@@ -8055,7 +8264,7 @@ binding = "spectra.api.middleware.security_headers_configure"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/334_api_security_headers.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.security_headers_route"
@@ -8074,7 +8283,7 @@ binding = "spectra.api.middleware.security_headers_route"
 maturity = "stable"
 owner = "web"
 docs = "docs/api/README.md"
-fixture = "tests/validation/334_api_security_headers.spectra"
+fixture = "tests/validation/148_api_middleware_chain.spectra"
 
 [[entry]]
 path = "std.api.middleware.trace_event"
@@ -12213,6 +12422,210 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/343_api_websocket.spectra"
 
 [[entry]]
+path = "std.calendar"
+kind = "module"
+namespace = "std"
+signature = "module std.calendar"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.calendar"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.calendar.add_days"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int, int) -> int"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.add_days"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.day_of_week"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.day_of_week"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.days_in_month"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.days_in_month"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.diff_days"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int, int) -> int"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.diff_days"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.format_iso_date"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> string"
+params = [{ name = "arg0", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.format_iso_date"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.format_iso_timestamp"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> string"
+params = [{ name = "arg0", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.format_iso_timestamp"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.is_leap_year"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> bool"
+params = [{ name = "arg0", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.is_leap_year"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.iso_week"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.iso_week"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.iso_year"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.iso_year"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.parse_iso_date"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.parse_iso_date"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
 path = "std.char"
 kind = "module"
 namespace = "std"
@@ -12396,7 +12809,7 @@ binding = "spectra.type.std.collections.BitSet"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.DisjointSet"
@@ -12410,7 +12823,7 @@ binding = "spectra.type.std.collections.DisjointSet"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.HashSet"
@@ -12424,7 +12837,7 @@ binding = "spectra.type.std.collections.HashSet"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.Iterator"
@@ -12466,7 +12879,7 @@ binding = "spectra.type.std.collections.Map"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/629_stdlib_collections_graph_search.spectra"
 
 [[entry]]
 path = "std.collections.OrderedMap"
@@ -12480,7 +12893,7 @@ binding = "spectra.type.std.collections.OrderedMap"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.PriorityQueue"
@@ -12494,7 +12907,7 @@ binding = "spectra.type.std.collections.PriorityQueue"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/620_stdlib_advanced_collections.spectra"
 
 [[entry]]
 path = "std.collections.Queue"
@@ -12508,7 +12921,7 @@ binding = "spectra.type.std.collections.Queue"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/629_stdlib_collections_graph_search.spectra"
 
 [[entry]]
 path = "std.collections.Set"
@@ -12550,7 +12963,7 @@ binding = "spectra.type.std.collections.Vector"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/621_stdlib_vector.spectra"
 
 [[entry]]
 path = "std.collections.bitset_capacity"
@@ -13162,7 +13575,7 @@ binding = "spectra.std.collections.list_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.list_clear"
@@ -13558,7 +13971,7 @@ binding = "spectra.std.collections.list_reserve"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.list_set"
@@ -13630,7 +14043,7 @@ binding = "spectra.std.collections.list_with_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.map_capacity"
@@ -13648,7 +14061,7 @@ binding = "spectra.std.collections.map_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.map_clear"
@@ -13882,7 +14295,7 @@ binding = "spectra.std.collections.map_reserve"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.map_set"
@@ -13936,7 +14349,7 @@ binding = "spectra.std.collections.map_with_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.ordered_map_contains"
@@ -14296,7 +14709,7 @@ binding = "spectra.std.collections.queue_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.queue_clear"
@@ -14494,7 +14907,7 @@ binding = "spectra.std.collections.queue_reserve"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.queue_with_capacity"
@@ -14512,7 +14925,7 @@ binding = "spectra.std.collections.queue_with_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.set_capacity"
@@ -14530,7 +14943,7 @@ binding = "spectra.std.collections.set_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.set_clear"
@@ -14710,7 +15123,7 @@ binding = "spectra.std.collections.set_reserve"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.set_with_capacity"
@@ -14728,7 +15141,7 @@ binding = "spectra.std.collections.set_with_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.stack_capacity"
@@ -14746,7 +15159,7 @@ binding = "spectra.std.collections.stack_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.stack_clear"
@@ -14944,7 +15357,7 @@ binding = "spectra.std.collections.stack_reserve"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.stack_with_capacity"
@@ -14962,7 +15375,7 @@ binding = "spectra.std.collections.stack_with_capacity"
 maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+fixture = "tests/validation/619_stdlib_collection_capacity.spectra"
 
 [[entry]]
 path = "std.collections.vector_capacity"
@@ -15588,7 +16001,7 @@ binding = "spectra.std.concurrent.task_spawn_fn"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/AI-AGENT-REFERENCE.md"
-fixture = "tests/validation/350_spawn_fn_concurrent.spectra"
+fixture = "tests/validation/77_concurrency_pipeline.spectra"
 
 [[entry]]
 path = "std.convert"
@@ -15801,6 +16214,153 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.encoding"
+kind = "module"
+namespace = "std"
+signature = "module std.encoding"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.encoding"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.encoding.base64_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base64_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.base64_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base64_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.hex_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.hex_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.hex_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.hex_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.percent_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.percent_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.percent_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.percent_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.rot13"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.rot13"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/798_std_source_encoding.spectra"
 
 [[entry]]
 path = "std.env"
@@ -16091,6 +16651,96 @@ maturity = "beta"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/stability_structured_errors.spectra"
+
+[[entry]]
+path = "std.fmt"
+kind = "module"
+namespace = "std"
+signature = "module std.fmt"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.fmt"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.fmt.bytes_si"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(int) -> string"
+params = [{ name = "arg0", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.bytes_si"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.float_fixed"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(float, int) -> Option<string>"
+params = [{ name = "arg0", ty = "float" }, { name = "arg1", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.float_fixed"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.int_padded"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(int, int, char) -> Option<string>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "char" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.int_padded"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.thousands"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(int, string) -> string"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.thousands"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
 
 [[entry]]
 path = "std.fs"
@@ -16425,6 +17075,172 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.iter"
+kind = "module"
+namespace = "std"
+signature = "module std.iter"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.iter"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.iter.chunk_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, int) -> List<List<int>>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "int" }]
+returns = "List<List<int>>"
+ir_return = "List<List<int>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.chunk_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.count_if_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, fn(int) -> bool) -> int"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "fn(int) -> bool" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.count_if_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.position_if_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, fn(int) -> bool) -> Option<int>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "fn(int) -> bool" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.position_if_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.reverse"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<T>) -> List<T>"
+params = [{ name = "arg0", ty = "List<T>" }]
+returns = "List<T>"
+ir_return = "List<T>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.reverse"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.skip"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<T>, int) -> List<T>"
+params = [{ name = "arg0", ty = "List<T>" }, { name = "arg1", ty = "int" }]
+returns = "List<T>"
+ir_return = "List<T>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.skip"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.sum_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>) -> int"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.sum_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.take"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<T>, int) -> List<T>"
+params = [{ name = "arg0", ty = "List<T>" }, { name = "arg1", ty = "int" }]
+returns = "List<T>"
+ir_return = "List<T>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.take"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.window_sum_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, int) -> List<int>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "int" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.window_sum_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
 
 [[entry]]
 path = "std.math"
@@ -17600,7 +18416,7 @@ binding = "spectra.std.ml.distributed_train_dataset_multithread"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/360_distributed_dataset_trains.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.distributed_train_dataset_tcp"
@@ -17618,7 +18434,7 @@ binding = "spectra.std.ml.distributed_train_dataset_tcp"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/360_distributed_dataset_trains.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.distributed_train_multithread"
@@ -17636,7 +18452,7 @@ binding = "spectra.std.ml.distributed_train_multithread"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/94_ml_phase17_distributed_training.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.distributed_train_tcp"
@@ -17654,7 +18470,7 @@ binding = "spectra.std.ml.distributed_train_tcp"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/356_distributed_train_tcp.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.distributed_worker_step"
@@ -17726,7 +18542,7 @@ binding = "spectra.std.ml.embedding_load"
 maturity = "stable"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/187_ml_tokenization_embedding_artifacts.spectra"
 
 [[entry]]
 path = "std.ml.embedding_lookup"
@@ -17744,7 +18560,7 @@ binding = "spectra.std.ml.embedding_lookup"
 maturity = "stable"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/187_ml_tokenization_embedding_artifacts.spectra"
 
 [[entry]]
 path = "std.ml.evaluation_report"
@@ -17996,7 +18812,7 @@ binding = "spectra.std.ml.generate"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/97_ml_phase18_rag_toolkit.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.generate_ex"
@@ -18014,7 +18830,7 @@ binding = "spectra.std.ml.generate_ex"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/97_ml_phase18_rag_toolkit.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.kv_cache_append"
@@ -18140,7 +18956,7 @@ binding = "spectra.std.ml.linear"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/192_compiler_native_autodiff.spectra"
 
 [[entry]]
 path = "std.ml.logits_sample"
@@ -18176,7 +18992,7 @@ binding = "spectra.std.ml.logits_sample_seeded"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/96_ml_phase18_transformer_primitives.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.max_pool2d"
@@ -18392,7 +19208,7 @@ binding = "spectra.std.ml.mse_loss"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/192_compiler_native_autodiff.spectra"
 
 [[entry]]
 path = "std.ml.nll_loss"
@@ -18428,7 +19244,7 @@ binding = "spectra.std.ml.onnx_export_weights"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/353_onnx_export_weights.spectra"
+fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
 
 [[entry]]
 path = "std.ml.onnx_import_summary"
@@ -18752,7 +19568,7 @@ binding = "spectra.std.ml.tokenizer_decode"
 maturity = "stable"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/187_ml_tokenization_embedding_artifacts.spectra"
 
 [[entry]]
 path = "std.ml.tokenizer_encode"
@@ -18770,7 +19586,7 @@ binding = "spectra.std.ml.tokenizer_encode"
 maturity = "stable"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/187_ml_tokenization_embedding_artifacts.spectra"
 
 [[entry]]
 path = "std.ml.tokenizer_load"
@@ -18788,7 +19604,7 @@ binding = "spectra.std.ml.tokenizer_load"
 maturity = "stable"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/187_ml_tokenization_embedding_artifacts.spectra"
 
 [[entry]]
 path = "std.ml.tokenizer_vocab"
@@ -18896,7 +19712,7 @@ binding = "spectra.std.ml.vector_index_insert"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_load"
@@ -18914,7 +19730,7 @@ binding = "spectra.std.ml.vector_index_load"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_metrics"
@@ -18932,7 +19748,7 @@ binding = "spectra.std.ml.vector_index_metrics"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_new"
@@ -18950,7 +19766,7 @@ binding = "spectra.std.ml.vector_index_new"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_persist"
@@ -18968,7 +19784,7 @@ binding = "spectra.std.ml.vector_index_persist"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_query"
@@ -18986,7 +19802,7 @@ binding = "spectra.std.ml.vector_index_query"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.ml.vector_index_set_metadata"
@@ -19004,7 +19820,7 @@ binding = "spectra.std.ml.vector_index_set_metadata"
 maturity = "beta"
 owner = "ml"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/72_ml_phase6_mlp_training.spectra"
+fixture = "tests/validation/188_ml_vector_index_production.spectra"
 
 [[entry]]
 path = "std.numeric"
@@ -20367,6 +21183,153 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.path"
+kind = "module"
+namespace = "std"
+signature = "module std.path"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.path"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.path.extension"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.extension"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.file_name"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.file_name"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.is_absolute"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.is_absolute"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.join"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string, string) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.join"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.normalize"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.normalize"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.parent"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.parent"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.stem"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.stem"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
 path = "std.random"
 kind = "module"
 namespace = "std"
@@ -20765,6 +21728,134 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.semver"
+kind = "module"
+namespace = "std"
+signature = "module std.semver"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.semver"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.semver.compare"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string, string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.compare"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.is_valid"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.is_valid"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.major"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.major"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.minor"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.minor"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.patch"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.patch"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.prerelease"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.prerelease"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
 path = "std.serve"
 kind = "module"
 namespace = "std"
@@ -20830,7 +21921,7 @@ binding = "spectra.std.serve.http_start"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/355_serving_http_inference.spectra"
+fixture = "tests/validation/78_serving_foundations.spectra"
 
 [[entry]]
 path = "std.serve.http_stop"
@@ -20848,7 +21939,7 @@ binding = "spectra.std.serve.http_stop"
 maturity = "experimental"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/355_serving_http_inference.spectra"
+fixture = "tests/validation/78_serving_foundations.spectra"
 
 [[entry]]
 path = "std.serve.reset"
@@ -21337,6 +22428,210 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/78_serving_foundations.spectra"
 
 [[entry]]
+path = "std.stats"
+kind = "module"
+namespace = "std"
+signature = "module std.stats"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.stats"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.stats.correlation_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.correlation_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.covariance_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.covariance_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.mean_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.mean_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.median_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.median_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.percentile_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, float) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "float" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.percentile_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.stddev_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.stddev_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.stddev_sample_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.stddev_sample_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.sum_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> float"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "float"
+ir_return = "float"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.sum_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.variance_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.variance_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.variance_sample_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.variance_sample_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
 path = "std.string"
 kind = "module"
 namespace = "std"
@@ -21547,6 +22842,24 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.string.from_scalar"
+kind = "function"
+namespace = "std.string"
+signature = "fn(int) -> Option_string"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Option_string"
+ir_return = "Option<string>"
+returns_value = true
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.string.from_scalar"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/796_string_from_scalar.spectra"
 
 [[entry]]
 path = "std.string.index_of"
@@ -21934,7 +23247,7 @@ binding = "spectra.std.tensor.backward"
 maturity = "stable"
 owner = "numerics"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/68_tensor_phase4_kernels.spectra"
+fixture = "tests/validation/192_compiler_native_autodiff.spectra"
 
 [[entry]]
 path = "std.tensor.bernoulli"
@@ -22114,7 +23427,7 @@ binding = "spectra.std.tensor.diff"
 maturity = "stable"
 owner = "numerics"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/68_tensor_phase4_kernels.spectra"
+fixture = "tests/validation/192_compiler_native_autodiff.spectra"
 
 [[entry]]
 path = "std.tensor.dim"
@@ -22420,7 +23733,7 @@ binding = "spectra.std.tensor.grad"
 maturity = "stable"
 owner = "numerics"
 docs = "docs/reference/05-stdlib.md"
-fixture = "tests/validation/68_tensor_phase4_kernels.spectra"
+fixture = "tests/validation/192_compiler_native_autodiff.spectra"
 
 [[entry]]
 path = "std.tensor.grad_enabled"
@@ -23935,6 +25248,172 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/68_tensor_phase4_kernels.spectra"
 
 [[entry]]
+path = "std.text"
+kind = "module"
+namespace = "std"
+signature = "module std.text"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.text"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.text.escape_json"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.escape_json"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.normalize_whitespace"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.normalize_whitespace"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.similarity_ratio"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, string) -> float"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "float"
+ir_return = "float"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.similarity_ratio"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.slugify"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.slugify"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.truncate"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, int) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.truncate"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.unescape_json"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.unescape_json"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.word_count"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> int"
+params = [{ name = "arg0", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.word_count"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.wrap"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, int) -> List<string>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "List<string>"
+ir_return = "List<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.wrap"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
 path = "std.time"
 kind = "module"
 namespace = "std"
@@ -24403,3 +25882,169 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.validate"
+kind = "module"
+namespace = "std"
+signature = "module std.validate"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.validate"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.validate.cnpj_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.cnpj_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.cpf_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.cpf_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.email_is_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.email_is_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.iban_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.iban_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.isbn10_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.isbn10_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.isbn13_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.isbn13_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.luhn_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.luhn_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.url_is_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.url_is_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"

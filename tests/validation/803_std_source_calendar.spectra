@@ -1,0 +1,162 @@
+// Consumer for `std.calendar`: Gregorian rules, ISO weeks, formatting and
+// parsing against explicit Unix timestamps (UTC).
+module std_source_calendar
+
+import std.calendar as calendar
+import std.option as option
+
+func stamp(iso: string) returns int {
+    return option.option_unwrap_or(calendar.parse_iso_date(iso), -1)
+}
+
+public func main() returns int {
+    // ── leap years and month lengths ─────────────────────────────────────
+    if not calendar.is_leap_year(2000) or calendar.is_leap_year(1900) {
+        return 1
+    }
+    if not calendar.is_leap_year(2024) or calendar.is_leap_year(2023) {
+        return 2
+    }
+    if option.option_unwrap_or(calendar.days_in_month(2024, 2), -1) != 29 {
+        return 3
+    }
+    if option.option_unwrap_or(calendar.days_in_month(1900, 2), -1) != 28 {
+        return 4
+    }
+    if option.option_unwrap_or(calendar.days_in_month(2024, 4), -1) != 30 {
+        return 5
+    }
+    if option.option_unwrap_or(calendar.days_in_month(2024, 1), -1) != 31 {
+        return 6
+    }
+    if option.is_some(calendar.days_in_month(2024, 0)) or option.is_some(calendar.days_in_month(2024, 13)) {
+        return 7
+    }
+
+    // ── day of week ──────────────────────────────────────────────────────
+    // 1970-01-01 was a Thursday.
+    if calendar.day_of_week(0) != 4 {
+        return 8
+    }
+    if calendar.day_of_week(86400 * 3) != 0 {
+        return 9
+    }
+    if calendar.day_of_week(86400 * 4) != 1 {
+        return 10
+    }
+    // 1969-12-31 was a Wednesday.
+    if calendar.day_of_week(-86400) != 3 {
+        return 11
+    }
+
+    // ── day arithmetic ───────────────────────────────────────────────────
+    if calendar.add_days(0, 1) != 86400 {
+        return 12
+    }
+    if calendar.add_days(86400, -2) != -86400 {
+        return 13
+    }
+    if calendar.diff_days(86400 * 5, 86400 * 2) != 3 {
+        return 14
+    }
+    if calendar.diff_days(0, 86400) != -1 {
+        return 15
+    }
+    if calendar.diff_days(86399, 0) != 0 {
+        return 16
+    }
+
+    // ── ISO year and week ────────────────────────────────────────────────
+    let new_year_2021 = stamp("2021-01-01")
+    if new_year_2021 < 0 {
+        return 17
+    }
+    if calendar.iso_year(new_year_2021) != 2020 {
+        return 18
+    }
+    if calendar.iso_week(new_year_2021) != 53 {
+        return 19
+    }
+
+    let last_day_2020 = stamp("2020-12-31")
+    if calendar.iso_year(last_day_2020) != 2020 or calendar.iso_week(last_day_2020) != 53 {
+        return 20
+    }
+
+    let first_monday_2021 = stamp("2021-01-04")
+    if calendar.iso_year(first_monday_2021) != 2021 or calendar.iso_week(first_monday_2021) != 1 {
+        return 21
+    }
+
+    let epoch = stamp("1970-01-01")
+    if calendar.iso_year(epoch) != 1970 or calendar.iso_week(epoch) != 1 {
+        return 22
+    }
+
+    // 2019-12-30 belongs to ISO week 1 of 2020.
+    let early_2020_week = stamp("2019-12-30")
+    if calendar.iso_year(early_2020_week) != 2020 or calendar.iso_week(early_2020_week) != 1 {
+        return 23
+    }
+
+    // ── formatting ───────────────────────────────────────────────────────
+    if calendar.format_iso_date(0) != "1970-01-01" {
+        return 24
+    }
+    if calendar.format_iso_timestamp(0) != "1970-01-01T00:00:00Z" {
+        return 25
+    }
+    if calendar.format_iso_date(951782400) != "2000-02-29" {
+        return 26
+    }
+    if calendar.format_iso_timestamp(86399) != "1970-01-01T23:59:59Z" {
+        return 27
+    }
+    if calendar.format_iso_timestamp(-1) != "1969-12-31T23:59:59Z" {
+        return 28
+    }
+
+    // ── parsing ──────────────────────────────────────────────────────────
+    if stamp("1970-01-02") != 86400 {
+        return 29
+    }
+    if stamp("2024-02-29") != 1709164800 {
+        return 30
+    }
+    if option.is_some(calendar.parse_iso_date("2023-02-29")) {
+        return 31
+    }
+    if option.is_some(calendar.parse_iso_date("2024-13-01")) {
+        return 32
+    }
+    if option.is_some(calendar.parse_iso_date("2024-00-10")) {
+        return 33
+    }
+    if option.is_some(calendar.parse_iso_date("2024-04-31")) {
+        return 34
+    }
+    if option.is_some(calendar.parse_iso_date("2024-1-1")) {
+        return 35
+    }
+    if option.is_some(calendar.parse_iso_date("2024/01/01")) {
+        return 36
+    }
+    if option.is_some(calendar.parse_iso_date("not-a-date")) {
+        return 37
+    }
+    if option.is_some(calendar.parse_iso_date("")) {
+        return 38
+    }
+    // Parse/format round trip.
+    if calendar.format_iso_date(stamp("1999-12-31")) != "1999-12-31" {
+        return 39
+    }
+
+    
+    // Negative years keep the sign outside the four-digit year field.
+    if calendar.format_iso_date(-62167305600) != "-0001-12-31" {
+        return 40
+    }
+
+    return 0
+}

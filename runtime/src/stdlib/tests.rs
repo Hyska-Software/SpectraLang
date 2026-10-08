@@ -6946,6 +6946,29 @@ fn char_at_returns_bytes_and_rejects_invalid_indexes() {
 }
 
 #[test]
+fn from_scalar_materializes_valid_scalars_and_reports_none() {
+    let _lock = test_guard();
+    clear_host_functions();
+    register();
+
+    // ASCII, two-byte, three-byte and four-byte scalars allocate a payload.
+    let none = none_option_handle();
+    for code in [0_i64, 65, 0xE9, 0x20AC, 0x1F600, 0x10FFFF] {
+        let (status, handle) = call_host(STR_FROM_SCALAR, &[code]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "code {code}");
+        assert_ne!(handle, 0, "code {code}");
+        assert_ne!(handle, none, "code {code} must be Some");
+    }
+
+    // Invalid codes: negative, surrogate halves and beyond the maximum.
+    for code in [-1_i64, 0xD800, 0xDFFF, 0x110000] {
+        let (status, handle) = call_host(STR_FROM_SCALAR, &[code]);
+        assert_eq!(status, HOST_STATUS_SUCCESS, "code {code}");
+        assert_eq!(handle, none, "code {code} must be None");
+    }
+}
+
+#[test]
 fn alloc_read_roundtrip_preserves_packed_multibyte_utf8() {
     let _lock = test_guard();
     crate::ffi::spectra_rt_manual_clear();

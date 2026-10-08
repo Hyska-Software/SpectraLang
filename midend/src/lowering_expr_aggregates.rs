@@ -124,7 +124,14 @@ impl ASTLowering {
 
                 if merge_has_predecessor {
                     self.builder.set_current_block(merge_bb);
-                    if phi_inputs.len() >= 2 {
+                    // A phi must list one incoming value per predecessor.
+                    // An `else if` chain without a final `else` reaches the
+                    // merge straight from the last condition with no value, so
+                    // the value-carrying inputs cannot cover every predecessor;
+                    // fall back to the neutral constant instead of emitting an
+                    // ill-formed phi (verifier: "phi without an incoming entry
+                    // for predecessor block N").
+                    if phi_inputs.len() >= 2 && phi_inputs.len() == merge_predecessor_count {
                         self.builder.build_phi(ir_func, phi_inputs)
                     } else if phi_inputs.len() == 1 && merge_predecessor_count == 1 {
                         phi_inputs[0].0

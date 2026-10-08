@@ -50,34 +50,55 @@ compiler/runtime implementation until that module is migrated explicitly.
 
 | Module | Current form | Public functions | Migrated in Phase 34 | Remaining functions / dependency reason |
 |---|---|---:|---:|---|
-| `std.algorithms` | Source | 2 | 2 | 0; pure integer algorithms |
+| `std.algorithms` | Source | 13 | 13 | 0; search, radix, number theory, Roman numerals and edit distance over the native string/collection primitives |
+| `std.calendar` | Source | 10 | 10 | 0; Gregorian rules, ISO weeks, UTC formatting and ISO date parsing |
 | `std.char` | Native | 8 | 0 | 8; Unicode scalar/runtime helpers |
 | `std.collections` | Hybrid | 150 | 0 | 150; runtime-managed handles plus compiler lowering |
 | `std.concurrent` | Native | 17 | 0 | 17; task, thread, and reactor services |
 | `std.convert` | Native | 11 | 0 | 11; conversion and formatting runtime surface |
+| `std.encoding` | Source | 7 | 7 | 0; hex, base64, percent encoding and ROT13 over UTF-8 text (uses the native string primitives) |
 | `std.env` | Native | 6 | 0 | 6; process environment and arguments |
 | `std.error` | Hybrid | 7 | 0 | 7; typed error surface plus runtime status/handles |
 | `std.fs` | Native | 10 | 0 | 10; operating-system filesystem access |
+| `std.fmt` | Source | 4 | 4 | 0; padding, separators, fixed-point floats and SI byte sizes |
 | `std.io` | Native | 7 | 0 | 7; process input/output streams |
+| `std.iter` | Source | 8 | 8 | 0; List<T> adaptors and integer predicate queries |
 | `std.math` | Native | 24 | 0 | 24; existing runtime math implementation |
 | `std.ml` | Hybrid | 112 | 0 | 112; tensors, model/runtime state, and compiler-native paths |
 | `std.numeric` | Hybrid | 65 | 0 | 65; exact-width compiler semantics and runtime adapters |
 | `std.option` | Hybrid | 5 | 0 | 5; language type semantics plus tagged runtime values |
+| `std.path` | Source | 7 | 7 | 0; join/normalize/component helpers over `/` and `\` inputs |
 | `std.random` | Native | 4 | 0 | 4; runtime random-number state |
 | `std.range` | Hybrid | 8 | 0 | 8; language range lowering and iterator adapters |
 | `std.result` | Hybrid | 7 | 0 | 7; language result semantics plus runtime error propagation |
+| `std.semver` | Source | 6 | 6 | 0; SemVer 2.0.0 validation, components and precedence |
 | `std.serve` | Native | 31 | 0 | 31; local serving and request state |
-| `std.string` | Native | 27 | 0 | 27; string allocation and text runtime helpers |
+| `std.stats` | Source | 10 | 10 | 0; aggregates, spread, percentiles and correlation over float lists |
+| `std.string` | Native | 28 | 0 | 28; string allocation, text runtime helpers and the `from_scalar` materialization primitive |
 | `std.tensor` | Hybrid | 111 | 0 | 111; storage, CPU/GPU kernels, autodiff, and compiler lowering |
+| `std.text` | Source | 8 | 8 | 0; slug/whitespace/truncate/wrap/word-count/JSON escapes/similarity |
 | `std.time` | Native | 23 | 0 | 23; clocks and platform time services |
+| `std.validate` | Source | 8 | 8 | 0; checksum/document/IBAN checks plus documented e-mail and URL heuristics |
 
-`std.algorithms` is the first source module. It has no imports or native
-dependencies and adds no parallel Rust implementation:
+`std.algorithms` is the first source module. Its public logic is pure Spectra
+over the native `std.string`, `std.collections` and `std.option` primitives and
+adds no parallel Rust implementation:
 
 | Public API | Contract |
 |---|---|
 | `gcd_nonnegative(a: int, b: int) -> int` | Both inputs are nonnegative; `(0, 0)` returns `0`. |
 | `is_prime(value: int) -> bool` | Values below `2` return `false`. |
+| `binary_search_int(sorted: List<int>, target: int) -> int` | Index in a non-decreasing list, or `-1`. |
+| `to_base(value: int, radix: int) -> Option<string>` | Lowercase digits `0-9a-z`; `None` for negatives and radices outside `2..=36`. |
+| `from_base(text: string, radix: int) -> Option<int>` | Case-insensitive digits; `None` for invalid input and i64 overflow. |
+| `mod_inverse(value: int, modulus: int) -> Option<int>` | `None` when `value < 0`, `modulus <= 1`, or the inverse does not exist. |
+| `factorial(value: int) -> Option<int>` | `None` for negatives and i64 overflow (`21!`). |
+| `binomial(n: int, k: int) -> Option<int>` | `None` outside `0 <= k <= n` and on overflow. |
+| `collatz_steps(value: int) -> Option<int>` | `None` below `1` and when `3n + 1` would overflow. |
+| `digit_sum(value: int) -> int` | Decimal digit sum of `abs(value)`; `i64::MIN` supported. |
+| `roman_encode(value: int) -> Option<string>` | Canonical numeral for `1..=3999`. |
+| `roman_decode(text: string) -> Option<int>` | Subtractive rule; `None` for empty/unknown symbols. |
+| `levenshtein(left: string, right: string) -> int` | Unicode scalar edit distance (range arithmetic, no byte splitting). |
 
 ## Incremental Contribution and Migration Gate
 

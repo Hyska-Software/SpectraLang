@@ -149,6 +149,36 @@ pub(crate) extern "C" fn std_string_pad_right(ctx: *mut SpectraHostCallContext) 
     HOST_STATUS_SUCCESS
 }
 
+/// Materializes a Unicode scalar value as its UTF-8 text.
+///
+/// Valid scalars are `0..=0x10FFFF` excluding the surrogate range
+/// (`0xD800..=0xDFFF`); any other code returns `None` through the option
+/// result channel. This is the primitive that lets source-authored std
+/// modules build text from byte/code values.
+pub(crate) extern "C" fn std_string_from_scalar(ctx: *mut SpectraHostCallContext) -> i32 {
+    if ctx.is_null() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+    unsafe {
+        let ctx_ref = &mut *ctx;
+        if ctx_ref.arg_len < 1 || ctx_ref.args.is_null() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
+        let value = u32::try_from(args[0])
+            .ok()
+            .and_then(char::from_u32)
+            .map(|character| {
+                let mut buffer = [0u8; 4];
+                alloc_spectra_string(character.encode_utf8(&mut buffer))
+            });
+        if value == Some(0) {
+            return HOST_STATUS_INTERNAL_ERROR;
+        }
+        write_option_result(ctx_ref, value)
+    }
+}
+
 /// Returns a new string with the characters of `s` in reverse order.
 pub(crate) extern "C" fn std_string_reverse(ctx: *mut SpectraHostCallContext) -> i32 {
     if ctx.is_null() {

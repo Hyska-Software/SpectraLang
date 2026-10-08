@@ -148,29 +148,37 @@ impl SemanticAnalyzer {
                     | BinaryOperator::Greater
                     | BinaryOperator::LessEqual
                     | BinaryOperator::GreaterEqual => {
-                        // Comparison requires numeric types
-                        if !Self::is_numeric_type(&left_type) && !matches!(left_type, Type::Unknown)
-                        {
-                            self.error_coded(
-                                "E039",
-                                format!(
-                                    "Left operand of comparison must be numeric, found {}",
-                                    type_name(&left_type)
-                                ),
-                                left.span,
-                            );
-                        }
-                        if !Self::is_numeric_type(&right_type)
-                            && !matches!(right_type, Type::Unknown)
-                        {
-                            self.error_coded(
-                                "E039",
-                                format!(
-                                    "Right operand of comparison must be numeric, found {}",
-                                    type_name(&right_type)
-                                ),
-                                right.span,
-                            );
+                        // Comparison requires numeric types. Two `char`
+                        // operands order by Unicode scalar value; `char` mixed
+                        // with a numeric type stays rejected so callers cast
+                        // explicitly.
+                        let char_ordering =
+                            matches!(left_type, Type::Char) && matches!(right_type, Type::Char);
+                        if !char_ordering {
+                            if !Self::is_numeric_type(&left_type)
+                                && !matches!(left_type, Type::Unknown)
+                            {
+                                self.error_coded(
+                                    "E039",
+                                    format!(
+                                        "Left operand of comparison must be numeric, found {}",
+                                        type_name(&left_type)
+                                    ),
+                                    left.span,
+                                );
+                            }
+                            if !Self::is_numeric_type(&right_type)
+                                && !matches!(right_type, Type::Unknown)
+                            {
+                                self.error_coded(
+                                    "E039",
+                                    format!(
+                                        "Right operand of comparison must be numeric, found {}",
+                                        type_name(&right_type)
+                                    ),
+                                    right.span,
+                                );
+                            }
                         }
                     }
                     BinaryOperator::And | BinaryOperator::Or => {

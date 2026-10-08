@@ -1,0 +1,185 @@
+module std.stats
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+
+// ── Aggregates ───────────────────────────────────────────────────────────
+
+// Sum of `values`; an empty list sums to 0.0.
+public func sum_f(values: List<float>) returns float {
+    let count = collections.list_len(values)
+    let total = 0.0
+    let index = 0
+
+    while index < count {
+        total = total + option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        index = index + 1
+    }
+
+    return total
+}
+
+// Arithmetic mean, or None for an empty list.
+public func mean_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return Option::None
+    }
+    return Option::Some(sum_f(values) / (count as float))
+}
+
+// Median of a sorted copy; the input order is preserved. None when empty.
+public func median_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return Option::None
+    }
+
+    let sorted = sorted_copy(values)
+    let middle = count / 2
+    if count % 2 == 1 {
+        return Option::Some(option.option_unwrap_or(collections.list_get(sorted, middle), 0.0))
+    }
+
+    let lower = option.option_unwrap_or(collections.list_get(sorted, middle - 1), 0.0)
+    let upper = option.option_unwrap_or(collections.list_get(sorted, middle), 0.0)
+    return Option::Some((lower + upper) / 2.0)
+}
+
+// Population variance (divides by n); None when empty.
+public func variance_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return Option::None
+    }
+
+    let mean = option.option_unwrap_or(mean_f(values), 0.0)
+    let total = 0.0
+    let index = 0
+    while index < count {
+        let deviation = option.option_unwrap_or(collections.list_get(values, index), 0.0) - mean
+        total = total + deviation * deviation
+        index = index + 1
+    }
+
+    return Option::Some(total / (count as float))
+}
+
+// Sample variance (divides by n - 1); None for fewer than two values.
+public func variance_sample_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count < 2 {
+        return Option::None
+    }
+
+    let mean = option.option_unwrap_or(mean_f(values), 0.0)
+    let total = 0.0
+    let index = 0
+    while index < count {
+        let deviation = option.option_unwrap_or(collections.list_get(values, index), 0.0) - mean
+        total = total + deviation * deviation
+        index = index + 1
+    }
+
+    return Option::Some(total / ((count - 1) as float))
+}
+
+// Population standard deviation.
+public func stddev_f(values: List<float>) returns Option<float> {
+    let variance = variance_f(values)
+    if not option.is_some(variance) {
+        return Option::None
+    }
+    return Option::Some(math.sqrt_f(option.option_unwrap_or(variance, 0.0)))
+}
+
+// Sample standard deviation.
+public func stddev_sample_f(values: List<float>) returns Option<float> {
+    let variance = variance_sample_f(values)
+    if not option.is_some(variance) {
+        return Option::None
+    }
+    return Option::Some(math.sqrt_f(option.option_unwrap_or(variance, 0.0)))
+}
+
+// Linear-interpolated percentile (`percent` in 0..=100) over a sorted copy.
+// The input order is preserved; empty input and out-of-range percent return
+// None.
+public func percentile_f(values: List<float>, percent: float) returns Option<float> {
+    let count = collections.list_len(values)
+    // NaN compares false against every bound, so it needs its own check.
+    if count == 0 or math.is_nan_f(percent) or percent < 0.0 or percent > 100.0 {
+        return Option::None
+    }
+    if count == 1 {
+        return Option::Some(option.option_unwrap_or(collections.list_get(values, 0), 0.0))
+    }
+
+    let sorted = sorted_copy(values)
+    let rank = percent / 100.0 * ((count - 1) as float)
+    let lower = rank as int
+    let fraction = rank - (lower as float)
+
+    let lower_value = option.option_unwrap_or(collections.list_get(sorted, lower), 0.0)
+    if fraction == 0.0 or lower + 1 >= count {
+        return Option::Some(lower_value)
+    }
+    let upper_value = option.option_unwrap_or(collections.list_get(sorted, lower + 1), 0.0)
+    return Option::Some(lower_value + (upper_value - lower_value) * fraction)
+}
+
+// Population covariance of two equal-length series.
+public func covariance_f(left: List<float>, right: List<float>) returns Option<float> {
+    let count = collections.list_len(left)
+    if count == 0 or count != collections.list_len(right) {
+        return Option::None
+    }
+
+    let left_mean = option.option_unwrap_or(mean_f(left), 0.0)
+    let right_mean = option.option_unwrap_or(mean_f(right), 0.0)
+    let total = 0.0
+    let index = 0
+    while index < count {
+        let left_deviation = option.option_unwrap_or(collections.list_get(left, index), 0.0) - left_mean
+        let right_deviation = option.option_unwrap_or(collections.list_get(right, index), 0.0) - right_mean
+        total = total + left_deviation * right_deviation
+        index = index + 1
+    }
+
+    return Option::Some(total / (count as float))
+}
+
+// Pearson correlation coefficient. None for mismatched lengths, empty input or
+// a constant series (zero variance).
+public func correlation_f(left: List<float>, right: List<float>) returns Option<float> {
+    let covariance = covariance_f(left, right)
+    let left_deviation = stddev_f(left)
+    let right_deviation = stddev_f(right)
+    if not option.is_some(covariance) or not option.is_some(left_deviation) or not option.is_some(right_deviation) {
+        return Option::None
+    }
+
+    let left_spread = option.option_unwrap_or(left_deviation, 0.0)
+    let right_spread = option.option_unwrap_or(right_deviation, 0.0)
+    if left_spread == 0.0 or right_spread == 0.0 {
+        return Option::None
+    }
+
+    return Option::Some(option.option_unwrap_or(covariance, 0.0) / (left_spread * right_spread))
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Fresh list with the same values in ascending order.
+func sorted_copy(values: List<float>) returns List<float> {
+    let copy: List<float> = collections.list_new()
+    let count = collections.list_len(values)
+    let index = 0
+    while index < count {
+        collections.list_push(copy, option.option_unwrap_or(collections.list_get(values, index), 0.0))
+        index = index + 1
+    }
+    collections.list_sort(copy)
+    return copy
+}

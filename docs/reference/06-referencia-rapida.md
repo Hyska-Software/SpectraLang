@@ -392,7 +392,7 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | Módulo | Funções Principais / Key Functions |
 |--------|-----------------------------------|
 | `std.io` | `print`, `println`, `eprint`, `eprintln`, `read_line`, `input`, `flush` |
-| `std.string` | `len`, `contains`, `to_upper`, `to_lower`, `trim`, `substring`, `replace`, `split_first`, `split_last`, `index_of`, `concat`, `is_empty`, `reverse_str`, `pad_left`, `pad_right` |
+| `std.string` | `len`, `contains`, `to_upper`, `to_lower`, `trim`, `substring`, `replace`, `split_first`, `split_last`, `index_of`, `concat`, `is_empty`, `reverse_str`, `pad_left`, `pad_right`, `from_scalar` (`Option<string>`) |
 | `std.math` | `abs`, `min`, `max`, `clamp`, `sign`, `gcd`, `lcm`, `sqrt_f`, `pow_f`, `floor_f`, `ceil_f`, `round_f`, `sin_f`, `cos_f`, `tan_f`, `log_f`, `pi`, `e_const` |
 | `std.convert` | `int_to_string`, `float_to_string`, `bool_to_string`, `string_to_int`, `string_to_float`, `int_to_float`, `float_to_int`, `string_to_int_or`, `bool_to_int` |
 | `std.collections` | `List<T>`, `Map<K,V>`, `Set<T>`, `Stack<T>`, `Queue<T>`, `Iterator<T>`; `map_get`/`map_remove`, `stack_pop`/`stack_peek`, `queue_dequeue`/`queue_peek` retornam `Option<T>` |
@@ -408,6 +408,16 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | `std.char` | `is_alpha`, `is_digit_char`, `is_whitespace_char`, `is_alphanumeric`, `to_upper_char`, `to_lower_char` |
 | `std.time` | `time_now_millis`, `time_now_secs`, `sleep_ms` |
 | `std.range` | `create`, `len`, `at`, `eq`, `start`, `end`, `is_inclusive` |
+| `std.algorithms` | `gcd_nonnegative`, `is_prime`, `binary_search_int`, `to_base`, `from_base`, `mod_inverse`, `factorial`, `binomial`, `collatz_steps`, `digit_sum`, `roman_encode`, `roman_decode`, `levenshtein` |
+| `std.encoding` | `hex_encode`, `hex_decode`, `base64_encode`, `base64_decode`, `percent_encode`, `percent_decode`, `rot13` |
+| `std.stats` | `sum_f`, `mean_f`, `median_f`, `variance_f`, `variance_sample_f`, `stddev_f`, `stddev_sample_f`, `percentile_f`, `covariance_f`, `correlation_f` |
+| `std.validate` | `luhn_valid`, `isbn10_valid`, `isbn13_valid`, `cpf_valid`, `cnpj_valid`, `iban_valid`, `email_is_valid`, `url_is_valid` |
+| `std.path` | `join`, `normalize`, `file_name`, `parent`, `extension`, `stem`, `is_absolute` |
+| `std.text` | `slugify`, `normalize_whitespace`, `truncate`, `wrap`, `word_count`, `escape_json`, `unescape_json`, `similarity_ratio` |
+| `std.calendar` | `is_leap_year`, `days_in_month`, `day_of_week`, `add_days`, `diff_days`, `iso_year`, `iso_week`, `format_iso_date`, `format_iso_timestamp`, `parse_iso_date` |
+| `std.iter` | `take<T>`, `skip<T>`, `reverse<T>`, `sum_int`, `count_if_int`, `position_if_int`, `chunk_int`, `window_sum_int` |
+| `std.fmt` | `int_padded`, `thousands`, `float_fixed`, `bytes_si` |
+| `std.semver` | `is_valid`, `compare`, `major`, `minor`, `patch`, `prerelease` |
 
 ---
 

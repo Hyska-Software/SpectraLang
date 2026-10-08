@@ -138,6 +138,7 @@ pub(crate) const STR_BUILDER_LEN: &str = "spectra.std.string.builder_len";
 pub(crate) const STR_BUILDER_FINISH: &str = "spectra.std.string.builder_finish";
 pub(crate) const STR_BUILDER_FREE: &str = "spectra.std.string.builder_free";
 pub(crate) const STR_CHAR_AT: &str = "spectra.std.string.char_at";
+pub(crate) const STR_FROM_SCALAR: &str = "spectra.std.string.from_scalar";
 pub(crate) const STR_SUBSTRING: &str = "spectra.std.string.substring";
 pub(crate) const STR_REPLACE: &str = "spectra.std.string.replace";
 pub(crate) const STR_INDEX_OF: &str = "spectra.std.string.index_of";

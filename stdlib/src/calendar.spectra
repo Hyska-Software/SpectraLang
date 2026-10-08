@@ -1,0 +1,176 @@
+module std.calendar
+
+import std.convert as convert
+import std.option as option
+import std.string as str
+import std.time as time
+
+// Gregorian calendar helpers over Unix time (UTC). Every function takes
+// explicit seconds; callers pass `std.time.time_now_secs()` for "now". Days are
+// computed with floor division so pre-1970 timestamps behave correctly.
+
+// Gregorian leap year rule.
+public func is_leap_year(year: int) returns bool {
+    if year % 4 != 0 {
+        return false
+    }
+    if year % 100 != 0 {
+        return true
+    }
+    return year % 400 == 0
+}
+
+// Days in `month` (1..=12); None outside that range.
+public func days_in_month(year: int, month: int) returns Option<int> {
+    if month < 1 or month > 12 {
+        return Option::None
+    }
+    if month == 2 {
+        if is_leap_year(year) {
+            return Option::Some(29)
+        }
+        return Option::Some(28)
+    }
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        return Option::Some(30)
+    }
+    return Option::Some(31)
+}
+
+// Day of week for a Unix timestamp: 0 = Sunday .. 6 = Saturday.
+public func day_of_week(unix_secs: int) returns int {
+    let days = floor_div(unix_secs, 86400)
+    return ((days + 4) % 7 + 7) % 7
+}
+
+// `unix_secs` shifted by `days` calendar days.
+public func add_days(unix_secs: int, days: int) returns int {
+    return unix_secs + days * 86400
+}
+
+// Whole calendar days between two timestamps (later - earlier).
+public func diff_days(later: int, earlier: int) returns int {
+    return floor_div(later, 86400) - floor_div(earlier, 86400)
+}
+
+// ISO-8601 week-based year of a Unix timestamp.
+public func iso_year(unix_secs: int) returns int {
+    let thursday = iso_week_thursday(unix_secs)
+    let stamp = time.unix_to_utc(thursday * 86400)
+    return time.utc_year(stamp)
+}
+
+// ISO-8601 week number (1..=53) of a Unix timestamp.
+public func iso_week(unix_secs: int) returns int {
+    let thursday = iso_week_thursday(unix_secs)
+    let week_year = iso_year(unix_secs)
+    let first_of_year = days_from_civil(week_year, 1, 1)
+    let day_of_year = thursday - first_of_year + 1
+    return (day_of_year - 1) / 7 + 1
+}
+
+// `YYYY-MM-DD` (UTC).
+public func format_iso_date(unix_secs: int) returns string {
+    let stamp = time.unix_to_utc(unix_secs)
+    return padded(time.utc_year(stamp), 4) + "-" + padded(time.utc_month(stamp), 2) + "-" + padded(time.utc_day(stamp), 2)
+}
+
+// `YYYY-MM-DDTHH:MM:SSZ` (UTC).
+public func format_iso_timestamp(unix_secs: int) returns string {
+    let stamp = time.unix_to_utc(unix_secs)
+    return format_iso_date(unix_secs) + "T" + padded(time.utc_hour(stamp), 2) + ":" + padded(time.utc_minute(stamp), 2) + ":" + padded(time.utc_second(stamp), 2) + "Z"
+}
+
+// Parses `YYYY-MM-DD` into a UTC midnight timestamp. Wrong shape, separators,
+// digits, or an out-of-range date return None.
+public func parse_iso_date(text: string) returns Option<int> {
+    if str.len(text) != 10 {
+        return Option::None
+    }
+    if str.char_at(text, 4) != 45 or str.char_at(text, 7) != 45 {
+        return Option::None
+    }
+
+    let year = read_digits(text, 0, 4)
+    let month = read_digits(text, 5, 2)
+    let day = read_digits(text, 8, 2)
+    if year < 0 or month < 1 or month > 12 or day < 0 {
+        return Option::None
+    }
+
+    let limit = option.option_unwrap_or(days_in_month(year, month), 0)
+    if day < 1 or day > limit {
+        return Option::None
+    }
+
+    return Option::Some(days_from_civil(year, month, day) * 86400)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Day count of the Thursday of the ISO week containing `unix_secs`.
+func iso_week_thursday(unix_secs: int) returns int {
+    let days = floor_div(unix_secs, 86400)
+    let weekday = ((days + 4) % 7 + 7) % 7
+    let iso_weekday = if weekday == 0 { 7 } else { weekday }
+    return days + (4 - iso_weekday)
+}
+
+// Days since 1970-01-01 for a Gregorian date (Howard Hinnant's algorithm).
+func days_from_civil(year: int, month: int, day: int) returns int {
+    let shifted_year = year
+    if month <= 2 {
+        shifted_year = year - 1
+    }
+
+    let era = floor_div(shifted_year, 400)
+    let year_of_era = shifted_year - era * 400
+    let month_term = month + 9
+    if month > 2 {
+        month_term = month - 3
+    }
+    let day_of_year = (153 * month_term + 2) / 5 + day - 1
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year
+    return era * 146097 + day_of_era - 719468
+}
+
+// Floor division for arbitrary signs.
+func floor_div(value: int, divisor: int) returns int {
+    let quotient = value / divisor
+    if value % divisor != 0 {
+        if (value < 0) != (divisor < 0) {
+            quotient = quotient - 1
+        }
+    }
+    return quotient
+}
+
+// Zero-padded decimal text. The sign of a negative value stays outside the
+// padded digits so the year field keeps its four-digit width (`-0001`).
+func padded(value: int, width: int) returns string {
+    if value < 0 {
+        let digits = convert.int_to_string(0 - value)
+        let year_width = width
+        if year_width < 4 {
+            year_width = 4
+        }
+        return "-" + str.pad_left(digits, year_width, 48)
+    }
+    return str.pad_left(convert.int_to_string(value), width, 48)
+}
+
+// Reads `count` decimal digits at `offset`, or -1 when any character is not a
+// digit.
+func read_digits(text: string, offset: int, count: int) returns int {
+    let value = 0
+    let index = 0
+    while index < count {
+        let code = str.char_at(text, offset + index)
+        if code < 48 or code > 57 {
+            return -1
+        }
+        value = value * 10 + (code - 48)
+        index = index + 1
+    }
+    return value
+}

@@ -1,0 +1,159 @@
+module std.iter
+
+import std.collections as collections
+
+// Sequence adaptors over `List<T>` plus integer predicates. Functions never
+// mutate their input; they return fresh lists.
+
+// First `count` items (an empty list when `count <= 0`).
+public func take<T>(items: List<T>, count: int) returns List<T> {
+    let result: List<T> = collections.list_new()
+    if count <= 0 {
+        return result
+    }
+
+    let length = collections.list_len(items)
+    let limit = count
+    if limit > length {
+        limit = length
+    }
+
+    let index = 0
+    while index < limit {
+        if let Option::Some(value) = collections.list_get(items, index) {
+            collections.list_push(result, value)
+        }
+        index = index + 1
+    }
+
+    return result
+}
+
+// Items after the first `count`.
+public func skip<T>(items: List<T>, count: int) returns List<T> {
+    let result: List<T> = collections.list_new()
+    let length = collections.list_len(items)
+    let start = count
+    if start < 0 {
+        start = 0
+    }
+
+    let index = start
+    while index < length {
+        if let Option::Some(value) = collections.list_get(items, index) {
+            collections.list_push(result, value)
+        }
+        index = index + 1
+    }
+
+    return result
+}
+
+// Items in reverse order.
+public func reverse<T>(items: List<T>) returns List<T> {
+    let result: List<T> = collections.list_new()
+    let index = collections.list_len(items) - 1
+    while index >= 0 {
+        if let Option::Some(value) = collections.list_get(items, index) {
+            collections.list_push(result, value)
+        }
+        index = index - 1
+    }
+    return result
+}
+
+// Sum of an integer list; empty input sums to 0.
+public func sum_int(values: List<int>) returns int {
+    let length = collections.list_len(values)
+    let total = 0
+    let index = 0
+    while index < length {
+        total = total + option_value(collections.list_get(values, index))
+        index = index + 1
+    }
+    return total
+}
+
+// Number of items accepted by `predicate`.
+public func count_if_int(values: List<int>, predicate: func(int) returns bool) returns int {
+    let length = collections.list_len(values)
+    let count = 0
+    let index = 0
+    while index < length {
+        if predicate(option_value(collections.list_get(values, index))) {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}
+
+// Index of the first item accepted by `predicate`, or None.
+public func position_if_int(values: List<int>, predicate: func(int) returns bool) returns Option<int> {
+    let length = collections.list_len(values)
+    let index = 0
+    while index < length {
+        if predicate(option_value(collections.list_get(values, index))) {
+            return Option::Some(index)
+        }
+        index = index + 1
+    }
+    return Option::None
+}
+
+// Consecutive groups of at most `size` items; the final group may be shorter.
+// A non-positive size yields an empty list.
+public func chunk_int(values: List<int>, size: int) returns List<List<int>> {
+    let chunks: List<List<int>> = collections.list_new()
+    if size <= 0 {
+        return chunks
+    }
+
+    let length = collections.list_len(values)
+    let index = 0
+    while index < length {
+        let chunk: List<int> = collections.list_new()
+        let limit = index + size
+        while index < limit and index < length {
+            collections.list_push(chunk, option_value(collections.list_get(values, index)))
+            index = index + 1
+        }
+        collections.list_push(chunks, chunk)
+    }
+
+    return chunks
+}
+
+// Sliding-window sums of width `window`. Windows larger than the input produce
+// an empty list; a non-positive width is invalid and produces an empty list.
+public func window_sum_int(values: List<int>, window: int) returns List<int> {
+    let sums: List<int> = collections.list_new()
+    let length = collections.list_len(values)
+    if window <= 0 or window > length {
+        return sums
+    }
+
+    let index = 0
+    while index + window <= length {
+        let total = 0
+        let offset = 0
+        while offset < window {
+            total = total + option_value(collections.list_get(values, index + offset))
+            offset = offset + 1
+        }
+        collections.list_push(sums, total)
+        index = index + 1
+    }
+
+    return sums
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Integer payload of an `Option<int>` accessor; absent values read as 0.
+func option_value(entry: Option<int>) returns int {
+    if let Option::Some(value) = entry {
+        return value
+    }
+    return 0
+}

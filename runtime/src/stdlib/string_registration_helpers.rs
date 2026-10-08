@@ -18,6 +18,7 @@ pub(crate) fn register_string() {
     register_host_function(STR_BUILDER_FINISH, std_string_builder_finish);
     register_host_function(STR_BUILDER_FREE, std_string_builder_free);
     register_host_function(STR_CHAR_AT, std_string_char_at);
+    register_host_function(STR_FROM_SCALAR, std_string_from_scalar);
     register_host_function(STR_SUBSTRING, std_string_substring);
     register_host_function(STR_REPLACE, std_string_replace);
     register_host_function(STR_INDEX_OF, std_string_index_of);

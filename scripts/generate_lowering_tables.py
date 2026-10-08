@@ -605,6 +605,7 @@ LAYOUT: tuple[FileLayout, ...] = (
                 module='string',
                 names=(
                 "len contains to_upper to_lower trim starts_with ends_with eq concat repeat_str char_at "
+                "from_scalar "
                 "substring replace index_of split_first split_last is_empty count_occurrences reverse_str "
                 "pad_left pad_right"
                 ),

@@ -1,0 +1,97 @@
+// Regression: `char` values and `char` literals must lower with matching IR
+// types. `65 as char` used to emit an untyped Int constant, so comparing it
+// with a `char` literal aborted lowering with an internal verifier error
+// (`Ne operands with mismatched IR types (Int vs Char)`).
+module core_char_literal_comparison
+
+import std.string as str
+
+const LETTER_A: char = 65 as char
+
+// Ordering is also evaluable at const time (both folders handle `char`).
+const LETTERS_ORDERED: bool = 'a' < 'b'
+
+func letter_b() returns char {
+    return 66 as char
+}
+
+public func main() returns int {
+    // Const-folded cast compared with a literal, both directions.
+    let letter = 65 as char
+    if letter != 'A' {
+        return 1
+    }
+    if not (letter == 'A') {
+        return 2
+    }
+    if 'A' != letter {
+        return 3
+    }
+
+    // Const and function-returned chars.
+    if LETTER_A != 'A' {
+        return 4
+    }
+    if letter_b() != 'B' {
+        return 5
+    }
+    if letter_b() == 'C' {
+        return 6
+    }
+
+    // Two independently produced char values.
+    let other = 66 as char
+    if letter == other {
+        return 7
+    }
+    if not (letter != other) {
+        return 8
+    }
+
+    // `char as int` keeps the numeric representation comparable with ints.
+    if (letter as int) != 65 {
+        return 9
+    }
+    if (other as int) != 66 {
+        return 10
+    }
+
+    // Byte codes read from strings compare against explicitly casted literals.
+    let text = "Az"
+    if str.char_at(text, 0) != ('A' as int) {
+        return 11
+    }
+    if str.char_at(text, 1) != ('z' as int) {
+        return 12
+    }
+
+    // `char` orders by Unicode scalar value when both operands are chars.
+    let next_letter = 66 as char
+    if not (letter < next_letter) {
+        return 13
+    }
+    if not (letter <= 'A') {
+        return 14
+    }
+    if not (next_letter > letter) {
+        return 15
+    }
+    if not ('B' >= next_letter) {
+        return 16
+    }
+    if 'A' < letter {
+        return 17
+    }
+    if letter >= next_letter {
+        return 18
+    }
+
+    if not LETTERS_ORDERED {
+        return 19
+    }
+    if 'b' <= 'a' {
+        return 20
+    }
+
+    return 0
+}

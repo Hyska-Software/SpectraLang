@@ -311,6 +311,15 @@ def signature_ir_return(returns: str) -> str:
         return IR_WIDTH_TYPES[value]
     if value in {"int_tensor", "float_tensor", "bool_tensor", "string_tensor"}:
         return f"Tensor<{value[: -len('_tensor')]}>"
+    # Specialized enum returns keep the same grammar the lowering descriptors
+    # render: `Option_<payload>` and `Result_<payload>_<error>`.
+    if value.startswith("Option_"):
+        return f"Option<{struct_ir_name(value[len('Option_') :])}>"
+    if value.startswith("Result_"):
+        payload = value[len("Result_") :]
+        if payload.endswith("_Error"):
+            payload = payload[: -len("_Error")]
+        return f"Result<{struct_ir_name(payload)}>"
     if _is_ir_type_expression(value):
         return value
     raise RuntimeError(f"cannot map semantic return type {returns!r} onto the IR grammar")
@@ -443,11 +452,46 @@ def docs_for(path: str, manifest: dict[str, object]) -> str:
 
 
 def fixture_for(path: str, manifest: dict[str, object]) -> str:
-    probes = audit.probe_matches(path, manifest)
-    for probe in probes:
-        if probe.get("path"):
-            return str(probe["path"])
-    return "tests/validation/185_stdlib_contract_audit.spectra"
+    """Pick the probe that exercises `path`, preferring the most specific one.
+
+    A dedicated probe (`covers = ["std.string.from_scalar"]`) must win over the
+    broad namespace probe (`covers = ["std.string.*"]`), otherwise every new
+    function would be recorded against the legacy contract-audit fixture.
+    """
+    probes = [probe for probe in audit.probe_matches(path, manifest) if probe.get("path")]
+    if not probes:
+        return LEGACY_FIXTURE
+
+    def specificity(probe: dict[str, object]) -> int:
+        best = 0
+        for pattern in probe.get("covers", []):
+            pattern = str(pattern)
+            if pattern == path:
+                best = max(best, 3)
+            elif pattern.endswith(".*"):
+                best = max(best, 2)
+            else:
+                best = max(best, 1)
+        return best
+
+    return str(max(probes, key=specificity)["path"])
+
+
+def catalog_fixture(path: str, old: dict[str, object], manifest: dict[str, object]) -> str:
+    """Keep the recorded fixture unless a more specific probe now exists.
+
+    The stored value is preserved for symbols whose coverage is still the broad
+    namespace probe; a dedicated probe (exact `covers` entry) replaces it so the
+    catalog points at the fixture that actually exercises the symbol.
+    """
+    computed = fixture_for(path, manifest)
+    stored = old.get("fixture")
+    if isinstance(stored, str) and stored and computed == LEGACY_FIXTURE:
+        return stored
+    return computed
+
+
+LEGACY_FIXTURE = "tests/validation/185_stdlib_contract_audit.spectra"
 
 
 def main() -> int:
@@ -579,7 +623,7 @@ def main() -> int:
             "maturity": maturity,
             "owner": old.get("owner", contract["owner"]),
             "docs": old.get("docs", docs_for(path, manifest)),
-            "fixture": old.get("fixture", fixture_for(path, manifest)),
+            "fixture": catalog_fixture(path, old, manifest),
         }
         entries.append(entry)
 

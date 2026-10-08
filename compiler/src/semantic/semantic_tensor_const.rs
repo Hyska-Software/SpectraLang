@@ -750,6 +750,9 @@ impl SemanticAnalyzer {
         match value {
             ConstValue::Int(v) => Some(*v as f64),
             ConstValue::Float(v) => Some(*v),
+            // `char` ordering was opened to ordinary code, so const folding
+            // must be able to compare char constants by scalar value too.
+            ConstValue::Char(v) => Some(*v as u32 as f64),
             _ => None,
         }
     }

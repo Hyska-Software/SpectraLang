@@ -1,0 +1,176 @@
+// Consumer for `std.text`: slugs, whitespace, truncation, wrapping, word
+// counting, JSON string escaping and similarity.
+module std_source_text
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+import std.string as str
+import std.text as text
+
+func close(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.000001
+}
+
+func line_at(lines: List<string>, index: int) returns string {
+    return option.option_unwrap_or(collections.list_get(lines, index), "")
+}
+
+public func main() returns int {
+    // ── slugify ──────────────────────────────────────────────────────────
+    if text.slugify("Hello  World") != "hello-world" {
+        return 1
+    }
+    if text.slugify("  Hello  World  ") != "hello-world" {
+        return 2
+    }
+    if text.slugify("C++ & Rust") != "c-rust" {
+        return 3
+    }
+    if text.slugify("Olá, Mundo!") != "ol-mundo" {
+        return 4
+    }
+    if text.slugify("") != "" {
+        return 5
+    }
+
+    // ── normalize_whitespace ─────────────────────────────────────────────
+    if text.normalize_whitespace("  a \t\n b  ") != "a b" {
+        return 6
+    }
+    if text.normalize_whitespace("") != "" {
+        return 7
+    }
+    if text.normalize_whitespace("   ") != "" {
+        return 8
+    }
+
+    // ── truncate ─────────────────────────────────────────────────────────
+    if text.truncate("hello", 3) != "hel" {
+        return 9
+    }
+    if text.truncate("hi", 10) != "hi" {
+        return 10
+    }
+    if text.truncate("café", 3) != "caf" {
+        return 11
+    }
+    // 4 bytes would split `é` (2 bytes), so the rune is left out entirely.
+    if text.truncate("café", 4) != "caf" {
+        return 12
+    }
+    if text.truncate("café", 5) != "café" {
+        return 13
+    }
+    if text.truncate("😀a", 3) != "" {
+        return 14
+    }
+    if text.truncate("😀a", 4) != "😀" {
+        return 15
+    }
+    if text.truncate("abc", 0) != "" or text.truncate("abc", -1) != "" {
+        return 16
+    }
+
+    // ── wrap ─────────────────────────────────────────────────────────────
+    let lines = text.wrap("one two three", 7)
+    if collections.list_len(lines) != 2 {
+        return 17
+    }
+    if line_at(lines, 0) != "one two" or line_at(lines, 1) != "three" {
+        return 18
+    }
+    let long_word = text.wrap("abcdefghij klm", 4)
+    if collections.list_len(long_word) != 2 or line_at(long_word, 0) != "abcdefghij" {
+        return 19
+    }
+    let single = text.wrap("hello", 5)
+    if collections.list_len(single) != 1 or line_at(single, 0) != "hello" {
+        return 20
+    }
+    if collections.list_len(text.wrap("abc", 0)) != 0 {
+        return 21
+    }
+    if collections.list_len(text.wrap("   ", 5)) != 0 {
+        return 22
+    }
+
+    // ── word_count ───────────────────────────────────────────────────────
+    if text.word_count("  a b\tc ") != 3 {
+        return 23
+    }
+    if text.word_count("") != 0 or text.word_count("   ") != 0 {
+        return 24
+    }
+
+    // ── escape_json / unescape_json ──────────────────────────────────────
+    let escaped = text.escape_json("a\"b\\c\nd\te")
+    if escaped != "a\\\"b\\\\c\\nd\\te" {
+        return 25
+    }
+    if option.option_unwrap_or(text.unescape_json(escaped), "x") != "a\"b\\c\nd\te" {
+        return 26
+    }
+    let control = text.escape_json(option.option_unwrap_or(str.from_scalar(1), ""))
+    if control != "\\u0001" {
+        return 27
+    }
+    if option.option_unwrap_or(text.unescape_json("\\u0041"), "x") != "A" {
+        return 28
+    }
+    if option.option_unwrap_or(text.unescape_json("\\u00e9"), "x") != "é" {
+        return 29
+    }
+    // Surrogate pair for U+1F600.
+    if option.option_unwrap_or(text.unescape_json("\\uD83D\\uDE00"), "x") != "😀" {
+        return 30
+    }
+    if option.is_some(text.unescape_json("\\uD83D")) {
+        return 31
+    }
+    if option.is_some(text.unescape_json("\\uDE00")) {
+        return 32
+    }
+    if option.is_some(text.unescape_json("\\q")) {
+        return 33
+    }
+    if option.is_some(text.unescape_json("\\u00")) {
+        return 34
+    }
+    if option.option_unwrap_or(text.unescape_json("plain"), "x") != "plain" {
+        return 35
+    }
+    // Round-trip with non-ASCII content keeps the exact bytes.
+    let original = "café 😀 \"quoted\"\n"
+    let round_trip = option.option_unwrap_or(text.unescape_json(text.escape_json(original)), "x")
+    if round_trip != original {
+        return 36
+    }
+
+    // ── similarity_ratio ─────────────────────────────────────────────────
+    if not close(text.similarity_ratio("abc", "abc"), 1.0) {
+        return 37
+    }
+    if not close(text.similarity_ratio("", ""), 1.0) {
+        return 38
+    }
+    if not close(text.similarity_ratio("abc", "abd"), 0.6666667) {
+        return 39
+    }
+    if not close(text.similarity_ratio("kitten", "sitting"), 0.5714286) {
+        return 40
+    }
+    if not close(text.similarity_ratio("café", "cafe"), 0.75) {
+        return 41
+    }
+    if not close(text.similarity_ratio("abc", ""), 0.0) {
+        return 42
+    }
+
+    // Truncation keeps the string valid UTF-8.
+    if str.len(text.truncate("café", 4)) != 3 {
+        return 43
+    }
+
+    return 0
+}

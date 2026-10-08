@@ -1,0 +1,180 @@
+// Consumer for `std.iter`: adaptors over List<T>, integer aggregates and
+// predicate-driven queries.
+module std_source_iter
+
+import std.collections as collections
+import std.iter as iter
+import std.option as option
+
+func numbers(values: [int], count: int) returns List<int> {
+    let list: List<int> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func words(values: [string], count: int) returns List<string> {
+    let list: List<string> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func is_even(value: int) returns bool {
+    return value % 2 == 0
+}
+
+func is_negative(value: int) returns bool {
+    return value < 0
+}
+
+public func main() returns int {
+    let base = numbers([1, 2, 3, 4, 5], 5)
+    let empty: List<int> = collections.list_new()
+
+    // ── take / skip ──────────────────────────────────────────────────────
+    let first_two = iter.take(base, 2)
+    if collections.list_len(first_two) != 2 {
+        return 1
+    }
+    if option.option_unwrap_or(collections.list_get(first_two, 1), 0) != 2 {
+        return 2
+    }
+    if collections.list_len(iter.take(base, 0)) != 0 {
+        return 3
+    }
+    if collections.list_len(iter.take(base, -3)) != 0 {
+        return 4
+    }
+    if collections.list_len(iter.take(base, 99)) != 5 {
+        return 5
+    }
+    if collections.list_len(iter.take(empty, 3)) != 0 {
+        return 6
+    }
+
+    let tail = iter.skip(base, 3)
+    if collections.list_len(tail) != 2 {
+        return 7
+    }
+    if option.option_unwrap_or(collections.list_get(tail, 0), 0) != 4 {
+        return 8
+    }
+    if collections.list_len(iter.skip(base, 99)) != 0 {
+        return 9
+    }
+    if collections.list_len(iter.skip(base, -1)) != 5 {
+        return 10
+    }
+
+    let backwards = iter.reverse(base)
+    if option.option_unwrap_or(collections.list_get(backwards, 0), 0) != 5 {
+        return 11
+    }
+    if option.option_unwrap_or(collections.list_get(backwards, 4), 0) != 1 {
+        return 12
+    }
+    if collections.list_len(iter.reverse(empty)) != 0 {
+        return 13
+    }
+    // The source list is untouched.
+    if option.option_unwrap_or(collections.list_get(base, 0), 0) != 1 {
+        return 14
+    }
+
+    // Generic adaptors work for strings too.
+    let names = words(["alpha", "beta", "gamma"], 3)
+    let last = iter.take(iter.skip(names, 2), 1)
+    if collections.list_len(last) != 1 {
+        return 15
+    }
+    if option.option_unwrap_or(collections.list_get(last, 0), "x") != "gamma" {
+        return 16
+    }
+    let reversed_names = iter.reverse(names)
+    if option.option_unwrap_or(collections.list_get(reversed_names, 0), "x") != "gamma" {
+        return 17
+    }
+
+    // ── aggregates ───────────────────────────────────────────────────────
+    if iter.sum_int(empty) != 0 {
+        return 18
+    }
+    if iter.sum_int(base) != 15 {
+        return 19
+    }
+    if iter.sum_int(numbers([-2, 2, -3], 3)) != -3 {
+        return 20
+    }
+    if iter.count_if_int(base, is_even) != 2 {
+        return 21
+    }
+    if iter.count_if_int(base, is_negative) != 0 {
+        return 22
+    }
+    if iter.count_if_int(empty, is_even) != 0 {
+        return 23
+    }
+
+    let even_position = iter.position_if_int(base, is_even)
+    if not option.is_some(even_position) {
+        return 24
+    }
+    if option.option_unwrap_or(even_position, -1) != 1 {
+        return 25
+    }
+    if option.is_some(iter.position_if_int(base, is_negative)) {
+        return 26
+    }
+
+    // ── chunk / window ───────────────────────────────────────────────────
+    let chunks = iter.chunk_int(base, 2)
+    if collections.list_len(chunks) != 3 {
+        return 27
+    }
+    let first_chunk = option.option_unwrap_or(collections.list_get(chunks, 0), collections.list_new())
+    if collections.list_len(first_chunk) != 2 {
+        return 28
+    }
+    let last_chunk = option.option_unwrap_or(collections.list_get(chunks, 2), collections.list_new())
+    if collections.list_len(last_chunk) != 1 {
+        return 29
+    }
+    if option.option_unwrap_or(collections.list_get(last_chunk, 0), 0) != 5 {
+        return 30
+    }
+    if collections.list_len(iter.chunk_int(base, 0)) != 0 {
+        return 31
+    }
+    if collections.list_len(iter.chunk_int(empty, 2)) != 0 {
+        return 32
+    }
+
+    let windows = iter.window_sum_int(base, 2)
+    if collections.list_len(windows) != 4 {
+        return 33
+    }
+    if option.option_unwrap_or(collections.list_get(windows, 0), 0) != 3 {
+        return 34
+    }
+    if option.option_unwrap_or(collections.list_get(windows, 3), 0) != 9 {
+        return 35
+    }
+    if collections.list_len(iter.window_sum_int(base, 5)) != 1 {
+        return 36
+    }
+    if collections.list_len(iter.window_sum_int(base, 6)) != 0 {
+        return 37
+    }
+    if collections.list_len(iter.window_sum_int(base, 0)) != 0 {
+        return 38
+    }
+
+    return 0
+}

@@ -1,0 +1,68 @@
+// Consumer for the `std.string.from_scalar` primitive: materializes Unicode
+// scalar values as UTF-8 text and reports `None` for invalid codes.
+module string_from_scalar
+
+import std.option as option
+import std.string as str
+
+public func main() returns int {
+    // ASCII scalar.
+    let upper_a = str.from_scalar(65)
+    if not option.is_some(upper_a) {
+        return 1
+    }
+    if option.option_unwrap_or(upper_a, "") != "A" {
+        return 2
+    }
+    if str.len(option.option_unwrap_or(upper_a, "")) != 1 {
+        return 3
+    }
+
+    // Two-byte scalar (é = U+00E9).
+    let accented = option.option_unwrap_or(str.from_scalar(233), "")
+    if accented != "é" or str.len(accented) != 2 {
+        return 4
+    }
+
+    // Three-byte scalar (€ = U+20AC).
+    let euro = option.option_unwrap_or(str.from_scalar(8364), "")
+    if euro != "€" or str.len(euro) != 3 {
+        return 5
+    }
+
+    // Four-byte scalar (😀 = U+1F600).
+    let emoji = option.option_unwrap_or(str.from_scalar(128512), "")
+    if str.len(emoji) != 4 {
+        return 6
+    }
+
+    // Round-trip through char_at: the materialized text starts with the
+    // expected UTF-8 lead byte.
+    if str.char_at(emoji, 0) != 240 {
+        return 7
+    }
+
+    // Invalid codes: negative, surrogate range and beyond the Unicode maximum.
+    if option.is_some(str.from_scalar(-1)) {
+        return 8
+    }
+    if option.is_some(str.from_scalar(0xD800)) {
+        return 9
+    }
+    if option.is_some(str.from_scalar(0xDFFF)) {
+        return 10
+    }
+    if option.is_some(str.from_scalar(0x110000)) {
+        return 11
+    }
+
+    // NUL and the last valid scalar stay materializable.
+    if option.option_unwrap_or(str.from_scalar(0), "x") != "" {
+        return 12
+    }
+    if str.len(option.option_unwrap_or(str.from_scalar(0x10FFFF), "")) != 4 {
+        return 13
+    }
+
+    return 0
+}

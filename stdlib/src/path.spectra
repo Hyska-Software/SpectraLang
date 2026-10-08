@@ -1,0 +1,294 @@
+module std.path
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// Path helpers for POSIX-style and Windows-style inputs. Both `/` and `\` are
+// treated as separators; results always use `/` as the canonical separator.
+// Drive letters (`C:`) are recognized for `is_absolute`, `normalize` and
+// `join`; UNC prefixes (`\\server\share`) are not resolved beyond their
+// separators.
+
+// Joins two path fragments. An absolute `right` replaces `left`; separators are
+// inserted only when needed.
+public func join(left: string, right: string) returns string {
+    if str.len(right) == 0 {
+        return left
+    }
+    if str.len(left) == 0 or is_absolute(right) {
+        return canonical(right)
+    }
+    if is_separator(str.char_at(left, str.len(left) - 1)) {
+        return canonical(left + right)
+    }
+    return canonical(left + "/" + right)
+}
+
+// Canonical form of `path`: separators collapsed to `/`, `.` removed, `..`
+// resolved without escaping the root, trailing separators dropped (except for
+// the root itself).
+public func normalize(path: string) returns string {
+    let length = str.len(path)
+    let drive = ""
+    let start = 0
+    let absolute = false
+
+    if length >= 2 and is_alpha(str.char_at(path, 0)) and str.char_at(path, 1) == 58 {
+        drive = str.substring(path, 0, 2)
+        start = 2
+        if length > 2 and is_separator(str.char_at(path, 2)) {
+            absolute = true
+            start = 3
+        }
+    } else if length > 0 and is_separator(str.char_at(path, 0)) {
+        absolute = true
+        start = 1
+    }
+
+    let segments = collect_segments(path, start, absolute)
+
+    let builder = str.builder_new(0)
+    if str.len(drive) > 0 {
+        str.builder_push(builder, drive)
+    }
+    if absolute {
+        str.builder_push(builder, "/")
+    }
+
+    let count = collections.list_len(segments)
+    let position = 0
+    while position < count {
+        if position > 0 {
+            str.builder_push(builder, "/")
+        }
+        str.builder_push(
+            builder,
+            option.option_unwrap_or(collections.list_get(segments, position), ""),
+        )
+        position = position + 1
+    }
+
+    let result = str.builder_finish(builder)
+    if str.len(result) == 0 {
+        if absolute {
+            return "/"
+        }
+        return "."
+    }
+    return result
+}
+
+// Final component of `path`; empty for a root or a trailing separator.
+public func file_name(path: string) returns string {
+    let trimmed = without_trailing_separators(path)
+    let length = str.len(trimmed)
+    if length == 0 {
+        return ""
+    }
+
+    let index = length - 1
+    while index >= 0 {
+        if is_separator(str.char_at(trimmed, index)) {
+            return str.substring(trimmed, index + 1, length)
+        }
+        index = index - 1
+    }
+
+    return trimmed
+}
+
+// Directory containing `path`, or None when there is no parent component.
+public func parent(path: string) returns Option<string> {
+    let trimmed = without_trailing_separators(path)
+    let length = str.len(trimmed)
+    if length == 0 {
+        return Option::None
+    }
+
+    let index = length - 1
+    while index >= 0 {
+        if is_separator(str.char_at(trimmed, index)) {
+            let head = canonical(without_trailing_separators(str.substring(trimmed, 0, index)))
+            if str.len(head) == 0 {
+                if is_absolute(trimmed) {
+                    return Option::Some("/")
+                }
+                return Option::None
+            }
+            // `C:` keeps its drive separator semantics (`C:/`).
+            if str.len(head) == 2 and is_alpha(str.char_at(head, 0)) and str.char_at(head, 1) == 58 {
+                return Option::Some(head + "/")
+            }
+            return Option::Some(head)
+        }
+        index = index - 1
+    }
+
+    return Option::None
+}
+
+// Extension of the final component without the dot, or None when absent.
+// `a.tar.gz` yields `gz`.
+public func extension(path: string) returns Option<string> {
+    let name = file_name(path)
+    let length = str.len(name)
+    if length == 0 {
+        return Option::None
+    }
+
+    let index = length - 1
+    while index > 0 {
+        if str.char_at(name, index) == 46 {
+            if index == length - 1 {
+                return Option::None
+            }
+            return Option::Some(str.substring(name, index + 1, length))
+        }
+        index = index - 1
+    }
+
+    return Option::None
+}
+
+// Final component without its extension.
+public func stem(path: string) returns string {
+    let name = file_name(path)
+    let dot = dot_index(name)
+    if dot <= 0 {
+        return name
+    }
+    return str.substring(name, 0, dot)
+}
+
+// True for `/x`, `\x`, `C:/x` and `C:\x`. Drive-relative forms (`C:x`) and UNC
+// prefixes are not absolute for this contract.
+public func is_absolute(path: string) returns bool {
+    let length = str.len(path)
+    if length == 0 {
+        return false
+    }
+    if is_separator(str.char_at(path, 0)) {
+        return true
+    }
+    if length >= 3 and is_alpha(str.char_at(path, 0)) and str.char_at(path, 1) == 58 {
+        return is_separator(str.char_at(path, 2))
+    }
+    return false
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Rewrites `\` separators as the canonical `/` (ASCII bytes only).
+func canonical(path: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(path)
+    let index = 0
+
+    while index < length {
+        let code = str.char_at(path, index)
+        if code == 92 {
+            push_code(builder, 47)
+        } else {
+            push_code(builder, code)
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+func push_code(builder: int, code: int) {
+    let piece = option.option_unwrap_or(str.from_scalar(code), "")
+    if str.len(piece) > 0 {
+        str.builder_push(builder, piece)
+    }
+}
+
+// Splits `path` into normalized segments, resolving `.` and `..`. `..` never
+// escapes the root; relative paths keep leading `..` segments.
+func collect_segments(path: string, start: int, absolute: bool) returns List<string> {
+    let segments: List<string> = collections.list_new()
+    let length = str.len(path)
+    let index = start
+
+    while index < length {
+        if is_separator(str.char_at(path, index)) {
+            index = index + 1
+        } else {
+            let segment_start = index
+            while index < length and not is_separator(str.char_at(path, index)) {
+                index = index + 1
+            }
+            append_segment(segments, str.substring(path, segment_start, index), absolute)
+        }
+    }
+
+    return segments
+}
+
+// Applies one raw segment to `segments`.
+func append_segment(segments: List<string>, segment: string, absolute: bool) {
+    if segment == "." {
+        return
+    }
+    if segment != ".." {
+        collections.list_push(segments, segment)
+        return
+    }
+    if collections.list_len(segments) == 0 {
+        if not absolute {
+            collections.list_push(segments, "..")
+        }
+        return
+    }
+
+    let last = option.option_unwrap_or(
+        collections.list_get(segments, collections.list_len(segments) - 1),
+        "",
+    )
+    if last == ".." {
+        if not absolute {
+            collections.list_push(segments, "..")
+        }
+        return
+    }
+
+    // The removed segment is intentionally discarded.
+    let removed = option.option_unwrap_or(collections.list_pop(segments), "")
+}
+
+func is_separator(code: int) returns bool {
+    return code == 47 or code == 92
+}
+
+func is_alpha(code: int) returns bool {
+    if code >= 65 and code <= 90 {
+        return true
+    }
+    return code >= 97 and code <= 122
+}
+
+func without_trailing_separators(path: string) returns string {
+    let length = str.len(path)
+    while length > 0 and is_separator(str.char_at(path, length - 1)) {
+        length = length - 1
+    }
+    return str.substring(path, 0, length)
+}
+
+// Index of the extension dot in a final component, or -1.
+func dot_index(name: string) returns int {
+    let length = str.len(name)
+    let index = length - 1
+    while index > 0 {
+        if str.char_at(name, index) == 46 {
+            if index == length - 1 {
+                return -1
+            }
+            return index
+        }
+        index = index - 1
+    }
+    return -1
+}

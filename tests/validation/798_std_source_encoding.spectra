@@ -1,0 +1,133 @@
+// Consumer for `std.encoding`: hex, base64, percent encoding and ROT13 over
+// UTF-8 text, including invalid-input rejection.
+module std_source_encoding
+
+import std.encoding as encoding
+import std.option as option
+import std.string as str
+
+public func main() returns int {
+    // ── hex ──────────────────────────────────────────────────────────────
+    if encoding.hex_encode("") != "" {
+        return 1
+    }
+    if encoding.hex_encode("Hi") != "4869" {
+        return 2
+    }
+    if encoding.hex_encode("é") != "c3a9" {
+        return 3
+    }
+    if option.option_unwrap_or(encoding.hex_decode("4869"), "x") != "Hi" {
+        return 4
+    }
+    if option.option_unwrap_or(encoding.hex_decode("C3A9"), "x") != "é" {
+        return 5
+    }
+    if option.is_some(encoding.hex_decode("abc")) {
+        return 6
+    }
+    if option.is_some(encoding.hex_decode("zz")) {
+        return 7
+    }
+    // 0xFF is not a valid UTF-8 lead byte.
+    if option.is_some(encoding.hex_decode("ff")) {
+        return 8
+    }
+    // Surrogate encoded as 3 bytes (ED A0 80) is rejected.
+    if option.is_some(encoding.hex_decode("eda080")) {
+        return 9
+    }
+    if option.option_unwrap_or(encoding.hex_decode(encoding.hex_encode("café 😀")), "x") != "café 😀" {
+        return 10
+    }
+
+    // ── base64 ───────────────────────────────────────────────────────────
+    if encoding.base64_encode("") != "" {
+        return 11
+    }
+    if encoding.base64_encode("Hi") != "SGk=" {
+        return 12
+    }
+    if encoding.base64_encode("abc") != "YWJj" {
+        return 13
+    }
+    if encoding.base64_encode("é") != "w6k=" {
+        return 14
+    }
+    if option.option_unwrap_or(encoding.base64_decode("SGk="), "x") != "Hi" {
+        return 15
+    }
+    if option.option_unwrap_or(encoding.base64_decode("YWJj"), "x") != "abc" {
+        return 16
+    }
+    if option.option_unwrap_or(encoding.base64_decode("w6k="), "x") != "é" {
+        return 17
+    }
+    if option.is_some(encoding.base64_decode("SGk")) {
+        return 18
+    }
+    if option.is_some(encoding.base64_decode("S!k=")) {
+        return 19
+    }
+    if option.is_some(encoding.base64_decode("SGk=A")) {
+        return 20
+    }
+    if option.is_some(encoding.base64_decode("////")) {
+        return 21
+    }
+    if option.option_unwrap_or(encoding.base64_decode(encoding.base64_encode("Olá, mundo!")), "x") != "Olá, mundo!" {
+        return 22
+    }
+
+    // ── percent encoding ─────────────────────────────────────────────────
+    if encoding.percent_encode("a b") != "a%20b" {
+        return 23
+    }
+    if encoding.percent_encode("é") != "%C3%A9" {
+        return 24
+    }
+    if encoding.percent_encode("A-Za-z0-9-._~") != "A-Za-z0-9-._~" {
+        return 25
+    }
+    if option.option_unwrap_or(encoding.percent_decode("a%20b"), "x") != "a b" {
+        return 26
+    }
+    if option.option_unwrap_or(encoding.percent_decode("%C3%A9"), "x") != "é" {
+        return 27
+    }
+    // `+` is preserved: form decoding belongs to std.api.query.
+    if option.option_unwrap_or(encoding.percent_decode("a+b"), "x") != "a+b" {
+        return 28
+    }
+    if option.is_some(encoding.percent_decode("%ZZ")) {
+        return 29
+    }
+    if option.is_some(encoding.percent_decode("%C3")) {
+        return 30
+    }
+    if option.option_unwrap_or(encoding.percent_decode(encoding.percent_encode("50% de 10€")), "x") != "50% de 10€" {
+        return 31
+    }
+
+    // ── ROT13 ────────────────────────────────────────────────────────────
+    if encoding.rot13("Hello, World!") != "Uryyb, Jbeyq!" {
+        return 32
+    }
+    let original = "Attack at dawn — 07:30"
+    if encoding.rot13(encoding.rot13(original)) != original {
+        return 33
+    }
+    if encoding.rot13("abc") != "nop" {
+        return 34
+    }
+    if encoding.rot13("123 é") != "123 é" {
+        return 35
+    }
+
+    // Encoded output is always ASCII text.
+    if str.len(encoding.hex_encode("é")) != 4 {
+        return 36
+    }
+
+    return 0
+}

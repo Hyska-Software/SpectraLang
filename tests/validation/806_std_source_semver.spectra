@@ -1,0 +1,164 @@
+// Consumer for `std.semver`: validation, precedence and component access.
+module std_source_semver
+
+import std.option as option
+import std.semver as semver
+
+func rank(text: string) returns int {
+    return option.option_unwrap_or(semver.compare(text, "1.0.0"), -99)
+}
+
+public func main() returns int {
+    // ── validation ───────────────────────────────────────────────────────
+    if not semver.is_valid("1.2.3") {
+        return 1
+    }
+    if not semver.is_valid("1.2.3-alpha.1+build.5") {
+        return 2
+    }
+    if not semver.is_valid("0.0.0") or not semver.is_valid("10.20.30") {
+        return 3
+    }
+    if not semver.is_valid("1.0.0-x-y-z--") or not semver.is_valid("1.0.0+001") {
+        return 4
+    }
+    if semver.is_valid("1.2") or semver.is_valid("1.2.3.4") {
+        return 5
+    }
+    if semver.is_valid("01.2.3") or semver.is_valid("1.02.3") or semver.is_valid("1.2.03") {
+        return 6
+    }
+    if semver.is_valid("1.2.3-") or semver.is_valid("1.2.3+") {
+        return 7
+    }
+    if semver.is_valid("1.2.3-alpha..1") or semver.is_valid("1.2.3-01") {
+        return 8
+    }
+    if semver.is_valid("v1.2.3") or semver.is_valid("") {
+        return 9
+    }
+
+    // ── components ───────────────────────────────────────────────────────
+    if option.option_unwrap_or(semver.major("1.2.3-alpha"), -1) != 1 {
+        return 10
+    }
+    if option.option_unwrap_or(semver.minor("1.2.3-alpha"), -1) != 2 {
+        return 11
+    }
+    if option.option_unwrap_or(semver.patch("1.2.3-alpha"), -1) != 3 {
+        return 12
+    }
+    if option.option_unwrap_or(semver.major("1.2.3+build"), -1) != 1 {
+        return 13
+    }
+    if option.is_some(semver.major("1.2")) {
+        return 14
+    }
+    if semver.prerelease("1.2.3-alpha.1+build.5") != "alpha.1" {
+        return 15
+    }
+    if semver.prerelease("1.2.3") != "" {
+        return 16
+    }
+    if semver.prerelease("1.2") != "" {
+        return 17
+    }
+
+    // ── precedence ───────────────────────────────────────────────────────
+    if option.option_unwrap_or(semver.compare("1.0.0", "1.0.0"), -9) != 0 {
+        return 18
+    }
+    if option.option_unwrap_or(semver.compare("1.0.0", "2.0.0"), -9) != -1 {
+        return 19
+    }
+    if option.option_unwrap_or(semver.compare("2.0.0", "1.0.0"), -9) != 1 {
+        return 20
+    }
+    if option.option_unwrap_or(semver.compare("1.0.0", "1.1.0"), -9) != -1 {
+        return 21
+    }
+    if option.option_unwrap_or(semver.compare("1.0.1", "1.0.0"), -9) != 1 {
+        return 22
+    }
+
+    // The canonical SemVer 2.0.0 ordering chain.
+    let chain: [string] = [
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-alpha.beta",
+        "1.0.0-beta",
+        "1.0.0-beta.2",
+        "1.0.0-beta.11",
+        "1.0.0-rc.1",
+        "1.0.0",
+    ]
+    let index = 0
+    while index + 1 < 8 {
+        let left = chain[index]
+        let right = chain[index + 1]
+        if option.option_unwrap_or(semver.compare(left, right), -9) != -1 {
+            return 30
+        }
+        if option.option_unwrap_or(semver.compare(right, left), -9) != 1 {
+            return 31
+        }
+        index = index + 1
+    }
+
+    // Build metadata does not affect precedence.
+    if option.option_unwrap_or(semver.compare("1.0.0+build.1", "1.0.0+build.2"), -9) != 0 {
+        return 32
+    }
+    if option.option_unwrap_or(semver.compare("1.0.0-alpha+1", "1.0.0-alpha+2"), -9) != 0 {
+        return 33
+    }
+
+    // Numeric identifiers compare numerically, not lexically.
+    if option.option_unwrap_or(semver.compare("1.0.0-alpha.2", "1.0.0-alpha.10"), -9) != -1 {
+        return 34
+    }
+    // Numeric identifiers rank below alphanumeric ones.
+    if option.option_unwrap_or(semver.compare("1.0.0-1", "1.0.0-alpha"), -9) != -1 {
+        return 35
+    }
+
+    // Invalid operands yield None.
+    if option.is_some(semver.compare("1.0.0", "1.0")) {
+        return 36
+    }
+    if option.is_some(semver.compare("nope", "1.0.0")) {
+        return 37
+    }
+
+    // A pre-release ranks below its release.
+    if rank("1.0.0-rc.1") != -1 {
+        return 38
+    }
+    if option.option_unwrap_or(semver.compare("10.0.0", "9.9.9"), -9) != 1 {
+        return 39
+    }
+
+    
+    // Hyphens inside build metadata are ordinary characters.
+    if not semver.is_valid("1.0.0+build-1") {
+        return 40
+    }
+    if not semver.is_valid("1.0.0+a-b.c-1") {
+        return 41
+    }
+    if option.option_unwrap_or(semver.major("1.0.0+build-1"), -1) != 1 {
+        return 42
+    }
+    if option.option_unwrap_or(semver.compare("1.0.0+build-1", "1.0.0"), -9) != 0 {
+        return 43
+    }
+    if semver.prerelease("1.0.0+build-1") != "" {
+        return 44
+    }
+    // An empty pre-release section is still invalid.
+    if semver.is_valid("1.0.0-+x") {
+        return 45
+    }
+
+    return 0
+}

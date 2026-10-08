@@ -1,0 +1,12 @@
+// Regression: `int` and `char` stay distinct for equality. The strict
+// semantic diagnostic is expected; callers must cast explicitly
+// (`code as char` / `letter as int`).
+module core_char_int_literal_equality
+
+public func main() returns int {
+    let code = 65
+    if code != 'A' {
+        return 1
+    }
+    return 0
+}

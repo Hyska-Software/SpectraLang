@@ -1,0 +1,153 @@
+// Consumer for `std.validate`: checksum, document, IBAN and heuristic
+// address/URL checks, including invalid and formatted inputs.
+module std_source_validate
+
+import std.validate as validate
+
+public func main() returns int {
+    // ── Luhn ─────────────────────────────────────────────────────────────
+    if not validate.luhn_valid("4539148803436467") {
+        return 1
+    }
+    if not validate.luhn_valid("4539 1488 0343 6467") {
+        return 2
+    }
+    if validate.luhn_valid("4539148803436468") {
+        return 3
+    }
+    if validate.luhn_valid("1234") {
+        return 4
+    }
+    if validate.luhn_valid("7") {
+        return 5
+    }
+
+    // ── ISBN-10 ──────────────────────────────────────────────────────────
+    if not validate.isbn10_valid("0306406152") {
+        return 6
+    }
+    if not validate.isbn10_valid("0-306-40615-2") {
+        return 7
+    }
+    if not validate.isbn10_valid("097522980X") {
+        return 8
+    }
+    if validate.isbn10_valid("0306406153") {
+        return 9
+    }
+    if validate.isbn10_valid("030640615") {
+        return 10
+    }
+
+    // ── ISBN-13 ──────────────────────────────────────────────────────────
+    if not validate.isbn13_valid("9780306406157") {
+        return 11
+    }
+    if not validate.isbn13_valid("978-0-306-40615-7") {
+        return 12
+    }
+    if validate.isbn13_valid("9780306406158") {
+        return 13
+    }
+
+    // ── CPF / CNPJ ───────────────────────────────────────────────────────
+    if not validate.cpf_valid("529.982.247-25") {
+        return 14
+    }
+    if not validate.cpf_valid("52998224725") {
+        return 15
+    }
+    if validate.cpf_valid("111.111.111-11") {
+        return 16
+    }
+    if validate.cpf_valid("52998224724") {
+        return 17
+    }
+    if validate.cpf_valid("5299822472") {
+        return 18
+    }
+
+    if not validate.cnpj_valid("11.222.333/0001-81") {
+        return 19
+    }
+    if not validate.cnpj_valid("11222333000181") {
+        return 20
+    }
+    if validate.cnpj_valid("11222333000182") {
+        return 21
+    }
+    if validate.cnpj_valid("00000000000000") {
+        return 22
+    }
+
+    // ── IBAN ─────────────────────────────────────────────────────────────
+    if not validate.iban_valid("GB82 WEST 1234 5698 7654 32") {
+        return 23
+    }
+    if not validate.iban_valid("GB82WEST12345698765432") {
+        return 24
+    }
+    if validate.iban_valid("GB82WEST12345698765433") {
+        return 25
+    }
+    if validate.iban_valid("GB82") {
+        return 26
+    }
+    if validate.iban_valid("1234WEST12345698765432") {
+        return 27
+    }
+
+    // ── E-mail heuristic ─────────────────────────────────────────────────
+    if not validate.email_is_valid("user.name+tag@example.com") {
+        return 28
+    }
+    if not validate.email_is_valid("user@sub.example.co.uk") {
+        return 29
+    }
+    if validate.email_is_valid("user@example") {
+        return 30
+    }
+    if validate.email_is_valid("user@@example.com") {
+        return 31
+    }
+    if validate.email_is_valid("user @example.com") {
+        return 32
+    }
+    if validate.email_is_valid("@example.com") {
+        return 33
+    }
+    if validate.email_is_valid("user@example.c") {
+        return 34
+    }
+
+    // ── URL heuristic ────────────────────────────────────────────────────
+    if not validate.url_is_valid("https://example.com/path?x=1") {
+        return 35
+    }
+    if not validate.url_is_valid("http://localhost:8080") {
+        return 36
+    }
+    if validate.url_is_valid("ftp://example.com") {
+        return 37
+    }
+    if validate.url_is_valid("https://") {
+        return 38
+    }
+    if validate.url_is_valid("https://exa mple.com") {
+        return 39
+    }
+    if validate.url_is_valid("example.com") {
+        return 40
+    }
+
+    
+    // A query or fragment in the authority position means the host is missing.
+    if validate.url_is_valid("http://?q=1") {
+        return 41
+    }
+    if validate.url_is_valid("http://#frag") {
+        return 42
+    }
+
+    return 0
+}

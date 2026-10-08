@@ -705,6 +705,17 @@ pub(crate) fn lookup_std_host_group_collections_string(
             return_type: IRType::Int,
             returns_value: true,
         }),
+        ("string", "from_scalar") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.string.from_scalar",
+            return_type: IRType::Enum {
+                name: "Option_string".to_string(),
+                variants: vec![
+                    ("Some".to_string(), Some(vec![IRType::String])),
+                    ("None".to_string(), None),
+                ],
+            },
+            returns_value: true,
+        }),
         ("string", "substring") => Some(HostFunctionDescriptor {
             runtime_name: "spectra.std.string.substring",
             return_type: IRType::String,

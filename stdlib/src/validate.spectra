@@ -1,0 +1,365 @@
+module std.validate
+
+import std.option as option
+import std.string as str
+
+// ── Digit checks ─────────────────────────────────────────────────────────
+
+// Luhn checksum (credit cards, IMEI): spaces and hyphens are ignored, at least
+// two digits are required.
+public func luhn_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    let length = str.len(digits)
+    if length < 2 {
+        return false
+    }
+
+    let sum = 0
+    let index = length - 1
+    let doubled = false
+    while index >= 0 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return false
+        }
+        if doubled {
+            let product = value * 2
+            if product > 9 {
+                sum = sum + (product - 9)
+            } else {
+                sum = sum + product
+            }
+        } else {
+            sum = sum + value
+        }
+        doubled = not doubled
+        index = index - 1
+    }
+
+    return sum % 10 == 0
+}
+
+// ISBN-10 with optional hyphens/spaces; the final check character may be `X`.
+public func isbn10_valid(text: string) returns bool {
+    let characters = alphanumeric_upper(text)
+    if str.len(characters) != 10 {
+        return false
+    }
+
+    let sum = 0
+    let index = 0
+    while index < 10 {
+        let code = str.char_at(characters, index)
+        let value = if index == 9 and code == 88 { 10 } else { code - 48 }
+        if value < 0 or value > 10 {
+            return false
+        }
+        if index < 9 and code < 48 {
+            return false
+        }
+        if index < 9 and code > 57 {
+            return false
+        }
+        sum = sum + value * (10 - index)
+        index = index + 1
+    }
+
+    return sum % 11 == 0
+}
+
+// ISBN-13 with optional hyphens/spaces.
+public func isbn13_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 13 {
+        return false
+    }
+
+    let sum = 0
+    let index = 0
+    while index < 13 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return false
+        }
+        if index % 2 == 0 {
+            sum = sum + value
+        } else {
+            sum = sum + value * 3
+        }
+        index = index + 1
+    }
+
+    return sum % 10 == 0
+}
+
+// Cadastro de Pessoas Físicas (Brazil): 11 digits, check digits validated and
+// repeated-digit placeholders rejected.
+public func cpf_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 11 {
+        return false
+    }
+    if all_digits_equal(digits) {
+        return false
+    }
+
+    if cpf_check_digit(digits, 9) != digit_at(digits, 9) {
+        return false
+    }
+    return cpf_check_digit(digits, 10) == digit_at(digits, 10)
+}
+
+// Cadastro Nacional da Pessoa Jurídica (Brazil): 14 digits with check digits.
+public func cnpj_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 14 {
+        return false
+    }
+    if all_digits_equal(digits) {
+        return false
+    }
+
+    if cnpj_check_digit(digits, 12) != digit_at(digits, 12) {
+        return false
+    }
+    return cnpj_check_digit(digits, 13) == digit_at(digits, 13)
+}
+
+// IBAN: spaces are ignored, letters are uppercased, length must be 15..34 and
+// the ISO 7064 mod-97 check must evaluate to 1.
+public func iban_valid(text: string) returns bool {
+    let normalized = alphanumeric_upper(text)
+    let length = str.len(normalized)
+    if length < 15 or length > 34 {
+        return false
+    }
+    if not is_letter(str.char_at(normalized, 0)) or not is_letter(str.char_at(normalized, 1)) {
+        return false
+    }
+    if str.char_at(normalized, 2) < 48 or str.char_at(normalized, 2) > 57 {
+        return false
+    }
+    if str.char_at(normalized, 3) < 48 or str.char_at(normalized, 3) > 57 {
+        return false
+    }
+
+    // Country code and check digits move to the end before the mod-97 pass.
+    let remainder = 0
+    let index = 4
+    while index < length {
+        remainder = iban_step(remainder, str.char_at(normalized, index))
+        index = index + 1
+    }
+    index = 0
+    while index < 4 {
+        remainder = iban_step(remainder, str.char_at(normalized, index))
+        index = index + 1
+    }
+
+    return remainder == 1
+}
+
+// ── Textual checks (documented heuristics) ───────────────────────────────
+
+// Heuristic address check: exactly one `@`, non-empty local part, dotted
+// domain, alphabetic TLD of at least two characters, no whitespace. It is not
+// RFC 5322 and must not be the only validation for security decisions.
+public func email_is_valid(text: string) returns bool {
+    let length = str.len(text)
+    if length < 6 or length > 254 {
+        return false
+    }
+    if str.contains(text, " ") {
+        return false
+    }
+
+    let at = str.index_of(text, "@")
+    if at <= 0 or at >= length - 1 {
+        return false
+    }
+
+    let domain = str.substring(text, at + 1, length)
+    if str.contains(domain, "@") {
+        return false
+    }
+
+    // The TLD starts after the last dot of the domain.
+    let domain_length = str.len(domain)
+    let last_dot = -1
+    let index = 0
+    while index < domain_length {
+        if str.char_at(domain, index) == 46 {
+            last_dot = index
+        }
+        index = index + 1
+    }
+    if last_dot <= 0 or last_dot == domain_length - 1 {
+        return false
+    }
+
+    let tld = str.substring(domain, last_dot + 1, domain_length)
+    if str.len(tld) < 2 {
+        return false
+    }
+    index = 0
+    while index < str.len(tld) {
+        if not is_letter(str.char_at(tld, index)) {
+            return false
+        }
+        index = index + 1
+    }
+
+    return true
+}
+
+// Heuristic absolute HTTP(S) URL check: scheme, `://`, non-empty host, no
+// whitespace in the authority. Query strings and fragments are not inspected.
+public func url_is_valid(text: string) returns bool {
+    let length = str.len(text)
+
+    let scheme_end = 0
+    if str.starts_with(text, "https://") {
+        scheme_end = 8
+    } else if str.starts_with(text, "http://") {
+        scheme_end = 7
+    } else {
+        return false
+    }
+
+    if scheme_end >= length {
+        return false
+    }
+
+    let rest = str.substring(text, scheme_end, length)
+    if str.contains(rest, " ") {
+        return false
+    }
+
+    let path_start = str.index_of(rest, "/")
+    let authority = if path_start < 0 { rest } else { str.substring(rest, 0, path_start) }
+    if str.len(authority) == 0 {
+        return false
+    }
+    // A query or fragment in the authority position means the host is missing.
+    let first = str.char_at(authority, 0)
+    if first == 63 or first == 35 {
+        return false
+    }
+
+    return true
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Keeps only decimal digits.
+func digits_only(text: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        let code = str.char_at(text, index)
+        if code >= 48 and code <= 57 {
+            push_code(builder, code)
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Uppercases ASCII letters and drops everything that is not `0-9A-Z`.
+func alphanumeric_upper(text: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        let code = str.char_at(text, index)
+        if code >= 97 and code <= 122 {
+            push_code(builder, code - 32)
+        } else if (code >= 48 and code <= 57) or (code >= 65 and code <= 90) {
+            push_code(builder, code)
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+func push_code(builder: int, code: int) {
+    let piece = option.option_unwrap_or(str.from_scalar(code), "")
+    if str.len(piece) == 1 {
+        str.builder_push(builder, piece)
+    }
+}
+
+func digit_at(digits: string, index: int) returns int {
+    if index < 0 or index >= str.len(digits) {
+        return -1
+    }
+    return str.char_at(digits, index) - 48
+}
+
+func is_letter(code: int) returns bool {
+    if code >= 65 and code <= 90 {
+        return true
+    }
+    return code >= 97 and code <= 122
+}
+
+func all_digits_equal(digits: string) returns bool {
+    let first = str.char_at(digits, 0)
+    let index = 1
+    while index < str.len(digits) {
+        if str.char_at(digits, index) != first {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func cpf_check_digit(digits: string, count: int) returns int {
+    let sum = 0
+    let index = 0
+    while index < count {
+        sum = sum + digit_at(digits, index) * (count + 1 - index)
+        index = index + 1
+    }
+
+    let remainder = (sum * 10) % 11
+    if remainder == 10 {
+        return 0
+    }
+    return remainder
+}
+
+func cnpj_check_digit(digits: string, count: int) returns int {
+    let weights: [int] = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    let offset = 13 - count
+
+    let sum = 0
+    let index = 0
+    while index < count {
+        sum = sum + digit_at(digits, index) * weights[index + offset]
+        index = index + 1
+    }
+
+    let remainder = sum % 11
+    if remainder < 2 {
+        return 0
+    }
+    return 11 - remainder
+}
+
+// One mod-97 step: letters contribute their two decimal digits.
+func iban_step(remainder: int, code: int) returns int {
+    if code >= 48 and code <= 57 {
+        return (remainder * 10 + (code - 48)) % 97
+    }
+
+    let value = code - 55
+    let after_tens = (remainder * 10 + value / 10) % 97
+    return (after_tens * 10 + value % 10) % 97
+}

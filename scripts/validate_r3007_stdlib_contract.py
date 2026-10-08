@@ -333,7 +333,7 @@ def discover_sources(root: Path, manifest: dict[str, Any]) -> SourceInventory:
                 else:
                     expected_modules[module] = path
                 for function in re.finditer(
-                    r"^\s*public\s+(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                    r"^\s*public\s+(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]*>)?\s*\(",
                     text,
                     re.MULTILINE,
                 ):

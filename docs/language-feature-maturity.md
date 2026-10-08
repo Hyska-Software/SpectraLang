@@ -64,6 +64,10 @@ particular host.
 - tuple, struct, enum, and OR-patterns in the validated pattern surface
 - closures/lambdas with by-value captures in the currently validated surface
 - qualified stdlib calls such as `std.io.println(...)`
+- source-authored std modules bundled with the compiler (`std.algorithms`,
+  `std.encoding`, `std.stats`, `std.validate`, `std.path`, `std.text`,
+  `std.calendar`, `std.iter`, `std.fmt`, `std.semver`), documented in
+  `docs/reference/05-stdlib.md` and covered by JIT+AOT fixtures
 - `std.tensor` production baseline runtime API for tensor handles, safe views, shape metadata, elementwise ops, reductions, transforms, 2D matmul, and batched matmul
 - `std.tensor` production baseline reverse-mode autodiff for float tensor handles, scalar tensor losses, gradient accumulation, and inference/no-grad mode
 - Phase 14 tensor language core baseline:

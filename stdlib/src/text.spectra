@@ -1,0 +1,453 @@
+module std.text
+
+import std.algorithms as algorithms
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// Text preparation helpers over UTF-8 strings. Byte-level operations only run
+// on ASCII boundaries or on complete UTF-8 runes; no rune is ever split.
+
+// Lowercase ASCII slug: runs of non-alphanumeric bytes become a single `-`,
+// leading/trailing `-` are trimmed and non-ASCII bytes are dropped.
+public func slugify(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+    let pending_separator = false
+
+    while index < length {
+        let code = str.char_at(value, index)
+        if code >= 65 and code <= 90 {
+            if pending_separator and str.builder_len(builder) > 0 {
+                push_code(builder, 45)
+            }
+            pending_separator = false
+            push_code(builder, code + 32)
+        } else if (code >= 97 and code <= 122) or (code >= 48 and code <= 57) {
+            if pending_separator and str.builder_len(builder) > 0 {
+                push_code(builder, 45)
+            }
+            pending_separator = false
+            push_code(builder, code)
+        } else if code < 128 {
+            // ASCII punctuation and whitespace separate words.
+            pending_separator = true
+        } else {
+            // Non-ASCII bytes are dropped by contract; a following separator
+            // must not be swallowed by the dropped rune.
+            pending_separator = true
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Collapses every run of space, tab, newline or carriage return into one space
+// and trims the result.
+public func normalize_whitespace(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+    let pending_space = false
+
+    while index < length {
+        let code = str.char_at(value, index)
+        if is_whitespace(code) {
+            if str.builder_len(builder) > 0 {
+                pending_space = true
+            }
+        } else {
+            if pending_space {
+                push_code(builder, 32)
+                pending_space = false
+            }
+            // Copy the whole rune so multi-byte text keeps its exact bytes.
+            index = index + push_rune(builder, value, index)
+        }
+        if is_whitespace(code) {
+            index = index + 1
+        }
+    }
+
+    return str.builder_finish(builder)
+}
+
+// `value` limited to `max_bytes` bytes without splitting a UTF-8 rune.
+// A non-positive limit yields the empty string.
+public func truncate(value: string, max_bytes: int) returns string {
+    if max_bytes <= 0 {
+        return ""
+    }
+
+    let length = str.len(value)
+    if length <= max_bytes {
+        return value
+    }
+
+    // Walk complete runes and stop before the first rune that would exceed the
+    // limit. Byte offsets are never probed inside a rune (`char_at` rejects
+    // non-boundary indexes).
+    let offset = 0
+    let end = 0
+    while offset < length {
+        let rune_length = rune_length_at(value, offset)
+        if offset + rune_length > max_bytes {
+            break
+        }
+        offset = offset + rune_length
+        end = offset
+    }
+
+    return str.substring(value, 0, end)
+}
+
+// Breaks `value` into lines of at most `width` bytes at space boundaries.
+// Words longer than `width` stay whole. A non-positive width yields an empty
+// list.
+public func wrap(value: string, width: int) returns List<string> {
+    let lines: List<string> = collections.list_new()
+    if width <= 0 {
+        return lines
+    }
+
+    let normalized = normalize_whitespace(value)
+    let length = str.len(normalized)
+    let line = ""
+    let index = 0
+
+    while index < length {
+        let word_start = index
+        while index < length and str.char_at(normalized, index) != 32 {
+            index = index + 1
+        }
+        let word = str.substring(normalized, word_start, index)
+
+        if str.len(line) == 0 {
+            line = word
+        } else if str.len(line) + 1 + str.len(word) <= width {
+            line = line + " " + word
+        } else {
+            collections.list_push(lines, line)
+            line = word
+        }
+
+        while index < length and str.char_at(normalized, index) == 32 {
+            index = index + 1
+        }
+    }
+
+    if str.len(line) > 0 {
+        collections.list_push(lines, line)
+    }
+
+    return lines
+}
+
+// Number of whitespace-separated words.
+public func word_count(value: string) returns int {
+    let length = str.len(value)
+    let count = 0
+    let inside_word = false
+    let index = 0
+
+    while index < length {
+        if is_whitespace(str.char_at(value, index)) {
+            inside_word = false
+        } else if not inside_word {
+            inside_word = true
+            count = count + 1
+        }
+        index = index + 1
+    }
+
+    return count
+}
+
+// Escapes `value` as a JSON string body: quotes, backslashes and control
+// characters; non-ASCII text is preserved as UTF-8.
+public func escape_json(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+
+    while index < length {
+        let code = str.char_at(value, index)
+        let step = 1
+        if code == 34 {
+            push_literal(builder, "\\\"")
+        } else if code == 92 {
+            push_literal(builder, "\\\\")
+        } else if code == 8 {
+            push_literal(builder, "\\b")
+        } else if code == 12 {
+            push_literal(builder, "\\f")
+        } else if code == 10 {
+            push_literal(builder, "\\n")
+        } else if code == 13 {
+            push_literal(builder, "\\r")
+        } else if code == 9 {
+            push_literal(builder, "\\t")
+        } else if code < 32 {
+            push_literal(builder, "\\u00")
+            push_code(builder, hex_digit(code / 16))
+            push_code(builder, hex_digit(code % 16))
+        } else if code < 128 {
+            push_code(builder, code)
+        } else {
+            // Non-ASCII text is preserved byte for byte.
+            step = push_rune(builder, value, index)
+        }
+        index = index + step
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Reverses `escape_json`. Unknown escapes, truncated `\\uXXXX` sequences and
+// lone surrogates return None; valid surrogate pairs decode to one rune.
+public func unescape_json(value: string) returns Option<string> {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+
+    while index < length {
+        if str.char_at(value, index) == 92 {
+            let next = apply_escape(value, index, builder)
+            if next < 0 {
+                str.builder_free(builder)
+                return Option::None
+            }
+            index = next
+        } else {
+            index = index + push_rune(builder, value, index)
+        }
+    }
+
+    return Option::Some(str.builder_finish(builder))
+}
+
+// Applies the escape sequence that starts at `index` (the backslash) and
+// returns the index after it, or -1 when the sequence is invalid.
+func apply_escape(value: string, index: int, builder: int) returns int {
+    if index + 1 >= str.len(value) {
+        return -1
+    }
+
+    let escape = str.char_at(value, index + 1)
+    let simple = simple_escape_code(escape)
+    if simple >= 0 {
+        push_code(builder, simple)
+        return index + 2
+    }
+    if escape != 117 {
+        return -1
+    }
+    return apply_unicode_escape(value, index, builder)
+}
+
+// Code produced by the single-character escapes (`\"`, `\\`, `\/`, `\b`,
+// `\f`, `\n`, `\r`, `\t`), or -1 for anything else.
+func simple_escape_code(escape: int) returns int {
+    if escape == 34 {
+        return 34
+    }
+    if escape == 92 {
+        return 92
+    }
+    if escape == 47 {
+        return 47
+    }
+    if escape == 98 {
+        return 8
+    }
+    if escape == 102 {
+        return 12
+    }
+    if escape == 110 {
+        return 10
+    }
+    if escape == 114 {
+        return 13
+    }
+    if escape == 116 {
+        return 9
+    }
+    return -1
+}
+
+// Applies a `\uXXXX` escape, combining a surrogate pair when present. Returns
+// the index after the escape, or -1 when the sequence is invalid.
+func apply_unicode_escape(value: string, index: int, builder: int) returns int {
+    let high = read_hex4(value, index + 2)
+    if high < 0 {
+        return -1
+    }
+    if high >= 56320 and high <= 57343 {
+        // A low surrogate cannot start a sequence.
+        return -1
+    }
+    if high < 55296 or high > 56319 {
+        return push_scalar(builder, high, index + 6)
+    }
+
+    // High surrogate: the next escape must carry the low half.
+    if index + 12 > str.len(value) {
+        return -1
+    }
+    if str.char_at(value, index + 6) != 92 or str.char_at(value, index + 7) != 117 {
+        return -1
+    }
+    let low = read_hex4(value, index + 8)
+    if low < 56320 or low > 57343 {
+        return -1
+    }
+    return push_scalar(builder, 65536 + (high - 55296) * 1024 + (low - 56320), index + 12)
+}
+
+// Materializes `scalar` and returns `next`, or -1 when it is not a scalar.
+func push_scalar(builder: int, scalar: int, next: int) returns int {
+    let piece = str.from_scalar(scalar)
+    if not option.is_some(piece) {
+        return -1
+    }
+    push_literal(builder, option.option_unwrap_or(piece, ""))
+    return next
+}
+
+// Levenshtein-based similarity in `0.0..=1.0` over Unicode scalar values.
+public func similarity_ratio(left: string, right: string) returns float {
+    let left_runes = rune_count(left)
+    let right_runes = rune_count(right)
+    let longest = left_runes
+    if right_runes > longest {
+        longest = right_runes
+    }
+    if longest == 0 {
+        return 1.0
+    }
+
+    let distance = algorithms.levenshtein(left, right)
+    return 1.0 - (distance as float) / (longest as float)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+func is_whitespace(code: int) returns bool {
+    return code == 32 or code == 9 or code == 10 or code == 13
+}
+
+// True for ASCII bytes and UTF-8 lead bytes (never for a continuation byte).
+func is_rune_start(code: int) returns bool {
+    return code < 128 or code >= 192
+}
+
+// UTF-8 byte length of the rune starting at `offset` (a char boundary).
+func rune_length_at(value: string, offset: int) returns int {
+    let first = str.char_at(value, offset)
+    if first < 128 {
+        return 1
+    }
+    if first < 224 {
+        return 2
+    }
+    if first < 240 {
+        return 3
+    }
+    return 4
+}
+
+func push_code(builder: int, code: int) {
+    let piece = option.option_unwrap_or(str.from_scalar(code), "")
+    if str.len(piece) > 0 {
+        str.builder_push(builder, piece)
+    }
+}
+
+// Copies the rune at `offset` byte for byte and returns its byte length.
+func push_rune(builder: int, value: string, offset: int) returns int {
+    let first = str.char_at(value, offset)
+    if first < 128 {
+        push_code(builder, first)
+        return 1
+    }
+    if first < 224 {
+        push_code(builder, (first - 192) * 64 + (str.char_at(value, offset + 1) - 128))
+        return 2
+    }
+    if first < 240 {
+        push_code(
+            builder,
+            (first - 224) * 4096 +
+            (str.char_at(value, offset + 1) - 128) * 64 +
+            (str.char_at(value, offset + 2) - 128),
+        )
+        return 3
+    }
+    push_code(
+        builder,
+        (first - 240) * 262144 +
+        (str.char_at(value, offset + 1) - 128) * 4096 +
+        (str.char_at(value, offset + 2) - 128) * 64 +
+        (str.char_at(value, offset + 3) - 128),
+    )
+    return 4
+}
+
+func push_literal(builder: int, text: string) {
+    str.builder_push(builder, text)
+}
+
+func hex_digit(value: int) returns int {
+    if value < 10 {
+        return 48 + value
+    }
+    return 87 + value
+}
+
+// Parses exactly four hexadecimal digits at `offset`, or -1.
+func read_hex4(text: string, offset: int) returns int {
+    if offset + 4 > str.len(text) {
+        return -1
+    }
+
+    let value = 0
+    let index = 0
+    while index < 4 {
+        let digit = hex_value(str.char_at(text, offset + index))
+        if digit < 0 {
+            return -1
+        }
+        value = value * 16 + digit
+        index = index + 1
+    }
+    return value
+}
+
+func hex_value(code: int) returns int {
+    if code >= 48 and code <= 57 {
+        return code - 48
+    }
+    if code >= 97 and code <= 102 {
+        return code - 87
+    }
+    if code >= 65 and code <= 70 {
+        return code - 55
+    }
+    return -1
+}
+
+// Counts UTF-8 runes by lead bytes.
+func rune_count(value: string) returns int {
+    let length = str.len(value)
+    let count = 0
+    let index = 0
+    while index < length {
+        if is_rune_start(str.char_at(value, index)) {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}

@@ -1,0 +1,388 @@
+module std.semver
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// Semantic Versioning 2.0.0 parsing and precedence. Build metadata is accepted
+// and ignored for ordering; leading zeros in numeric identifiers are invalid.
+
+// True when `text` is a valid semantic version.
+public func is_valid(text: string) returns bool {
+    let core = core_part(text)
+    if not valid_core(core) {
+        return false
+    }
+    // `-` and `+` introduce sections that must be non-empty when present. Only
+    // a `-` before the first `+` opens the pre-release section; hyphens inside
+    // build metadata are ordinary identifier characters.
+    if prerelease_dash(text) >= 0 and str.len(prerelease_part(text)) == 0 {
+        return false
+    }
+    if str.index_of(text, "+") >= 0 and str.len(build_part(text)) == 0 {
+        return false
+    }
+    return valid_prerelease(prerelease_part(text)) and valid_build(build_part(text))
+}
+
+// -1, 0 or 1 following SemVer precedence, or None when either side is invalid.
+public func compare(left: string, right: string) returns Option<int> {
+    if not is_valid(left) or not is_valid(right) {
+        return Option::None
+    }
+
+    let left_core = split_core(core_part(left))
+    let right_core = split_core(core_part(right))
+    if not option.is_some(left_core) or not option.is_some(right_core) {
+        return Option::None
+    }
+
+    let left_parts = option.option_unwrap_or(left_core, empty_parts())
+    let right_parts = option.option_unwrap_or(right_core, empty_parts())
+
+    let index = 0
+    while index < 3 {
+        let left_value = part_at(left_parts, index)
+        let right_value = part_at(right_parts, index)
+        if left_value < right_value {
+            return Option::Some(-1)
+        }
+        if left_value > right_value {
+            return Option::Some(1)
+        }
+        index = index + 1
+    }
+
+    let ordering = compare_prerelease(prerelease_part(left), prerelease_part(right))
+    return Option::Some(ordering)
+}
+
+// Major component, or None when `text` is invalid.
+public func major(text: string) returns Option<int> {
+    return core_number(text, 0)
+}
+
+// Minor component, or None when `text` is invalid.
+public func minor(text: string) returns Option<int> {
+    return core_number(text, 1)
+}
+
+// Patch component, or None when `text` is invalid.
+public func patch(text: string) returns Option<int> {
+    return core_number(text, 2)
+}
+
+// Pre-release text without the leading `-`; empty when absent or invalid.
+public func prerelease(text: string) returns string {
+    if not is_valid(text) {
+        return ""
+    }
+    return prerelease_part(text)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Index of the `-` that opens the pre-release section, or -1. A later `+`
+// starts build metadata, where hyphens are ordinary characters.
+func prerelease_dash(text: string) returns int {
+    let length = str.len(text)
+    let index = 0
+    while index < length {
+        let code = str.char_at(text, index)
+        if code == 43 {
+            return -1
+        }
+        if code == 45 {
+            return index
+        }
+        index = index + 1
+    }
+    return -1
+}
+
+// Core version text: everything before the first `-` (pre-release) or `+`
+// (build metadata).
+func core_part(text: string) returns string {
+    let end = str.len(text)
+    let dash = prerelease_dash(text)
+    let plus = str.index_of(text, "+")
+    if dash >= 0 and dash < end {
+        end = dash
+    }
+    if plus >= 0 and plus < end {
+        end = plus
+    }
+    return str.substring(text, 0, end)
+}
+
+// Pre-release identifiers (between `-` and `+`), or "" when absent.
+func prerelease_part(text: string) returns string {
+    let dash = prerelease_dash(text)
+    if dash < 0 {
+        return ""
+    }
+    let end = str.len(text)
+    let plus = str.index_of(text, "+")
+    if plus >= 0 and plus < end {
+        end = plus
+    }
+    if dash + 1 > end {
+        return ""
+    }
+    return str.substring(text, dash + 1, end)
+}
+
+// Build metadata after `+`, or "" when absent.
+func build_part(text: string) returns string {
+    let plus = str.index_of(text, "+")
+    if plus < 0 {
+        return ""
+    }
+    return str.substring(text, plus + 1, str.len(text))
+}
+
+// `MAJOR.MINOR.PATCH` validation: three numeric identifiers without leading
+// zeros.
+func valid_core(core: string) returns bool {
+    let parts = split_core(core)
+    if not option.is_some(parts) {
+        return false
+    }
+    let values = option.option_unwrap_or(parts, empty_parts())
+    return part_at(values, 0) >= 0 and part_at(values, 1) >= 0 and part_at(values, 2) >= 0
+}
+
+func empty_parts() returns List<int> {
+    let parts: List<int> = collections.list_new()
+    return parts
+}
+
+func part_at(parts: List<int>, index: int) returns int {
+    if let Option::Some(value) = collections.list_get(parts, index) {
+        return value
+    }
+    return -1
+}
+
+// Splits `MAJOR.MINOR.PATCH` into three numbers; None when the shape or the
+// digits are invalid (including leading zeros and i64 overflow).
+func split_core(core: string) returns Option<List<int>> {
+    let parts: List<int> = collections.list_new()
+    let start = 0
+    let index = 0
+    let length = str.len(core)
+
+    while index <= length {
+        if index == length or str.char_at(core, index) == 46 {
+            let number = parse_number(core, start, index)
+            if number < 0 {
+                return Option::None
+            }
+            collections.list_push(parts, number)
+            start = index + 1
+        }
+        index = index + 1
+    }
+
+    if collections.list_len(parts) != 3 {
+        return Option::None
+    }
+    return Option::Some(parts)
+}
+
+// Numeric identifier without leading zeros, or -1 when invalid.
+func parse_number(text: string, start: int, end: int) returns int {
+    if end <= start {
+        return -1
+    }
+    if end - start > 1 and str.char_at(text, start) == 48 {
+        return -1
+    }
+
+    let value = 0
+    let index = start
+    while index < end {
+        let code = str.char_at(text, index)
+        if code < 48 or code > 57 {
+            return -1
+        }
+        let digit = code - 48
+        if value > (9223372036854775807 - digit) / 10 {
+            return -1
+        }
+        value = value * 10 + digit
+        index = index + 1
+    }
+    return value
+}
+
+// Component `index` of a valid version, or None.
+func core_number(text: string, index: int) returns Option<int> {
+    if not is_valid(text) {
+        return Option::None
+    }
+    let parts = split_core(core_part(text))
+    if not option.is_some(parts) {
+        return Option::None
+    }
+    let values = option.option_unwrap_or(parts, empty_parts())
+    let value = part_at(values, index)
+    return Option::Some(value)
+}
+
+// Dot-separated identifiers with non-empty alphanumeric/hyphen content; numeric
+// identifiers must not carry leading zeros.
+func valid_prerelease(text: string) returns bool {
+    if str.len(text) == 0 {
+        return true
+    }
+    return valid_identifiers(text, true)
+}
+
+func valid_build(text: string) returns bool {
+    if str.len(text) == 0 {
+        return true
+    }
+    return valid_identifiers(text, false)
+}
+
+func valid_identifiers(text: string, check_numeric: bool) returns bool {
+    let length = str.len(text)
+    let start = 0
+    let index = 0
+
+    while index <= length {
+        if index == length or str.char_at(text, index) == 46 {
+            if index == start {
+                return false
+            }
+            if check_numeric and is_numeric_span(text, start, index) {
+                if index - start > 1 and str.char_at(text, start) == 48 {
+                    return false
+                }
+            }
+            start = index + 1
+        } else {
+            let code = str.char_at(text, index)
+            let alphanumeric = (code >= 48 and code <= 57) or (code >= 65 and code <= 90) or (code >= 97 and code <= 122)
+            if not alphanumeric and code != 45 {
+                return false
+            }
+        }
+        index = index + 1
+    }
+
+    return true
+}
+
+func is_numeric_span(text: string, start: int, end: int) returns bool {
+    let index = start
+    while index < end {
+        let code = str.char_at(text, index)
+        if code < 48 or code > 57 {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+// Identifier-list precedence: numeric < alphanumeric, numeric compared by
+// value (leading zeros are invalid, so length decides first), alphanumeric
+// compared byte-wise; a prefix-equal shorter list is smaller.
+func compare_prerelease(left: string, right: string) returns int {
+    let left_length = str.len(left)
+    let right_length = str.len(right)
+    if left_length == 0 and right_length == 0 {
+        return 0
+    }
+    // A version with a pre-release has lower precedence than one without.
+    if left_length == 0 {
+        return 1
+    }
+    if right_length == 0 {
+        return -1
+    }
+
+    let left_index = 0
+    let right_index = 0
+    while left_index < left_length and right_index < right_length {
+        let left_end = identifier_end(left, left_index)
+        let right_end = identifier_end(right, right_index)
+        let ordering = compare_identifier(left, left_index, left_end, right, right_index, right_end)
+        if ordering != 0 {
+            return ordering
+        }
+        left_index = left_end + 1
+        right_index = right_end + 1
+    }
+
+    if left_index >= left_length and right_index >= right_length {
+        return 0
+    }
+    if left_index >= left_length {
+        return -1
+    }
+    return 1
+}
+
+func identifier_end(text: string, start: int) returns int {
+    let index = start
+    while index < str.len(text) and str.char_at(text, index) != 46 {
+        index = index + 1
+    }
+    return index
+}
+
+func compare_identifier(left: string, left_start: int, left_end: int, right: string, right_start: int, right_end: int) returns int {
+    let left_numeric = is_numeric_span(left, left_start, left_end)
+    let right_numeric = is_numeric_span(right, right_start, right_end)
+
+    if left_numeric and right_numeric {
+        let left_width = left_end - left_start
+        let right_width = right_end - right_start
+        if left_width != right_width {
+            if left_width < right_width {
+                return -1
+            }
+            return 1
+        }
+    } else if left_numeric {
+        return -1
+    } else if right_numeric {
+        return 1
+    }
+
+    return compare_span(left, left_start, left_end, right, right_start, right_end)
+}
+
+// Byte-wise comparison of two spans; shorter prefix is smaller.
+func compare_span(left: string, left_start: int, left_end: int, right: string, right_start: int, right_end: int) returns int {
+    let left_width = left_end - left_start
+    let right_width = right_end - right_start
+    let common = left_width
+    if right_width < common {
+        common = right_width
+    }
+
+    let offset = 0
+    while offset < common {
+        let left_code = str.char_at(left, left_start + offset)
+        let right_code = str.char_at(right, right_start + offset)
+        if left_code < right_code {
+            return -1
+        }
+        if left_code > right_code {
+            return 1
+        }
+        offset = offset + 1
+    }
+
+    if left_width == right_width {
+        return 0
+    }
+    if left_width < right_width {
+        return -1
+    }
+    return 1
+}

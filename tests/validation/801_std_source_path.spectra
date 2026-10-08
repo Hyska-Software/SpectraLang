@@ -1,0 +1,154 @@
+// Consumer for `std.path`: join, normalize, component extraction and
+// absolute-path detection across POSIX and Windows separators.
+module std_source_path
+
+import std.option as option
+import std.path as path
+
+public func main() returns int {
+    // ── join ─────────────────────────────────────────────────────────────
+    if path.join("a", "b") != "a/b" {
+        return 1
+    }
+    if path.join("a/", "b") != "a/b" {
+        return 2
+    }
+    if path.join("", "b") != "b" {
+        return 3
+    }
+    if path.join("a", "") != "a" {
+        return 4
+    }
+    if path.join("a", "/b") != "/b" {
+        return 5
+    }
+    if path.join("C:/tmp", "file.txt") != "C:/tmp/file.txt" {
+        return 6
+    }
+
+    // ── normalize ────────────────────────────────────────────────────────
+    if path.normalize("") != "." {
+        return 7
+    }
+    if path.normalize("a//b") != "a/b" {
+        return 8
+    }
+    if path.normalize("a/./b/../c") != "a/c" {
+        return 9
+    }
+    if path.normalize("../a") != "../a" {
+        return 10
+    }
+    if path.normalize("/../a") != "/a" {
+        return 11
+    }
+    if path.normalize("/a/b/") != "/a/b" {
+        return 12
+    }
+    if path.normalize("/") != "/" {
+        return 13
+    }
+    if path.normalize("C:\\dir\\file.txt") != "C:/dir/file.txt" {
+        return 14
+    }
+    if path.normalize("a/b\\c") != "a/b/c" {
+        return 15
+    }
+    if path.normalize("..") != ".." {
+        return 16
+    }
+    if path.normalize("a/..") != "." {
+        return 17
+    }
+
+    // ── file_name / parent ───────────────────────────────────────────────
+    if path.file_name("/a/b.txt") != "b.txt" {
+        return 18
+    }
+    if path.file_name("a/") != "a" {
+        return 19
+    }
+    if path.file_name("/") != "" {
+        return 20
+    }
+    if path.file_name("C:\\dir\\file.txt") != "file.txt" {
+        return 21
+    }
+
+    if option.option_unwrap_or(path.parent("/a/b.txt"), "x") != "/a" {
+        return 22
+    }
+    if option.option_unwrap_or(path.parent("a/b"), "x") != "a" {
+        return 23
+    }
+    if option.option_unwrap_or(path.parent("/a"), "x") != "/" {
+        return 24
+    }
+    if option.option_unwrap_or(path.parent("C:/dir/file.txt"), "x") != "C:/dir" {
+        return 25
+    }
+    if option.option_unwrap_or(path.parent("C:/file.txt"), "x") != "C:/" {
+        return 26
+    }
+    if option.is_some(path.parent("a")) {
+        return 27
+    }
+    if option.is_some(path.parent("/")) {
+        return 28
+    }
+    if option.is_some(path.parent("")) {
+        return 29
+    }
+
+    // ── extension / stem ─────────────────────────────────────────────────
+    if option.option_unwrap_or(path.extension("a.tar.gz"), "x") != "gz" {
+        return 30
+    }
+    if option.option_unwrap_or(path.extension("/dir/report.txt"), "x") != "txt" {
+        return 31
+    }
+    if option.is_some(path.extension("Makefile")) {
+        return 32
+    }
+    if option.is_some(path.extension("archive.")) {
+        return 33
+    }
+    if option.is_some(path.extension(".bashrc")) {
+        return 34
+    }
+
+    if path.stem("a.tar.gz") != "a.tar" {
+        return 35
+    }
+    if path.stem("/dir/report.txt") != "report" {
+        return 36
+    }
+    if path.stem("Makefile") != "Makefile" {
+        return 37
+    }
+    if path.stem(".bashrc") != ".bashrc" {
+        return 38
+    }
+
+    // ── is_absolute ──────────────────────────────────────────────────────
+    if not path.is_absolute("/a") or not path.is_absolute("\\a") {
+        return 39
+    }
+    if not path.is_absolute("C:/a") or not path.is_absolute("C:\\a") {
+        return 40
+    }
+    if path.is_absolute("a/b") or path.is_absolute("C:a") or path.is_absolute("") {
+        return 41
+    }
+
+    
+    // Windows separators are canonicalized in join/parent results.
+    if path.join("a\\", "b") != "a/b" {
+        return 42
+    }
+    if option.option_unwrap_or(path.parent("C:\\dir\\file.txt"), "x") != "C:/dir" {
+        return 43
+    }
+
+    return 0
+}

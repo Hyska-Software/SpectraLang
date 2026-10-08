@@ -44,6 +44,15 @@ explicit modular operations for the supported integer widths.
 14. [std.ml — AI/ML runtime](#14-stdml--aiml-runtime)
 15. [std.serve — Serving and guardrails](#15-stdserve--serving-and-guardrails)
 16. [std.algorithms — Algoritmos / Algorithms](#16-stdalgorithms--algoritmos--algorithms)
+17. [std.encoding — Codificação de texto / Text Encoding](#17-stdencoding--codificação-de-texto--text-encoding)
+18. [std.stats — Estatística / Statistics](#18-stdstats--estatística--statistics)
+19. [std.validate — Validação de dados / Data Validation](#19-stdvalidate--validação-de-dados--data-validation)
+20. [std.path — Caminhos / Paths](#20-stdpath--caminhos--paths)
+21. [std.text — Preparação de texto / Text Preparation](#21-stdtext--preparação-de-texto--text-preparation)
+22. [std.calendar — Calendário / Calendar](#22-stdcalendar--calendário--calendar)
+23. [std.iter — Adaptadores de sequência / Sequence adaptors](#23-stditer--adaptadores-de-sequência--sequence-adaptors)
+24. [std.fmt — Formatação / Formatting](#24-stdfmt--formatação--formatting)
+25. [std.semver — Versões semânticas / Semantic Versioning](#25-stdsemver--versões-semânticas--semantic-versioning)
 
 ---
 
@@ -269,6 +278,20 @@ let e = std.string.char_at("hello", 1)
      // 101 ('e')
 let oob = std.string.char_at("hi", 10)
      // -1
+```
+
+#### `from_scalar(code: int) -> Option<string>`
+
+**PT-BR:** Materializa um valor de scalar Unicode como texto UTF-8. Códigos válidos são `0` a `0x10FFFF`, excluindo a faixa de surrogates (`0xD800`–`0xDFFF`); qualquer outro código retorna `None`. É a primitiva que permite montar texto a partir de códigos de byte em módulos-fonte da std.
+**EN-US:** Materializes a Unicode scalar value as UTF-8 text. Valid codes are `0` to `0x10FFFF` excluding the surrogate range (`0xD800`–`0xDFFF`); any other code returns `None`. This is the primitive that lets source-authored std modules build text from byte codes.
+
+```spectra
+let upper_a = std.string.from_scalar(65)
+    // Some("A")
+let euro = std.string.from_scalar(0x20AC)
+    // Some("€")
+let invalid = std.string.from_scalar(0xD800)
+    // None
 ```
 
 #### `substring(s: string, start: int, end: int) -> string`
@@ -2200,9 +2223,11 @@ input/output distribution summaries, drift checks, and observability export.
 
 `std.algorithms` is implemented in `stdlib/src/algorithms.spectra`, bundled with
 the compiler, and compiled as an ordinary Spectra module. Importing it does not
-require a package dependency, copied source files, or network access. It has no
-native host-call dependency. An AOT executable contains the compiled functions
-and does not need the `.spectra` source after the build.
+require a package dependency, copied source files, or network access. The module
+builds on the native `std.string`, `std.collections` and `std.option` primitives
+(text construction, list access, absence values); its own logic has no further
+host-call dependency. An AOT executable contains the compiled functions and does
+not need the `.spectra` source after the build.
 
 ```spectra
 import std.algorithms as alg
@@ -2210,6 +2235,8 @@ from std.algorithms import gcd_nonnegative as gcd
 
 let common_divisor = gcd(84, 30)
 let prime = alg.is_prime(29)
+let hex = alg.to_base(255, 16)
+    // Some("ff")
 ```
 
 ### `gcd_nonnegative(a: int, b: int) -> int`
@@ -2221,6 +2248,507 @@ convenção, `(0, 0)` retorna `0`.
 
 Retorna `false` para valores menores que `2`; nos demais casos, informa se o
 valor é primo.
+
+### `binary_search_int(sorted: List<int>, target: int) -> int`
+
+Índice de `target` em uma lista não decrescente, ou `-1` quando ausente.
+Valores duplicados resolvem para um dos índices.
+
+### `to_base(value: int, radix: int) -> Option<string>`
+
+Texto de `value` em `radix` (2 a 36) com dígitos minúsculos `0-9a-z`. Valores
+negativos e radices fora do intervalo retornam `None`.
+
+### `from_base(text: string, radix: int) -> Option<int>`
+
+Interpreta um inteiro sem sinal em `radix` (2 a 36), aceitando maiúsculas e
+minúsculas. Entrada vazia, dígito inválido e overflow de `i64` retornam `None`.
+
+### `mod_inverse(value: int, modulus: int) -> Option<int>`
+
+Inverso multiplicativo de `value` módulo `modulus`, ou `None` quando não
+existe. Requer `value >= 0` e `modulus > 1`.
+
+### `factorial(value: int) -> Option<int>`
+
+`value!`, ou `None` para entrada negativa e overflow de `i64` (a partir de
+`21!`).
+
+### `binomial(n: int, k: int) -> Option<int>`
+
+Coeficiente binomial `n` escolhe `k`, ou `None` para entrada fora do domínio e
+overflow.
+
+### `collatz_steps(value: int) -> Option<int>`
+
+Número de passos de Collatz até `1`. Valores abaixo de `1` e entradas cujo
+passo `3n + 1` estouraria `i64` retornam `None`.
+
+### `digit_sum(value: int) -> int`
+
+Soma dos dígitos decimais de `value`, ignorando o sinal.
+
+### `roman_encode(value: int) -> Option<string>`
+
+Numeral romano canônico para `1` a `3999`; outros valores retornam `None`.
+
+### `roman_decode(text: string) -> Option<int>`
+
+Interpreta um numeral romano com a regra subtrativa padrão. Entrada vazia e
+símbolos desconhecidos retornam `None`.
+
+### `levenshtein(left: string, right: string) -> int`
+
+Distância de edição em valores de scalar Unicode (inserção, remoção e
+substituição custam `1`). O UTF-8 é decodificado por aritmética de faixas, então
+nenhum byte é dividido.
+
+---
+
+## 17. std.encoding — Codificação de texto / Text Encoding
+
+`std.encoding` é implementado em `stdlib/src/encoding.spectra` e opera sobre os
+bytes UTF-8 do texto. O escopo é **texto**: round-trip de dados binários
+arbitrários exige um tipo `bytes` futuro. Decodificadores rejeitam sequências que
+não formam UTF-8 válido (incluindo surrogates e codificações overlong).
+
+```spectra
+import std.encoding as encoding
+
+let hex = encoding.hex_encode("é")
+    // "c3a9"
+let back = encoding.hex_decode("c3a9")
+    // Some("é")
+let encoded = encoding.percent_encode("a b")
+    // "a%20b"
+```
+
+### `hex_encode(value: string) -> string`
+
+Hexadecimal minúsculo, dois dígitos por byte UTF-8.
+
+### `hex_decode(text: string) -> Option<string>`
+
+Aceita maiúsculas e minúsculas. Comprimento ímpar, dígito inválido ou bytes que
+não formam UTF-8 retornam `None`.
+
+### `base64_encode(value: string) -> string`
+
+Base64 padrão (RFC 4648) com padding `=`.
+
+### `base64_decode(text: string) -> Option<string>`
+
+Valida alfabeto, padding e comprimento; resultados que não formam UTF-8
+retornam `None`.
+
+### `percent_encode(value: string) -> string`
+
+Preserva o conjunto não reservado `A-Za-z0-9-._~`; todo o resto vira `%XX` com
+hexadecimal maiúsculo.
+
+### `percent_decode(text: string) -> Option<string>`
+
+Decodifica escapes `%XX`. `+` **não** vira espaço (form encoding é
+`std.api.query`); escapes inválidos e resultados não-UTF-8 retornam `None`.
+
+### `rot13(value: string) -> string`
+
+ROT13 apenas em letras ASCII; demais scalar values são preservados byte a byte.
+É involução.
+
+---
+
+---
+
+## 18. std.stats — Estatística / Statistics
+
+`std.stats` é implementado em `stdlib/src/stats.spectra` sobre `List<float>`.
+Funções que ordenam (`median_f`, `percentile_f`) trabalham em uma **cópia** e
+preservam a ordem da lista de entrada. Listas vazias e séries constantes são
+representadas com `None` em vez de valores ambíguos.
+
+```spectra
+import std.stats as stats
+
+let mean = stats.mean_f(values)
+    // Option<float>
+let spread = stats.stddev_f(values)
+    // Option<float>
+```
+
+### `sum_f(values: List<float>) -> float`
+
+Soma dos valores; lista vazia soma `0.0`.
+
+### `mean_f(values: List<float>) -> Option<float>`
+
+Média aritmética; `None` para lista vazia.
+
+### `median_f(values: List<float>) -> Option<float>`
+
+Mediana de uma cópia ordenada (média dos dois centrais quando `n` é par); `None`
+para lista vazia.
+
+### `variance_f(values: List<float>) -> Option<float>`
+
+Variância populacional (divisão por `n`); `None` para lista vazia.
+
+### `variance_sample_f(values: List<float>) -> Option<float>`
+
+Variância amostral (divisão por `n - 1`); `None` com menos de dois valores.
+
+### `stddev_f(values: List<float>) -> Option<float>` / `stddev_sample_f(values: List<float>) -> Option<float>`
+
+Desvio padrão populacional e amostral.
+
+### `percentile_f(values: List<float>, percent: float) -> Option<float>`
+
+Percentil com interpolação linear (`rank = percent / 100 * (n - 1)`). `None`
+para lista vazia ou `percent` fora de `0..=100`.
+
+### `covariance_f(left: List<float>, right: List<float>) -> Option<float>`
+
+Covariância populacional; `None` para listas vazias ou de tamanhos diferentes.
+
+### `correlation_f(left: List<float>, right: List<float>) -> Option<float>`
+
+Coeficiente de Pearson; `None` para tamanhos diferentes, listas vazias ou série
+constante (variância zero).
+
+---
+
+---
+
+## 19. std.validate — Validação de dados / Data Validation
+
+`std.validate` é implementado em `stdlib/src/validate.spectra`. Checksums e
+documentos ignoram separadores comuns (espaços, hífens, pontos) antes de
+validar. As checagens de e-mail e URL são **heurísticas documentadas**: não são
+RFC 5322/3986 completas e não devem ser a única validação de decisões de
+segurança.
+
+```spectra
+import std.validate as validate
+
+if validate.cpf_valid("529.982.247-25") {
+    // documento consistente
+}
+if validate.iban_valid("GB82 WEST 1234 5698 7654 32") {
+    // IBAN consistente (mod 97)
+}
+```
+
+### `luhn_valid(text: string) -> bool`
+
+Checksum de Luhn (cartões, IMEI); exige ao menos dois dígitos.
+
+### `isbn10_valid(text: string) -> bool` / `isbn13_valid(text: string) -> bool`
+
+ISBN-10 (aceita `X` final) e ISBN-13 com dígitos verificadores válidos.
+
+### `cpf_valid(text: string) -> bool` / `cnpj_valid(text: string) -> bool`
+
+Documentos brasileiros com dígitos verificadores; sequências de dígitos
+repetidos são rejeitadas.
+
+### `iban_valid(text: string) -> bool`
+
+IBAN normalizado (sem espaços, maiúsculo), comprimento `15..=34` e ISO 7064
+mod-97 igual a 1.
+
+### `email_is_valid(text: string) -> bool`
+
+Heurística: um único `@`, parte local não vazia, domínio com ponto, TLD
+alfabético de dois ou mais caracteres, sem espaços.
+
+### `url_is_valid(text: string) -> bool`
+
+Heurística: esquema `http://` ou `https://`, host não vazio, sem espaços na
+autoridade.
+
+---
+
+---
+
+## 20. std.path — Caminhos / Paths
+
+`std.path` é implementado em `stdlib/src/path.spectra`. Entradas POSIX (`/`) e
+Windows (`\`) são aceitas; a saída usa **sempre** `/` como separador canônico.
+Letras de drive (`C:`) são reconhecidas; prefixos UNC não são resolvidos além
+dos separadores.
+
+```spectra
+import std.path as path
+
+let composed = path.join("dir", "file.txt")
+    // "dir/file.txt"
+let clean = path.normalize("dir//./sub/../file.txt")
+    // "dir/file.txt"
+let ext = path.extension("archive.tar.gz")
+    // Some("gz")
+```
+
+### `join(left: string, right: string) -> string`
+
+Junta dois fragmentos; `right` absoluto substitui `left` e separadores só são
+inseridos quando necessário. O resultado usa `/` canônico.
+
+### `normalize(path: string) -> string`
+
+Forma canônica: separadores colapsados, `.` removido, `..` resolvido sem
+escapar da raiz, separador final removido (exceto na raiz).
+
+### `file_name(path: string) -> string`
+
+Último componente; vazio para raiz ou separador final.
+
+### `parent(path: string) -> Option<string>`
+
+Diretório pai com separadores canônicos `/`, ou `None` quando não existe
+componente pai.
+
+### `extension(path: string) -> Option<string>`
+
+Extensão do último componente sem o ponto (`a.tar.gz` → `gz`); `None` quando
+ausente, vazia (`archive.`) ou em dotfiles (`.bashrc`).
+
+### `stem(path: string) -> string`
+
+Último componente sem extensão.
+
+### `is_absolute(path: string) -> bool`
+
+Verdadeiro para `/x`, `\x`, `C:/x` e `C:\x`; `C:x` (drive relativo) e vazio são
+relativos.
+
+---
+
+---
+
+## 21. std.text — Preparação de texto / Text Preparation
+
+`std.text` é implementado em `stdlib/src/text.spectra` e cobre preparação de
+texto para APIs e pipelines de dados. Operações de byte rodam apenas em
+fronteiras ASCII ou em runes UTF-8 completas: nenhum rune é dividido nem
+re-codificado.
+
+```spectra
+import std.text as text
+
+let slug = text.slugify("Olá, Mundo!")
+    // "ol-mundo"
+let limited = text.truncate("café", 4)
+    // "caf"
+let lines = text.wrap("one two three", 7)
+    // ["one two", "three"]
+```
+
+### `slugify(value: string) -> string`
+
+Slug ASCII minúsculo: sequências de bytes não alfanuméricos viram um único `-`,
+`-` nas pontas é removido e bytes não-ASCII são descartados.
+
+### `normalize_whitespace(value: string) -> string`
+
+Colapsa sequências de espaço, tab, newline e carriage return em um espaço e
+remove espaços nas pontas.
+
+### `truncate(value: string, max_bytes: int) -> string`
+
+Limita a `max_bytes` **bytes** sem dividir um rune UTF-8; limite não positivo
+produz string vazia.
+
+### `wrap(value: string, width: int) -> List<string>`
+
+Quebra o texto normalizado em linhas de até `width` bytes nos espaços; palavras
+maiores que `width` permanecem inteiras.
+
+### `word_count(value: string) -> int`
+
+Número de palavras separadas por espaço em branco.
+
+### `escape_json(value: string) -> string` / `unescape_json(value: string) -> Option<string>`
+
+Escapa/desescapa o corpo de uma string JSON (`"`, `\`, controles, `\uXXXX`).
+Pares de surrogates são combinados; surrogates isolados, escapes desconhecidos e
+sequências `\uXXXX` truncadas retornam `None`.
+
+### `similarity_ratio(left: string, right: string) -> float`
+
+Similaridade em `0.0..=1.0` baseada na distância de Levenshtein em scalar values
+(`1 - distância / maior_comprimento`).
+
+---
+
+## 22. std.calendar — Calendário / Calendar
+
+`std.calendar` é implementado em `stdlib/src/calendar.spectra` e trabalha com
+tempo Unix (UTC) explícito; "agora" é `std.time.time_now_secs()` no chamador.
+Divisões usam piso, então timestamps anteriores a 1970 se comportam.
+
+```spectra
+import std.calendar as calendar
+
+calendar.format_iso_date(0)
+    // "1970-01-01"
+calendar.iso_year(1609459200)
+    // 2021
+calendar.parse_iso_date("2024-02-29")
+    // Option<int>
+```
+
+### `is_leap_year(year: int) -> bool`
+
+Regra gregoriana (divisível por 4, exceto séculos, exceto múltiplos de 400).
+
+### `days_in_month(year: int, month: int) -> Option<int>`
+
+Dias do mês; `None` fora de `1..=12`.
+
+### `day_of_week(unix_secs: int) -> int`
+
+Dia da semana com `0 = domingo` a `6 = sábado`.
+
+### `add_days(unix_secs: int, days: int) -> int` / `diff_days(later: int, earlier: int) -> int`
+
+Deslocamento e diferença em dias de calendário.
+
+### `iso_year(unix_secs: int) -> int` / `iso_week(unix_secs: int) -> int`
+
+Ano e semana ISO-8601 (semanas `1..=53`), com a regra da quinta-feira.
+
+### `format_iso_date(unix_secs: int) -> string` / `format_iso_timestamp(unix_secs: int) -> string`
+
+`YYYY-MM-DD` e `YYYY-MM-DDTHH:MM:SSZ` em UTC. Anos negativos mantêm o sinal
+fora do campo de quatro dígitos (`-0001-12-31`).
+
+### `parse_iso_date(text: string) -> Option<int>`
+
+Interpreta `YYYY-MM-DD` como meia-noite UTC; formato inválido ou data
+inexistente retornam `None`.
+
+---
+
+---
+
+## 23. std.iter — Adaptadores de sequência / Sequence adaptors
+
+`std.iter` é implementado em `stdlib/src/iter.spectra`. Nenhuma função muta a
+lista de entrada: os adaptadores retornam listas novas.
+
+```spectra
+import std.iter as iter
+
+let first = iter.take(values, 3)
+let rest = iter.skip(values, 3)
+let sums = iter.window_sum_int(values, 2)
+```
+
+### `take<T>(items: List<T>, count: int) -> List<T>` / `skip<T>(items: List<T>, count: int) -> List<T>`
+
+Primeiros `count` itens e itens após os `count` primeiros; contagens não
+positivas ou maiores que a lista são tratadas pelo limite natural.
+
+### `reverse<T>(items: List<T>) -> List<T>`
+
+Itens em ordem inversa.
+
+### `sum_int(values: List<int>) -> int`
+
+Soma dos inteiros; lista vazia soma `0`.
+
+### `count_if_int(values: List<int>, predicate: func(int) returns bool) -> int`
+
+Quantidade de itens aceitos pelo predicado.
+
+### `position_if_int(values: List<int>, predicate: func(int) returns bool) -> Option<int>`
+
+Índice do primeiro item aceito, ou `None`.
+
+### `chunk_int(values: List<int>, size: int) -> List<List<int>>`
+
+Grupos consecutivos de até `size` itens; `size` não positivo produz lista vazia.
+
+### `window_sum_int(values: List<int>, window: int) -> List<int>`
+
+Somas de janelas deslizantes de largura `window`; janela maior que a entrada ou
+não positiva produz lista vazia.
+
+---
+
+## 24. std.fmt — Formatação / Formatting
+
+`std.fmt` é implementado em `stdlib/src/fmt.spectra`. Valores que não podem ser
+representados (largura negativa, `NaN`/infinito, overflow de `i64`) retornam
+`None` em vez de texto truncado.
+
+```spectra
+import std.fmt as fmt
+
+let padded = fmt.int_padded(42, 5, '0')
+    // Some("00042")
+let grouped = fmt.thousands(1234567, ",")
+    // "1,234,567"
+let size = fmt.bytes_si(1500000)
+    // "1.5 MB"
+```
+
+### `int_padded(value: int, width: int, pad: char) -> Option<string>`
+
+Alinha `value` a `width` caracteres com `pad` (espaço ou `0`). Com zero, o sinal
+fica à frente dos zeros (`-00042`); com espaço, o texto com sinal é alinhado à
+direita (`  -42`).
+
+### `thousands(value: int, separator: string) -> string`
+
+Separador a cada três dígitos, preservando o sinal; separador vazio retorna o
+número simples.
+
+### `float_fixed(value: float, decimals: int) -> Option<string>`
+
+Ponto fixo com `0..=12` casas. Arredondamento half-away-from-zero após escalar
+por `10^decimals`.
+
+### `bytes_si(count: int) -> string`
+
+Tamanho em unidades SI (base 1000, `B`/`KB`/`MB`/`GB`/`TB`/`PB`/`EB`) com uma
+casa acima de bytes; `i64::MIN` retorna o texto simples do valor.
+
+---
+
+## 25. std.semver — Versões semânticas / Semantic Versioning
+
+`std.semver` é implementado em `stdlib/src/semver.spectra` (SemVer 2.0.0).
+Metadata de build é aceita e ignorada na precedência; zeros à esquerda em
+identificadores numéricos são inválidos.
+
+```spectra
+import std.semver as semver
+
+semver.compare("1.0.0-rc.1", "1.0.0")
+    // Some(-1)
+semver.major("1.2.3-alpha")
+    // Some(1)
+```
+
+### `is_valid(text: string) -> bool`
+
+`MAJOR.MINOR.PATCH` com pré-release e build opcionais; `1.2.3-` e `1.2.3+` são
+inválidos.
+
+### `compare(left: string, right: string) -> Option<int>`
+
+`-1`, `0` ou `1` seguindo a precedência do SemVer (pré-release abaixo do
+release; identificadores numéricos abaixo dos alfanuméricos), ou `None` quando
+um lado é inválido.
+
+### `major(text: string) -> Option<int>` / `minor` / `patch`
+
+Componentes numéricos, ou `None` quando o texto é inválido.
+
+### `prerelease(text: string) -> string`
+
+Pré-release sem o `-` inicial; vazio quando ausente ou inválido.
 
 ---
 

@@ -100,6 +100,20 @@ pub(crate) fn make_std_string() -> ModuleExports {
         "char_at".to_string(),
         pub_fn(vec![Type::String, Type::Int], Type::Int),
     );
+    // from_scalar(code: int) -> Option<string>
+    // Materializes a Unicode scalar value as its UTF-8 text. Codes outside
+    // `0..=0x10FFFF` and surrogate halves return `None`. This is the only
+    // supported way to build text from byte/code values in source-authored
+    // std modules.
+    exports.functions.insert(
+        "from_scalar".to_string(),
+        pub_fn(
+            vec![Type::Int],
+            Type::Enum {
+                name: "Option_string".to_string(),
+            },
+        ),
+    );
     // substring(s: string, start: int, end: int) -> string
     exports.functions.insert(
         "substring".to_string(),

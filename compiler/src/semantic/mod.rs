@@ -1040,9 +1040,11 @@ mod embedded_stdlib_tests {
         let exports = registry
             .get_module("std.algorithms")
             .expect("source module is registered");
-        assert_eq!(exports.functions.len(), 2);
+        // Public source functions are ordinary Spectra exports: no stdlib
+        // host-call path, and private helpers stay unexported.
         assert!(exports.functions.contains_key("gcd_nonnegative"));
-        assert!(exports.functions.contains_key("is_prime"));
+        assert!(exports.functions.contains_key("levenshtein"));
+        assert!(!exports.functions.contains_key("digit_value"));
         assert!(exports.stdlib_path.is_none());
     }
 

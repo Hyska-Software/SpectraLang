@@ -728,6 +728,9 @@ impl ASTLowering {
         match value {
             LoweredConstValue::Int(v) => Some(*v as f64),
             LoweredConstValue::Float(v) => Some(*v),
+            // Char ordering is legal in ordinary code, so const folding must
+            // compare char constants by scalar value as well.
+            LoweredConstValue::Char(v) => Some(*v as u32 as f64),
             _ => None,
         }
     }
@@ -832,7 +835,10 @@ impl ASTLowering {
             LoweredConstValue::Float(v) => self.builder.build_const_float(ir_func, *v),
             LoweredConstValue::Bool(v) => self.builder.build_const_bool(ir_func, *v),
             LoweredConstValue::String(v) => self.lower_string_literal(v, ir_func),
-            LoweredConstValue::Char(v) => self.builder.build_const_int(ir_func, *v as i64),
+            LoweredConstValue::Char(v) => {
+                self.builder
+                    .build_const_int_typed(ir_func, *v as i64, IRType::Char)
+            }
         }
     }
 

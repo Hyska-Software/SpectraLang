@@ -1,0 +1,140 @@
+// Consumer for `std.fmt`: padding, thousands separators, fixed-point floats
+// and SI byte sizes.
+module std_source_fmt
+
+import std.fmt as fmt
+import std.option as option
+
+public func main() returns int {
+    // ── int_padded ───────────────────────────────────────────────────────
+    if option.option_unwrap_or(fmt.int_padded(42, 5, '0'), "x") != "00042" {
+        return 1
+    }
+    if option.option_unwrap_or(fmt.int_padded(-42, 6, '0'), "x") != "-00042" {
+        return 2
+    }
+    if option.option_unwrap_or(fmt.int_padded(42, 5, ' '), "x") != "   42" {
+        return 3
+    }
+    if option.option_unwrap_or(fmt.int_padded(-42, 5, ' '), "x") != "  -42" {
+        return 4
+    }
+    if option.option_unwrap_or(fmt.int_padded(12345, 3, '0'), "x") != "12345" {
+        return 5
+    }
+    if option.option_unwrap_or(fmt.int_padded(0, 0, '0'), "x") != "0" {
+        return 6
+    }
+    if option.is_some(fmt.int_padded(1, -1, '0')) {
+        return 7
+    }
+    if option.is_some(fmt.int_padded(1, 4, 'x')) {
+        return 8
+    }
+
+    // ── thousands ────────────────────────────────────────────────────────
+    if fmt.thousands(0, ",") != "0" {
+        return 9
+    }
+    if fmt.thousands(123, ",") != "123" {
+        return 10
+    }
+    if fmt.thousands(1234, ",") != "1,234" {
+        return 11
+    }
+    if fmt.thousands(1234567, ",") != "1,234,567" {
+        return 12
+    }
+    if fmt.thousands(-1234567, ",") != "-1,234,567" {
+        return 13
+    }
+    if fmt.thousands(1234, "") != "1234" {
+        return 14
+    }
+    if fmt.thousands(1000, ".") != "1.000" {
+        return 15
+    }
+
+    // ── float_fixed ──────────────────────────────────────────────────────
+    if option.option_unwrap_or(fmt.float_fixed(3.14159, 2), "x") != "3.14" {
+        return 16
+    }
+    if option.option_unwrap_or(fmt.float_fixed(0.0, 2), "x") != "0.00" {
+        return 17
+    }
+    if option.option_unwrap_or(fmt.float_fixed(1.0, 3), "x") != "1.000" {
+        return 18
+    }
+    if option.option_unwrap_or(fmt.float_fixed(2.5, 0), "x") != "3" {
+        return 19
+    }
+    if option.option_unwrap_or(fmt.float_fixed(-2.5, 0), "x") != "-3" {
+        return 20
+    }
+    if option.option_unwrap_or(fmt.float_fixed(-3.14159, 2), "x") != "-3.14" {
+        return 21
+    }
+    if option.option_unwrap_or(fmt.float_fixed(1234.5678, 2), "x") != "1234.57" {
+        return 22
+    }
+    if option.option_unwrap_or(fmt.float_fixed(0.05, 1), "x") != "0.1" {
+        return 23
+    }
+    if option.option_unwrap_or(fmt.float_fixed(999.999, 2), "x") != "1000.00" {
+        return 24
+    }
+    if option.is_some(fmt.float_fixed(1.0, 13)) or option.is_some(fmt.float_fixed(1.0, -1)) {
+        return 25
+    }
+    if option.is_some(fmt.float_fixed(1.0e18, 2)) {
+        return 26
+    }
+
+    // ── bytes_si ─────────────────────────────────────────────────────────
+    if fmt.bytes_si(0) != "0 B" {
+        return 27
+    }
+    if fmt.bytes_si(999) != "999 B" {
+        return 28
+    }
+    if fmt.bytes_si(1000) != "1.0 KB" {
+        return 29
+    }
+    if fmt.bytes_si(1500) != "1.5 KB" {
+        return 30
+    }
+    if fmt.bytes_si(1000000) != "1.0 MB" {
+        return 31
+    }
+    if fmt.bytes_si(1500000) != "1.5 MB" {
+        return 32
+    }
+    if fmt.bytes_si(-1500) != "-1.5 KB" {
+        return 33
+    }
+    if fmt.bytes_si(2500000000) != "2.5 GB" {
+        return 34
+    }
+
+    
+    // Ties are decided on the discarded fraction, not by adding 0.5 (which
+    // rounds at the IEEE boundary).
+    if option.option_unwrap_or(fmt.float_fixed(0.49999999999999994, 0), "x") != "0" {
+        return 35
+    }
+    if option.option_unwrap_or(fmt.float_fixed(-0.49999999999999994, 0), "x") != "0" {
+        return 36
+    }
+    if option.option_unwrap_or(fmt.float_fixed(0.5, 0), "x") != "1" {
+        return 37
+    }
+    // i64::MIN keeps a single sign and large magnitudes reach exabytes.
+    if fmt.bytes_si(-9223372036854775808) != "-9223372036854775808 B" {
+        return 38
+    }
+    if fmt.bytes_si(1000000000000000000) != "1.0 EB" {
+        return 39
+    }
+
+    return 0
+}

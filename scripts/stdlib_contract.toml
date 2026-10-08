@@ -197,6 +197,61 @@ id = "source-stdlib-algorithms"
 path = "tests/validation/794_std_source_algorithms.spectra"
 covers = ["std.algorithms.gcd_nonnegative", "std.algorithms.is_prime"]
 
+[[probe]]
+id = "string-from-scalar"
+path = "tests/validation/796_string_from_scalar.spectra"
+covers = ["std.string.from_scalar"]
+
+[[probe]]
+id = "source-stdlib-algorithms-extended"
+path = "tests/validation/797_std_source_algorithms_extended.spectra"
+covers = ["std.algorithms.*"]
+
+[[probe]]
+id = "source-stdlib-encoding"
+path = "tests/validation/798_std_source_encoding.spectra"
+covers = ["std.encoding.*"]
+
+[[probe]]
+id = "source-stdlib-stats"
+path = "tests/validation/799_std_source_stats.spectra"
+covers = ["std.stats.*"]
+
+[[probe]]
+id = "source-stdlib-validate"
+path = "tests/validation/800_std_source_validate.spectra"
+covers = ["std.validate.*"]
+
+[[probe]]
+id = "source-stdlib-path"
+path = "tests/validation/801_std_source_path.spectra"
+covers = ["std.path.*"]
+
+[[probe]]
+id = "source-stdlib-text"
+path = "tests/validation/802_std_source_text.spectra"
+covers = ["std.text.*"]
+
+[[probe]]
+id = "source-stdlib-calendar"
+path = "tests/validation/803_std_source_calendar.spectra"
+covers = ["std.calendar.*"]
+
+[[probe]]
+id = "source-stdlib-iter"
+path = "tests/validation/804_std_source_iter.spectra"
+covers = ["std.iter.*"]
+
+[[probe]]
+id = "source-stdlib-fmt"
+path = "tests/validation/805_std_source_fmt.spectra"
+covers = ["std.fmt.*"]
+
+[[probe]]
+id = "source-stdlib-semver"
+path = "tests/validation/806_std_source_semver.spectra"
+covers = ["std.semver.*"]
+
 [[follow_up]]
 prefix = "std.tensor.diff"
 owner = "ml"
@@ -285,6 +340,60 @@ prefix = "std.algorithms"
 owner = "runtime"
 classification = "production"
 roadmap = "R-3405"
+
+[[namespace]]
+prefix = "std.encoding"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.stats"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.validate"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.path"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.text"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.calendar"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.iter"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.fmt"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3406"
+
+[[namespace]]
+prefix = "std.semver"
+owner = "ecosystem"
+classification = "production"
+roadmap = "R-3406"
 
 [[namespace]]
 prefix = "std.io"

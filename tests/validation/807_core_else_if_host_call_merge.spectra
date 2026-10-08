@@ -1,0 +1,87 @@
+// Regression: an `else if` chain without a final `else` whose branches end in
+// host calls used to emit an `if.merge` phi that omitted the value-less
+// predecessor, aborting lowering with `phi without an incoming entry for
+// predecessor block N`.
+module core_else_if_host_call_merge
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+func classify(index: int) returns int {
+    if index >= 1 and index <= 2 {
+        return index * 10
+    } else if index >= 0 {
+        return index
+    }
+    return -1
+}
+
+public func main() returns int {
+    // Host calls in both branches of an else-if chain (statement form).
+    let builder = str.builder_new(0)
+    let index = 0
+    while index < 4 {
+        if index >= 1 and index <= 2 {
+            str.builder_push(builder, "a")
+        } else if index >= 0 {
+            str.builder_push(builder, "b")
+        }
+        index = index + 1
+    }
+    if str.len(str.builder_finish(builder)) != 4 {
+        return 1
+    }
+
+    // The same shape outside a loop.
+    let outer = str.builder_new(0)
+    let flag = 3
+    if flag >= 5 {
+        str.builder_push(outer, "x")
+    } else if flag >= 0 {
+        str.builder_push(outer, "y")
+    }
+    if str.len(str.builder_finish(outer)) != 1 {
+        return 2
+    }
+
+    // Value-producing branches still build a phi and keep their result.
+    let picked = if flag > 2 { 10 } else { 20 }
+    if picked != 10 {
+        return 3
+    }
+    let chained = if flag > 9 { 1 } else if flag >= 3 { 2 } else { 3 }
+    if chained != 2 {
+        return 4
+    }
+
+    // Host calls in value-producing branches.
+    let text = if flag > 2 { str.to_upper("a") } else { str.to_lower("B") }
+    if text != "A" {
+        return 5
+    }
+
+    // Nested else-if chains with collection host calls.
+    let values: List<int> = collections.list_new()
+    index = 0
+    while index < 5 {
+        if index == 0 {
+            collections.list_push(values, classify(index))
+        } else if index == 1 {
+            collections.list_push(values, classify(index))
+        } else if index == 2 {
+            collections.list_push(values, classify(index))
+        } else {
+            collections.list_push(values, classify(index))
+        }
+        index = index + 1
+    }
+    if collections.list_len(values) != 5 {
+        return 6
+    }
+    if option.option_unwrap_or(collections.list_get(values, 2), -1) != 20 {
+        return 7
+    }
+
+    return 0
+}

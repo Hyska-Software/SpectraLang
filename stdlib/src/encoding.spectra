@@ -1,0 +1,405 @@
+module std.encoding
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// ── Hexadecimal ──────────────────────────────────────────────────────────
+
+// Lowercase hexadecimal text for the UTF-8 bytes of `value`.
+public func hex_encode(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+
+    while index < length {
+        let byte = str.char_at(value, index)
+        let piece = str.from_scalar(hex_char(byte / 16))
+        if option.is_some(piece) {
+            str.builder_push(builder, option.option_unwrap_or(piece, ""))
+        }
+        let low = str.from_scalar(hex_char(byte % 16))
+        if option.is_some(low) {
+            str.builder_push(builder, option.option_unwrap_or(low, ""))
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Decodes hexadecimal text into its text value. Odd length, invalid digits and
+// byte sequences that are not valid UTF-8 return None.
+public func hex_decode(text: string) returns Option<string> {
+    let length = str.len(text)
+    if length % 2 != 0 {
+        return Option::None
+    }
+
+    let bytes: List<int> = collections.list_new()
+    let index = 0
+    while index < length {
+        let high = hex_value(str.char_at(text, index))
+        let low = hex_value(str.char_at(text, index + 1))
+        if high < 0 or low < 0 {
+            return Option::None
+        }
+        collections.list_push(bytes, high * 16 + low)
+        index = index + 2
+    }
+
+    return decode_utf8(bytes)
+}
+
+func hex_char(value: int) returns int {
+    if value < 10 {
+        return 48 + value
+    }
+    return 87 + value
+}
+
+// Uppercase hexadecimal digit, as required by percent-encoding conventions.
+func hex_upper_char(value: int) returns int {
+    if value < 10 {
+        return 48 + value
+    }
+    return 55 + value
+}
+
+func hex_value(code: int) returns int {
+    if code >= 48 and code <= 57 {
+        return code - 48
+    }
+    if code >= 97 and code <= 102 {
+        return code - 87
+    }
+    if code >= 65 and code <= 70 {
+        return code - 55
+    }
+    return -1
+}
+
+// ── Base64 (RFC 4648) ────────────────────────────────────────────────────
+
+// Standard base64 text with `=` padding.
+public func base64_encode(value: string) returns string {
+    let length = str.len(value)
+    let builder = str.builder_new(0)
+    let index = 0
+
+    while index < length {
+        let remaining = length - index
+        let first = str.char_at(value, index)
+        let second = if remaining > 1 { str.char_at(value, index + 1) } else { 0 }
+        let third = if remaining > 2 { str.char_at(value, index + 2) } else { 0 }
+
+        push_char(builder, base64_char(first / 4))
+        push_char(builder, base64_char((first % 4) * 16 + second / 16))
+        if remaining > 1 {
+            push_char(builder, base64_char((second % 16) * 4 + third / 64))
+        } else {
+            push_char(builder, 61)
+        }
+        if remaining > 2 {
+            push_char(builder, base64_char(third % 64))
+        } else {
+            push_char(builder, 61)
+        }
+
+        index = index + 3
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Decodes standard base64 text. Invalid characters, bad padding, wrong length
+// and decoded bytes that are not valid UTF-8 return None.
+public func base64_decode(text: string) returns Option<string> {
+    let length = str.len(text)
+    if length == 0 {
+        return Option::Some("")
+    }
+    if length % 4 != 0 {
+        return Option::None
+    }
+
+    let bytes: List<int> = collections.list_new()
+    let index = 0
+    while index < length {
+        let first = base64_value(str.char_at(text, index))
+        let second = base64_value(str.char_at(text, index + 1))
+        let third_code = str.char_at(text, index + 2)
+        let fourth_code = str.char_at(text, index + 3)
+        let third = base64_value(third_code)
+        let fourth = base64_value(fourth_code)
+
+        if first < 0 or second < 0 {
+            return Option::None
+        }
+
+        let is_last = index + 4 == length
+        if third < 0 and third_code != 61 {
+            return Option::None
+        }
+        if fourth < 0 and fourth_code != 61 {
+            return Option::None
+        }
+        if third_code == 61 and fourth_code != 61 {
+            return Option::None
+        }
+        if (third_code == 61 or fourth_code == 61) and not is_last {
+            return Option::None
+        }
+
+        collections.list_push(bytes, first * 4 + second / 16)
+        if third_code != 61 {
+            collections.list_push(bytes, (second % 16) * 16 + third / 4)
+        }
+        if fourth_code != 61 {
+            collections.list_push(bytes, (third % 4) * 64 + fourth)
+        }
+
+        index = index + 4
+    }
+
+    return decode_utf8(bytes)
+}
+
+func base64_char(value: int) returns int {
+    if value < 26 {
+        return 65 + value
+    }
+    if value < 52 {
+        return 97 + value - 26
+    }
+    if value < 62 {
+        return 48 + value - 52
+    }
+    if value == 62 {
+        return 43
+    }
+    return 47
+}
+
+func base64_value(code: int) returns int {
+    if code >= 65 and code <= 90 {
+        return code - 65
+    }
+    if code >= 97 and code <= 122 {
+        return code - 71
+    }
+    if code >= 48 and code <= 57 {
+        return code + 4
+    }
+    if code == 43 {
+        return 62
+    }
+    if code == 47 {
+        return 63
+    }
+    return -1
+}
+
+// ── Percent encoding ─────────────────────────────────────────────────────
+
+// Percent-encodes every byte except the unreserved set `A-Za-z0-9-._~`.
+public func percent_encode(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+
+    while index < length {
+        let byte = str.char_at(value, index)
+        if is_unreserved(byte) {
+            push_char(builder, byte)
+        } else {
+            push_char(builder, 37)
+            push_char(builder, hex_upper_char(byte / 16))
+            push_char(builder, hex_upper_char(byte % 16))
+        }
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Decodes percent-encoded text. `+` is preserved (form encoding is handled by
+// `std.api.query`). Invalid escapes and non-UTF-8 results return None.
+public func percent_decode(text: string) returns Option<string> {
+    let length = str.len(text)
+    let bytes: List<int> = collections.list_new()
+    let index = 0
+
+    while index < length {
+        let code = str.char_at(text, index)
+        if code == 37 {
+            if index + 2 >= length {
+                return Option::None
+            }
+            let high = hex_value(str.char_at(text, index + 1))
+            let low = hex_value(str.char_at(text, index + 2))
+            if high < 0 or low < 0 {
+                return Option::None
+            }
+            collections.list_push(bytes, high * 16 + low)
+            index = index + 3
+        } else {
+            collections.list_push(bytes, code)
+            index = index + 1
+        }
+    }
+
+    return decode_utf8(bytes)
+}
+
+func is_unreserved(byte: int) returns bool {
+    if byte >= 65 and byte <= 90 {
+        return true
+    }
+    if byte >= 97 and byte <= 122 {
+        return true
+    }
+    if byte >= 48 and byte <= 57 {
+        return true
+    }
+    return byte == 45 or byte == 46 or byte == 95 or byte == 126
+}
+
+// ── ROT13 ────────────────────────────────────────────────────────────────
+
+// ROT13 over ASCII letters; every other scalar value is copied unchanged, so
+// non-ASCII text keeps its exact UTF-8 bytes. The transformation is its own
+// inverse.
+public func rot13(value: string) returns string {
+    let builder = str.builder_new(0)
+    let bytes = str.len(value)
+    let offset = 0
+
+    while offset < bytes {
+        let first = str.char_at(value, offset)
+        if first < 128 {
+            if first >= 65 and first <= 90 {
+                push_char(builder, 65 + (first - 65 + 13) % 26)
+            } else if first >= 97 and first <= 122 {
+                push_char(builder, 97 + (first - 97 + 13) % 26)
+            } else {
+                push_char(builder, first)
+            }
+            offset = offset + 1
+        } else if first < 224 {
+            push_char(
+                builder,
+                (first - 192) * 64 + (str.char_at(value, offset + 1) - 128),
+            )
+            offset = offset + 2
+        } else if first < 240 {
+            push_char(
+                builder,
+                (first - 224) * 4096 +
+                (str.char_at(value, offset + 1) - 128) * 64 +
+                (str.char_at(value, offset + 2) - 128),
+            )
+            offset = offset + 3
+        } else {
+            push_char(
+                builder,
+                (first - 240) * 262144 +
+                (str.char_at(value, offset + 1) - 128) * 4096 +
+                (str.char_at(value, offset + 2) - 128) * 64 +
+                (str.char_at(value, offset + 3) - 128),
+            )
+            offset = offset + 4
+        }
+    }
+
+    return str.builder_finish(builder)
+}
+
+// ── Shared helpers ───────────────────────────────────────────────────────
+
+func push_char(builder: int, code: int) {
+    let piece = str.from_scalar(code)
+    if option.is_some(piece) {
+        str.builder_push(builder, option.option_unwrap_or(piece, ""))
+    }
+}
+
+// Materializes a byte list as text after strict UTF-8 validation.
+func decode_utf8(bytes: List<int>) returns Option<string> {
+    let count = collections.list_len(bytes)
+    let builder = str.builder_new(0)
+    let index = 0
+
+    while index < count {
+        let first = option.option_unwrap_or(collections.list_get(bytes, index), -1)
+        if first < 0 {
+            str.builder_free(builder)
+            return Option::None
+        }
+
+        if first < 128 {
+            push_char(builder, first)
+            index = index + 1
+        } else if first >= 194 and first <= 223 {
+            if not continuation_at(bytes, index + 1, count) {
+                str.builder_free(builder)
+                return Option::None
+            }
+            let second = option.option_unwrap_or(collections.list_get(bytes, index + 1), 0)
+            push_char(builder, (first - 192) * 64 + (second - 128))
+            index = index + 2
+        } else if first >= 224 and first <= 239 {
+            if not continuation_at(bytes, index + 1, count) or not continuation_at(bytes, index + 2, count) {
+                str.builder_free(builder)
+                return Option::None
+            }
+            let second = option.option_unwrap_or(collections.list_get(bytes, index + 1), 0)
+            let third = option.option_unwrap_or(collections.list_get(bytes, index + 2), 0)
+            // Overlong and surrogate encodings are rejected.
+            if first == 224 and second < 160 {
+                str.builder_free(builder)
+                return Option::None
+            }
+            if first == 237 and second > 159 {
+                str.builder_free(builder)
+                return Option::None
+            }
+            push_char(builder, (first - 224) * 4096 + (second - 128) * 64 + (third - 128))
+            index = index + 3
+        } else if first >= 240 and first <= 244 {
+            if not continuation_at(bytes, index + 1, count) or not continuation_at(bytes, index + 2, count) or not continuation_at(bytes, index + 3, count) {
+                str.builder_free(builder)
+                return Option::None
+            }
+            let second = option.option_unwrap_or(collections.list_get(bytes, index + 1), 0)
+            let third = option.option_unwrap_or(collections.list_get(bytes, index + 2), 0)
+            let fourth = option.option_unwrap_or(collections.list_get(bytes, index + 3), 0)
+            if first == 240 and second < 144 {
+                str.builder_free(builder)
+                return Option::None
+            }
+            if first == 244 and second > 143 {
+                str.builder_free(builder)
+                return Option::None
+            }
+            push_char(
+                builder,
+                (first - 240) * 262144 + (second - 128) * 4096 + (third - 128) * 64 + (fourth - 128),
+            )
+            index = index + 4
+        } else {
+            str.builder_free(builder)
+            return Option::None
+        }
+    }
+
+    return Option::Some(str.builder_finish(builder))
+}
+
+func continuation_at(bytes: List<int>, index: int, count: int) returns bool {
+    if index >= count {
+        return false
+    }
+    let code = option.option_unwrap_or(collections.list_get(bytes, index), -1)
+    return code >= 128 and code <= 191
+}

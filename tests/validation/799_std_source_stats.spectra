@@ -1,0 +1,151 @@
+// Consumer for `std.stats`: aggregates, spread, percentiles and correlation
+// over float lists, including empty/singleton and non-mutating guarantees.
+module std_source_stats
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+import std.stats as stats
+
+func close(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.000000001
+}
+
+func series(values: [float], count: int) returns List<float> {
+    let list: List<float> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+public func main() returns int {
+    let empty: List<float> = collections.list_new()
+    let simple = series([1.0, 2.0, 3.0, 4.0], 4)
+
+    // ── sum / mean ───────────────────────────────────────────────────────
+    if not close(stats.sum_f(empty), 0.0) {
+        return 1
+    }
+    if not close(stats.sum_f(simple), 10.0) {
+        return 2
+    }
+    if option.is_some(stats.mean_f(empty)) {
+        return 3
+    }
+    if not close(option.option_unwrap_or(stats.mean_f(simple), 0.0), 2.5) {
+        return 4
+    }
+
+    // ── median (non-mutating) ────────────────────────────────────────────
+    if option.is_some(stats.median_f(empty)) {
+        return 5
+    }
+    let odd = series([3.0, 1.0, 2.0], 3)
+    if not close(option.option_unwrap_or(stats.median_f(odd), 0.0), 2.0) {
+        return 6
+    }
+    let even = series([4.0, 1.0, 3.0, 2.0], 4)
+    if not close(option.option_unwrap_or(stats.median_f(even), 0.0), 2.5) {
+        return 7
+    }
+    // The input list keeps its original order.
+    if not close(option.option_unwrap_or(collections.list_get(even, 0), 0.0), 4.0) {
+        return 8
+    }
+
+    // ── variance / stddev ────────────────────────────────────────────────
+    let spread = series([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], 8)
+    if option.is_some(stats.variance_f(empty)) {
+        return 9
+    }
+    if not close(option.option_unwrap_or(stats.variance_f(spread), 0.0), 4.0) {
+        return 10
+    }
+    if not close(option.option_unwrap_or(stats.variance_sample_f(spread), 0.0), 4.571428571428571) {
+        return 11
+    }
+    if option.is_some(stats.variance_sample_f(series([1.0], 1))) {
+        return 12
+    }
+    if not close(option.option_unwrap_or(stats.stddev_f(spread), 0.0), 2.0) {
+        return 13
+    }
+    if not close(option.option_unwrap_or(stats.stddev_sample_f(spread), 0.0), 2.138089935299395) {
+        return 14
+    }
+    if option.is_some(stats.stddev_f(empty)) {
+        return 15
+    }
+
+    // ── percentile ───────────────────────────────────────────────────────
+    let ramp = series([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], 10)
+    if not close(option.option_unwrap_or(stats.percentile_f(ramp, 0.0), -1.0), 1.0) {
+        return 16
+    }
+    if not close(option.option_unwrap_or(stats.percentile_f(ramp, 50.0), -1.0), 5.5) {
+        return 17
+    }
+    if not close(option.option_unwrap_or(stats.percentile_f(ramp, 100.0), -1.0), 10.0) {
+        return 18
+    }
+    if not close(option.option_unwrap_or(stats.percentile_f(ramp, 25.0), -1.0), 3.25) {
+        return 19
+    }
+    if option.is_some(stats.percentile_f(ramp, -0.1)) or option.is_some(stats.percentile_f(ramp, 100.1)) {
+        return 20
+    }
+    if option.is_some(stats.percentile_f(empty, 50.0)) {
+        return 21
+    }
+    if not close(option.option_unwrap_or(stats.percentile_f(series([7.0], 1), 50.0), -1.0), 7.0) {
+        return 22
+    }
+
+    // ── covariance / correlation ─────────────────────────────────────────
+    let left = series([1.0, 2.0, 3.0], 3)
+    let right = series([2.0, 4.0, 6.0], 3)
+    if not close(option.option_unwrap_or(stats.covariance_f(left, right), -1.0), 1.3333333333333333) {
+        return 23
+    }
+    if not close(option.option_unwrap_or(stats.correlation_f(left, right), -1.0), 1.0) {
+        return 24
+    }
+    if option.is_some(stats.covariance_f(left, series([1.0], 1))) {
+        return 25
+    }
+    if option.is_some(stats.covariance_f(empty, empty)) {
+        return 26
+    }
+    // A constant series has zero variance, so correlation is undefined.
+    let constant = series([3.0, 3.0, 3.0], 3)
+    if option.is_some(stats.correlation_f(left, constant)) {
+        return 27
+    }
+    if option.is_some(stats.correlation_f(empty, empty)) {
+        return 28
+    }
+
+    // ── negative values ──────────────────────────────────────────────────
+    let negatives = series([-2.0, -1.0, 0.0, 1.0, 2.0], 5)
+    if not close(stats.sum_f(negatives), 0.0) {
+        return 29
+    }
+    if not close(option.option_unwrap_or(stats.median_f(negatives), -1.0), 0.0) {
+        return 30
+    }
+    if not close(option.option_unwrap_or(stats.variance_f(negatives), -1.0), 2.0) {
+        return 31
+    }
+
+    
+    // NaN is outside the percentile domain (it compares false with every
+    // bound, so it needs its own guard).
+    if option.is_some(stats.percentile_f(ramp, math.sqrt_f(-1.0))) {
+        return 32
+    }
+
+    return 0
+}
