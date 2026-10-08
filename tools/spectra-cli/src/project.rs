@@ -1,4 +1,8 @@
-use spectra_compiler::{ast::Item, embedded_stdlib::embedded_stdlib_source, Lexer, Parser};
+use spectra_compiler::{
+    ast::Item,
+    embedded_stdlib::{embedded_stdlib_source, embedded_stdlib_sources},
+    Lexer, Parser,
+};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -287,7 +291,7 @@ impl fmt::Display for ProjectError {
             ProjectError::ReservedStdModule { module, path } => write!(
                 f,
                 "module '{}' at '{}' uses a reserved standard-library namespace\n\
-                 help: choose a project-owned module name outside 'std.*' and 'spectra.std.*'",
+                 help: choose a project-owned module name outside the embedded std module namespace",
                 module,
                 path.display()
             ),
@@ -742,9 +746,18 @@ fn is_builtin_module(name: &str) -> bool {
 
 fn is_reserved_std_module(name: &str) -> bool {
     name == "std"
-        || name.starts_with("std.")
         || name == "spectra.std"
         || name.starts_with("spectra.std.")
+        || embedded_stdlib_sources().iter().any(|source| {
+            source.module == name
+                || source
+                    .module
+                    .strip_prefix(name)
+                    .is_some_and(|suffix| suffix.starts_with('.'))
+                || name
+                    .strip_prefix(source.module)
+                    .is_some_and(|suffix| suffix.starts_with('.'))
+        })
 }
 
 fn topological_order(modules: &[ResolvedModule]) -> Result<Vec<usize>, ProjectError> {
@@ -930,6 +943,17 @@ mod tests {
         let error = ProjectPlan::build_with_sources(vec![app])
             .expect_err("a project cannot replace a standard module");
         assert!(matches!(error, ProjectError::ReservedStdModule { .. }));
+    }
+
+    #[test]
+    fn package_owned_std_api_modules_do_not_shadow_embedded_std_sources() {
+        let temp = TempProject::new("package-std-api-module");
+        let api = temp.source("api", "cors.spectra", "module std.api.cors\n");
+
+        let plan = ProjectPlan::build_with_sources(vec![api])
+            .expect("package-owned API module names remain available");
+        assert_eq!(plan.modules().len(), 1);
+        assert_eq!(plan.modules()[0].name, "std.api.cors");
     }
 
     #[test]
