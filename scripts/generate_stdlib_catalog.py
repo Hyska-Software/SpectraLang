@@ -487,6 +487,9 @@ def main() -> int:
     symbols = set(semantic_symbols) | set(inventory.symbols)
     entries: list[dict[str, object]] = []
     for path in sorted(symbols):
+        source_authored = bool(
+            path in inventory.symbols and inventory.symbols[path].source_implemented
+        )
         if path in semantic_symbols:
             kind = semantic_symbols[path]["kind"]
             signature = semantic_symbols[path]["signature"]
@@ -552,20 +555,23 @@ def main() -> int:
             # a stale catalog entry. ABI/docs metadata may be migrated, but a
             # changed semantic contract must be visible in the generated file.
             "signature": signature,
+            "abi": (
+                "compiled Spectra function" if kind == "function" else "compiled Spectra module"
+            ) if source_authored else old.get(
+                "abi",
+                "semantic descriptor" if kind != "function" else "host(ctx: SpectraHostCallContext) -> i32",
+            ),
+            "implementation": "spectra-source" if source_authored else "native-or-compiler",
             "params": params,
             "returns": returns,
             "ir_return": ir_return,
             "returns_value": returns_value,
             "rust_symbol": rust_symbol,
             "cfg_feature": cfg_feature,
-            "abi": old.get(
-                "abi",
-                "semantic descriptor" if kind != "function" else "host(ctx: SpectraHostCallContext) -> i32",
-            ),
-            "effects": effects,
+            "effects": [] if source_authored else old.get("effects", effects),
             "error_model": old.get(
-                "error_model",
-                "none" if kind != "function" else (
+                "error_model" if not source_authored else None,
+                "none" if source_authored or kind != "function" else (
                     "legacy compatibility adapter" if path.startswith("std.compat.") else "host status + typed return"
                 ),
             ),
@@ -604,6 +610,8 @@ def main() -> int:
             if entry["cfg_feature"]:
                 lines.append(f"cfg_feature = {toml_string(str(entry['cfg_feature']))}")
         lines.append(f"abi = {toml_string(str(entry['abi']))}")
+        if entry["implementation"] == "spectra-source":
+            lines.append(f"implementation = {toml_string(str(entry['implementation']))}")
         effects = entry["effects"]
         lines.append("effects = [" + ", ".join(toml_string(str(value)) for value in effects) + "]")
         for key in ("error_model", "binding", "maturity", "owner", "docs", "fixture"):

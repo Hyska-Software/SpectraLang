@@ -25,6 +25,8 @@ pub struct CatalogEntry {
     pub namespace: String,
     pub signature: String,
     pub abi: String,
+    #[serde(default = "default_implementation")]
+    pub implementation: String,
     pub effects: Vec<String>,
     pub error_model: String,
     pub binding: String,
@@ -61,6 +63,10 @@ pub struct CatalogParam {
 
 fn default_entry_kind() -> String {
     "function".to_string()
+}
+
+fn default_implementation() -> String {
+    "native-or-compiler".to_string()
 }
 
 pub fn catalog() -> CatalogFile {
@@ -105,6 +111,22 @@ mod tests {
             assert!(!item.owner.is_empty());
             assert!(!item.docs.is_empty());
             assert!(!item.fixture.is_empty());
+            assert!(matches!(
+                item.implementation.as_str(),
+                "native-or-compiler" | "spectra-source"
+            ));
+        }
+    }
+
+    #[test]
+    fn source_authored_algorithm_functions_have_no_host_abi_or_effects() {
+        for path in ["std.algorithms.gcd_nonnegative", "std.algorithms.is_prime"] {
+            let item = entry(path).expect("source function is catalogued");
+            assert_eq!(item.implementation, "spectra-source");
+            assert_eq!(item.abi, "compiled Spectra function");
+            assert!(item.effects.is_empty());
+            assert_eq!(item.error_model, "none");
+            assert!(item.rust_symbol.is_empty());
         }
     }
 

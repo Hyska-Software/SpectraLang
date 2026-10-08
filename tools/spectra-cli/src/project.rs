@@ -1,9 +1,10 @@
-use spectra_compiler::{ast::Item, Lexer, Parser};
+use spectra_compiler::{ast::Item, embedded_stdlib::embedded_stdlib_source, Lexer, Parser};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProjectSourceEntry {
@@ -29,6 +30,17 @@ pub struct ResolvedModule {
     pub imports: Vec<String>,
     pub package_name: Option<String>,
     pub package_root: Option<PathBuf>,
+    /// Embedded standard-library source; filesystem modules leave this empty.
+    pub embedded_source: Option<Arc<str>>,
+}
+
+impl ResolvedModule {
+    pub fn read_source(&self) -> io::Result<String> {
+        match &self.embedded_source {
+            Some(source) => Ok(source.to_string()),
+            None => fs::read_to_string(&self.path),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -92,6 +104,13 @@ impl ProjectPlan {
                     .unwrap_or_else(|| "main".to_string())
             });
 
+            if is_reserved_std_module(&module) {
+                return Err(ProjectError::ReservedStdModule {
+                    module,
+                    path: path.clone(),
+                });
+            }
+
             let origin = ModuleOrigin {
                 path: path.clone(),
                 package_name: source_entry.package_name.clone(),
@@ -114,7 +133,52 @@ impl ProjectPlan {
                 imports,
                 package_name: source_entry.package_name,
                 package_root: source_entry.package_root,
+                embedded_source: None,
             });
+        }
+
+        // Add only the embedded standard modules reachable from project imports.
+        // They are compiled as regular modules and publish exports through the
+        // same semantic pipeline as project and package modules.
+        let mut pending_index = 0;
+        while pending_index < modules.len() {
+            let imports = modules[pending_index].imports.clone();
+            for dependency in imports {
+                let Some(source) = embedded_stdlib_source(&dependency) else {
+                    continue;
+                };
+                if module_map.contains_key(&dependency) {
+                    continue;
+                }
+
+                let declared = extract_module_name(source.source);
+                if declared.as_deref() != Some(source.module) {
+                    return Err(ProjectError::StdlibSourceMismatch {
+                        module: source.module.to_string(),
+                        declared,
+                        path: PathBuf::from(source.path),
+                    });
+                }
+
+                // Keep compiler diagnostics and debug metadata independent of
+                // the checkout path used when this toolchain was built.
+                let path = PathBuf::from(source.display_path);
+                let origin = ModuleOrigin {
+                    path: path.clone(),
+                    package_name: Some("std".to_string()),
+                    package_root: None,
+                };
+                module_map.insert(dependency.clone(), origin);
+                modules.push(ResolvedModule {
+                    name: dependency,
+                    path,
+                    imports: extract_imports(source.source),
+                    package_name: Some("std".to_string()),
+                    package_root: None,
+                    embedded_source: Some(Arc::from(source.source)),
+                });
+            }
+            pending_index += 1;
         }
 
         let missing = collect_missing_dependencies(&modules, &module_map, &package_roots);
@@ -161,6 +225,15 @@ pub enum ProjectError {
         module: String,
         existing: ModuleOrigin,
         duplicate: ModuleOrigin,
+    },
+    ReservedStdModule {
+        module: String,
+        path: PathBuf,
+    },
+    StdlibSourceMismatch {
+        module: String,
+        declared: Option<String>,
+        path: PathBuf,
     },
     MissingDependencies(Vec<MissingDependency>),
     CyclicDependency(Vec<String>),
@@ -211,6 +284,25 @@ impl fmt::Display for ProjectError {
                     display_package_root(duplicate.package_root.as_deref())
                 )
             }
+            ProjectError::ReservedStdModule { module, path } => write!(
+                f,
+                "module '{}' at '{}' uses a reserved standard-library namespace\n\
+                 help: choose a project-owned module name outside 'std.*' and 'spectra.std.*'",
+                module,
+                path.display()
+            ),
+            ProjectError::StdlibSourceMismatch {
+                module,
+                declared,
+                path,
+            } => write!(
+                f,
+                "embedded standard module '{}' at '{}' declares module '{}'\n\
+                 help: make the source declaration match its stdlib module path",
+                module,
+                path.display(),
+                declared.as_deref().unwrap_or("<missing>")
+            ),
             ProjectError::MissingDependencies(items) => {
                 writeln!(f, "unresolved imports:")?;
                 for item in items {
@@ -507,7 +599,7 @@ impl EntryPointScan {
 pub fn scan_entry_points(plan: &ProjectPlan) -> EntryPointScan {
     let mut scan = EntryPointScan::default();
     for module in &plan.modules {
-        let source = match fs::read_to_string(&module.path) {
+        let source = match module.read_source() {
             Ok(source) => source,
             Err(_) => {
                 // Unreadable right now: inconclusive. The compile loop
@@ -648,6 +740,13 @@ fn is_builtin_module(name: &str) -> bool {
         || name.starts_with("spectra.std.")
 }
 
+fn is_reserved_std_module(name: &str) -> bool {
+    name == "std"
+        || name.starts_with("std.")
+        || name == "spectra.std"
+        || name.starts_with("spectra.std.")
+}
+
 fn topological_order(modules: &[ResolvedModule]) -> Result<Vec<usize>, ProjectError> {
     #[derive(Copy, Clone, PartialEq)]
     enum VisitState {
@@ -686,11 +785,10 @@ fn topological_order(modules: &[ResolvedModule]) -> Result<Vec<usize>, ProjectEr
         stack.push(modules[index].name.clone());
 
         for dep in &modules[index].imports {
-            if is_builtin_module(dep) {
-                continue;
-            }
             if let Some(&dep_index) = name_to_index.get(dep.as_str()) {
                 dfs(dep_index, modules, state, order, stack, name_to_index)?;
+            } else if is_builtin_module(dep) {
+                continue;
             }
         }
 
@@ -794,6 +892,92 @@ mod tests {
             .map(|module| module.name.as_str())
             .collect();
         assert_eq!(names, vec!["app.support", "app.prelude", "app.main"]);
+    }
+
+    #[test]
+    fn embedded_std_imports_are_loaded_once_before_the_importer() {
+        let temp = TempProject::new("embedded-stdlib");
+        let app = temp.source(
+            "app",
+            "main.spectra",
+            "module app.main\nimport std.algorithms as alg\nfrom std.algorithms import gcd_nonnegative as gcd\n",
+        );
+
+        let plan = ProjectPlan::build_with_sources(vec![app]).expect("build plan");
+        let names: Vec<_> = plan
+            .modules()
+            .iter()
+            .map(|module| module.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["std.algorithms", "app.main"]);
+
+        let source_module = &plan.modules()[0];
+        assert!(source_module.embedded_source.is_some());
+        assert_eq!(
+            source_module.path,
+            PathBuf::from("stdlib/src/algorithms.spectra")
+        );
+        assert!(source_module
+            .read_source()
+            .expect("embedded source is readable")
+            .contains("module std.algorithms"));
+    }
+
+    #[test]
+    fn project_sources_cannot_shadow_the_reserved_std_namespace() {
+        let temp = TempProject::new("reserved-stdlib");
+        let app = temp.source("app", "algorithms.spectra", "module std.algorithms\n");
+        let error = ProjectPlan::build_with_sources(vec![app])
+            .expect_err("a project cannot replace a standard module");
+        assert!(matches!(error, ProjectError::ReservedStdModule { .. }));
+    }
+
+    #[test]
+    fn unknown_std_import_is_left_for_the_semantic_std_diagnostic() {
+        let temp = TempProject::new("unknown-stdlib");
+        let app = temp.source(
+            "app",
+            "main.spectra",
+            "module app.main\nimport std.algorithms_missing\n",
+        );
+        let plan = ProjectPlan::build_with_sources(vec![app])
+            .expect("unknown std names are diagnosed semantically");
+        assert_eq!(plan.modules().len(), 1);
+        assert_eq!(plan.modules()[0].name, "app.main");
+    }
+
+    #[test]
+    fn module_topology_orders_transitive_dependencies_and_rejects_cycles() {
+        let module = |name: &str, imports: &[&str]| ResolvedModule {
+            name: name.to_string(),
+            path: PathBuf::from(format!("{name}.spectra")),
+            imports: imports.iter().map(|name| (*name).to_string()).collect(),
+            package_name: None,
+            package_root: None,
+            embedded_source: None,
+        };
+        let modules = vec![
+            module("app.main", &["std.algorithms"]),
+            module("std.algorithms", &["std.primitives"]),
+            module("std.primitives", &[]),
+        ];
+        let ordered = topological_order(&modules).expect("dependency graph is acyclic");
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|index| modules[*index].name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["std.primitives", "std.algorithms", "app.main"]
+        );
+
+        let cyclic = vec![
+            module("std.first", &["std.second"]),
+            module("std.second", &["std.first"]),
+        ];
+        assert!(matches!(
+            topological_order(&cyclic),
+            Err(ProjectError::CyclicDependency(_))
+        ));
     }
 
     #[test]

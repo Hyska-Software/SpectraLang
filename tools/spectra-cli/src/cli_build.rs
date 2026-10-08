@@ -33,6 +33,18 @@ fn execute_build_command(kind: BuildCommand, invocation: CliInvocation) -> CliRe
         if entries.first().is_some_and(|entry| entry.is_dir()) {
             return execute_project_executable(entries, options, exe_path, verbose);
         }
+
+        // A single source file can still import source-backed modules (for
+        // example `std.algorithms`). In that case it must use the project
+        // linker path so the imported modules are compiled and linked too.
+        // Keep the existing fast path for files whose dependency plan has
+        // only the entry module; unresolved imports continue through the
+        // ordinary compiler path so it can report its semantic diagnostic.
+        if !entries.is_empty()
+            && ProjectPlan::build(entries.clone()).is_ok_and(|plan| plan.modules().len() > 1)
+        {
+            return execute_project_executable(entries, options, exe_path, verbose);
+        }
     }
 
     if let Some(ref obj_path) = emit_object {
@@ -301,7 +313,7 @@ fn execute_project_executable(
 
         for (index, module) in plan.modules().iter().enumerate() {
             compiler.set_current_package_name(module.package_name.clone());
-            let source = fs::read_to_string(&module.path).map_err(|error| {
+            let source = module.read_source().map_err(|error| {
                 CliError::io(format!(
                     "Cannot read '{}': {}",
                     module.path.display(),
@@ -421,7 +433,7 @@ fn compile_plan(
         if module.package_name.is_some() {
             compiler.set_current_package_name(module.package_name.clone());
         }
-        match fs::read_to_string(&module.path) {
+        match module.read_source() {
             Ok(source) => {
                 // When the source file has no explicit `module` declaration the
                 // project plan already derived a name from the filename stem.
@@ -656,4 +668,3 @@ struct AsyncBenchTotals {
     min_throughput_tasks_per_sec: f64,
     max_p99_latency_ns: u128,
 }
-

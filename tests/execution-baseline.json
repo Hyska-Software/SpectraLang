@@ -3586,6 +3586,12 @@
       "jit": "exit:0",
       "kind": "exec"
     },
+    "tests/validation/794_std_source_algorithms.spectra": {
+      "aot": "exit:0",
+      "expected_exit": 0,
+      "jit": "exit:0",
+      "kind": "exec"
+    },
     "tests/validation/79_closure_captures.spectra": {
       "aot": "exit:0",
       "expected_exit": 0,

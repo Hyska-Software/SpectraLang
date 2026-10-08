@@ -16,6 +16,11 @@ absence-safe `Option<string>` contract; empty-string environment values remain
 distinguishable from missing values.
 The public `std.fs` calls return tagged `Result<T, Error>` values.
 
+The compiler also embeds repository-owned source modules from `stdlib/src/`.
+The current source-backed module is `std.algorithms`; it is compiled by the
+toolchain and is not registered as a runtime host-call namespace. This document
+continues to describe the runtime's native host-call surface.
+
 All host calls use the shared [`SpectraHostCallContext`](host-call-conventions.md) contract and the
 status codes defined in `runtime::ffi` (`HOST_STATUS_*`). Arguments and results are encoded as
 64-bit values (`SpectraHostValue`).

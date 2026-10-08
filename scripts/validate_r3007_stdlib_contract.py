@@ -25,7 +25,7 @@ ALLOWED_OWNERS = {"frontend", "semantic", "midend", "backend", "runtime", "numer
 # lowers to `spectra.api.routing.router_new`), so they own no `HostCallSpec` and
 # carry no `rust_symbol`.
 HOST_CALL_ALIASES = {"std.api.routing.router"}
-SOURCE_KEYS = ("semantic", "runtime", "api_runtime", "lowering", "backend")
+SOURCE_KEYS = ("semantic", "runtime", "api_runtime", "lowering", "backend", "spectra")
 SYMBOL_RE = re.compile(r"(?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*")
 FULL_DECL_RE = re.compile(r'\(\s*"((?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_.]+)"\s*,\s*"([^"]+)"')
 STRING_PATH_RE = re.compile(r'"((?:std|spectra\.std|spectra\.api)\.[A-Za-z0-9_.]+)"')
@@ -40,6 +40,7 @@ class SymbolEvidence:
     sources: set[str] = field(default_factory=set)
     semantic_declared: bool = False
     runtime_registered: bool = False
+    source_implemented: bool = False
     lowering_modes: set[str] = field(default_factory=set)
     backend_special_path: bool = False
     documentation_refs: set[str] = field(default_factory=set)
@@ -53,6 +54,7 @@ class SourceInventory:
     signals: list[dict[str, Any]]
     generic_lowering: bool = False
     api_lowering: bool = False
+    errors: list[str] = field(default_factory=list)
 
 
 def canonical_symbol(value: str) -> str:
@@ -75,6 +77,7 @@ def source_paths(root: Path, configured: list[str]) -> list[Path]:
         path = root / raw
         if path.is_dir():
             paths.extend(sorted(path.rglob("*.rs")))
+            paths.extend(sorted(path.rglob("*.spectra")))
         elif path.is_file():
             paths.append(path)
     return paths
@@ -118,6 +121,9 @@ def add_symbol(inventory: dict[str, SymbolEvidence], raw: str, source: str, *, k
         evidence.semantic_declared = True
     elif source in {"runtime", "api_runtime"}:
         evidence.runtime_registered = True
+    elif source == "spectra":
+        evidence.semantic_declared = True
+        evidence.source_implemented = True
     if mode:
         evidence.lowering_modes.add(mode)
     if source == "backend":
@@ -280,6 +286,7 @@ def discover_sources(root: Path, manifest: dict[str, Any]) -> SourceInventory:
     symbols: dict[str, SymbolEvidence] = {}
     files: dict[str, list[str]] = {}
     signals: list[dict[str, Any]] = []
+    errors: list[str] = []
     generic_lowering = False
     api_lowering = False
     catalog_path = root / manifest["catalog"]
@@ -297,6 +304,52 @@ def discover_sources(root: Path, manifest: dict[str, Any]) -> SourceInventory:
         if category in {"semantic", "lowering"}:
             paths = expand_included_paths(paths)
         files[category] = [str(path.relative_to(root)) for path in paths]
+        if category == "spectra":
+            expected_modules: dict[str, Path] = {}
+            for path in paths:
+                text = path.read_text(encoding="utf-8")
+                match = re.search(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_.]*)\s*$", text, re.MULTILINE)
+                if not match:
+                    errors.append(f"source-authored std file has no module declaration: {path.relative_to(root)}")
+                    continue
+                module = match.group(1)
+                try:
+                    relative = path.relative_to(root / "stdlib" / "src").with_suffix("")
+                except ValueError:
+                    errors.append(
+                        f"source-authored std file is outside stdlib/src: {path.relative_to(root)}"
+                    )
+                    continue
+                expected = "std." + ".".join(part.replace("-", "_") for part in relative.parts)
+                if module != expected:
+                    errors.append(
+                        f"source-authored std path {path.relative_to(root)} maps to {expected}, but declares {module}"
+                    )
+                if module in expected_modules:
+                    errors.append(
+                        f"source-authored std module {module} is declared by both "
+                        f"{expected_modules[module].relative_to(root)} and {path.relative_to(root)}"
+                    )
+                else:
+                    expected_modules[module] = path
+                for function in re.finditer(
+                    r"^\s*public\s+(?:async\s+)?func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                    text,
+                    re.MULTILINE,
+                ):
+                    add_symbol(symbols, f"{module}.{function.group(1)}", "spectra")
+                for line_number, line in enumerate(text.splitlines(), start=1):
+                    if SIGNAL_RE.search(line):
+                        signals.append(
+                            {
+                                "category": category,
+                                "path": str(path.relative_to(root)),
+                                "line": line_number,
+                                "symbols": sorted({canonical_symbol(x) for x in SYMBOL_RE.findall(line)}),
+                                "text": line.strip(),
+                            }
+                        )
+            continue
         # A Rust `include!("domain.rs")` shares the containing module's
         # namespace.  The stdlib keeps its public binding constants in
         # `mod.rs` while registrations live in the extracted domain files, so
@@ -346,7 +399,7 @@ def discover_sources(root: Path, manifest: dict[str, Any]) -> SourceInventory:
         for symbol, evidence in symbols.items():
             if symbol.startswith("std.api.") and evidence.semantic_declared and not evidence.lowering_modes:
                 evidence.lowering_modes.add("api_external_lowering")
-    return SourceInventory(symbols, files, signals, generic_lowering, api_lowering)
+    return SourceInventory(symbols, files, signals, generic_lowering, api_lowering, errors)
 
 
 def load_roadmap_ids(root: Path) -> set[str]:
@@ -684,7 +737,10 @@ def run_probe(
 
 
 def build_report(root: Path, manifest: dict[str, Any], inventory: SourceInventory, probe_results: list[dict[str, Any]]) -> dict[str, Any]:
-    blockers: list[dict[str, Any]] = []
+    blockers: list[dict[str, Any]] = [
+        {"kind": "invalid_source_std_bundle", "message": message}
+        for message in inventory.errors
+    ]
     warnings: list[dict[str, Any]] = []
     covered: dict[str, dict[str, Any]] = {}
     result_by_id = {result["id"]: result for result in probe_results}
@@ -705,6 +761,7 @@ def build_report(root: Path, manifest: dict[str, Any], inventory: SourceInventor
             "sources": sorted(evidence.sources),
             "semantic_declared": evidence.semantic_declared,
             "runtime_registered": evidence.runtime_registered,
+            "source_implemented": evidence.source_implemented,
             "lowering_registered": bool(evidence.lowering_modes),
             "lowering_modes": sorted(evidence.lowering_modes),
             "backend_special_path": evidence.backend_special_path,
@@ -740,13 +797,28 @@ def build_report(root: Path, manifest: dict[str, Any], inventory: SourceInventor
     }
     runtime_without_semantic = sorted(runtime_functions - semantic)
     semantic_without_runtime = sorted(semantic - runtime_functions)
-    semantic_without_lowering = sorted(semantic - lowered_functions)
+    semantic_without_runtime = [
+        symbol for symbol in semantic_without_runtime
+        if not inventory.symbols[symbol].source_implemented
+    ]
+    semantic_without_lowering = sorted(
+        symbol for symbol in semantic - lowered_functions
+        if not inventory.symbols[symbol].source_implemented
+    )
+    source_native_duplicates = sorted(
+        symbol
+        for symbol, evidence in inventory.symbols.items()
+        if evidence.source_implemented and (evidence.runtime_registered or evidence.lowering_modes)
+    )
+    for symbol in source_native_duplicates:
+        blockers.append({"kind": "source_native_duplicate", "symbol": symbol})
     lowering_without_runtime = sorted(lowered_functions - runtime_functions)
     divergences = {
         "semantic_without_runtime": semantic_without_runtime,
         "runtime_without_semantic": runtime_without_semantic,
         "semantic_without_lowering": semantic_without_lowering,
         "lowering_without_runtime": lowering_without_runtime,
+        "source_native_duplicates": source_native_duplicates,
         "backend_special_paths": sorted(symbol for symbol, evidence in inventory.symbols.items() if evidence.backend_special_path),
     }
     follow_ups: list[dict[str, Any]] = []

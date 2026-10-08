@@ -1,0 +1,33 @@
+module std.algorithms
+
+// Requires nonnegative arguments. By convention gcd_nonnegative(0, 0) is 0.
+public func gcd_nonnegative(a: int, b: int) returns int {
+    let left = a
+    let right = b
+
+    while right != 0 {
+        let remainder = left % right
+        left = right
+        right = remainder
+    }
+
+    return left
+}
+
+// Values below 2 are not prime. Division in the loop condition avoids overflow
+// from multiplying the divisor by itself.
+public func is_prime(value: int) returns bool {
+    if value < 2 {
+        return false
+    }
+
+    let divisor = 2
+    while divisor <= value / divisor {
+        if value % divisor == 0 {
+            return false
+        }
+        divisor = divisor + 1
+    }
+
+    return true
+}

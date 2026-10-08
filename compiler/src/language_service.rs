@@ -7,8 +7,8 @@ use crate::lint::{lint_module, LintDiagnostic};
 use crate::parser::workspace::ModuleLoader;
 use crate::pipeline::CompilationOptions;
 use crate::semantic::{
-    builtin_modules::register_builtin_modules, module_registry::ModuleRegistry, SemanticAnalyzer,
-    SymbolInfo,
+    builtin_modules::register_builtin_modules, module_registry::ModuleRegistry,
+    register_embedded_stdlib_dependencies, SemanticAnalyzer, SymbolInfo,
 };
 use crate::span::Span;
 use std::collections::HashMap;
@@ -101,6 +101,12 @@ pub fn analyze_document(
         register_builtin_modules(&mut reg);
         Arc::new(RwLock::new(reg))
     };
+    let embedded_roots = module.items.iter().filter_map(|item| match item {
+        Item::Import(import) => Some(import.path.join(".")),
+        _ => None,
+    });
+    let embedded_errors =
+        register_embedded_stdlib_dependencies(Arc::clone(&registry), embedded_roots);
 
     let mut semantic = SemanticAnalyzer::new_with_registry(registry, package_name);
     semantic.set_current_module_name(Some(module.name.clone()));
@@ -108,12 +114,10 @@ pub fn analyze_document(
     analysis.symbols = semantic.symbol_resolutions.clone();
     analysis.definitions = build_definition_index(&module);
 
-    if !semantic_errors.is_empty() {
-        analysis.diagnostics = semantic_errors
-            .into_iter()
-            .map(CompilerError::Semantic)
-            .collect();
-    }
+    analysis.diagnostics.extend(embedded_errors);
+    analysis
+        .diagnostics
+        .extend(semantic_errors.into_iter().map(CompilerError::Semantic));
 
     // Always run lints — even when there are semantic errors, lint rules that
     // don't depend on type-correctness still produce useful warnings.
@@ -645,5 +649,45 @@ mod tests {
 
         assert!(labels.contains(&"async func fetch() returns unit"));
         assert!(labels.contains(&"async func Service::handle(&self) returns unit"));
+    }
+
+    #[test]
+    fn embedded_std_source_imports_resolve_module_and_named_aliases() {
+        let source = r#"
+module std_source_consumer
+import std.algorithms as alg
+from std.algorithms import gcd_nonnegative as gcd
+
+public func answer() returns int {
+    if not alg.is_prime(29) {
+        return 0
+    }
+    return gcd(84, 30)
+}
+"#;
+        let analysis = analyze_document(
+            source,
+            "std_source_consumer.spectra",
+            &CompilationOptions::default(),
+            None,
+        );
+        assert!(
+            analysis.diagnostics.is_empty(),
+            "{:?}",
+            analysis.diagnostics
+        );
+    }
+
+    #[test]
+    fn unknown_std_source_import_keeps_the_semantic_module_error() {
+        let analysis = analyze_document(
+            "module unknown_std_consumer\nimport std.algorithms_missing\n",
+            "unknown_std_consumer.spectra",
+            &CompilationOptions::default(),
+            None,
+        );
+        assert!(analysis.diagnostics.iter().any(|error| {
+            matches!(error, CompilerError::Semantic(semantic) if semantic.code.as_deref() == Some("E033"))
+        }));
     }
 }

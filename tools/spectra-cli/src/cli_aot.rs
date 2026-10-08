@@ -19,7 +19,7 @@ fn find_main_span_in_source(source: &str) -> Option<(usize, usize)> {
 
 fn find_main_location(plan: &ProjectPlan) -> Option<(PathBuf, usize, usize)> {
     for module in plan.modules() {
-        let source = fs::read_to_string(&module.path).ok()?;
+        let source = module.read_source().ok()?;
         if let Some((line, column)) = find_main_span_in_source(&source) {
             return Some((module.path.clone(), line, column));
         }
@@ -356,4 +356,3 @@ fn print_verbose_configuration(kind: BuildCommand, options: &CompilationOptions)
         println!("  - Linting: enabled (denied rules: {})", denied_display);
     }
 }
-

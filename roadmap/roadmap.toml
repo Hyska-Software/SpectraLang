@@ -1565,7 +1565,7 @@ title = "f16/bf16 GPU Kernels (Mixed Precision)"
 phase = "phase_16"
 owner = "numerics"
 priority = "P1"
-status = "complete"
+status = "not_started"
 risk = "medium"
 dependencies = ["R-3052", "R-703", "R-1603"]
 summary = "Extend the wgpu backend to f16 and bf16 storage buffers. Backward kernels and forward elementwise/matmul paths get dtype-dispatched variants. Adapter feature detection (`SHADER_F16`) gates the f16 path; bf16 is emulated via two f16 lanes until native bf16 is widely available."
@@ -5469,4 +5469,117 @@ acceptance = [
   "Capacity arithmetic and allocation are checked, handles are generational, stored values are escaped, optional reads represent absence, and stale handles fail safely.",
   "Runtime conformance and a .spectra fixture cover content equality, ordering, bounds, snapshot semantics and both JIT and AOT execution.",
   "The R-3308 release benchmark measures the implemented Vector<T> against List<T> and records capacity, checksums and operation latency without treating the isolated Rust storage probe as Spectra ABI evidence.",
+]
+
+
+[[phases]]
+id = "phase_34"
+name = "Source-Authored Standard Library"
+goal = "Bundle repository-owned .spectra standard-library modules with the toolchain, resolve imported modules automatically, preserve native runtime primitives, and establish an incremental migration and conformance process."
+
+[[items]]
+id = "R-3401"
+title = "Standard Library Source Architecture and Migration Inventory"
+phase = "phase_34"
+owner = "ecosystem"
+priority = "P0"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3007", "R-3206"]
+summary = "Record the repository source layout, bundled distribution and import model, native boundary, and a module/API inventory that selects the first source-authored standard-library pilot."
+acceptance = [
+  "An accepted architecture decision records the source root, canonical module naming, build/release bundling, imported-source selection, shadowing rules, and compiler/source compatibility rule.",
+  "A checked-in inventory accounts for every registered public std module and classifies its current public behavior as source-suitable, hybrid, or native.",
+  "The inventory names the initial pilot and records its current public signatures and dependencies.",
+  "The decision keeps required runtime capabilities native and leaves spectra.api as a separate package."
+]
+
+[[items]]
+id = "R-3402"
+title = "Bundled Standard-Module Loading"
+phase = "phase_34"
+owner = "tooling"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-3401"]
+summary = "Load compiler-versioned standard-library .spectra sources into project compilation without package installation, network access, source vendoring, or a repository checkout."
+acceptance = [
+  "An installed CLI checks and compiles a consumer of a bundled std .spectra module while offline and with the repository checkout unavailable.",
+  "The resolver includes transitive standard imports once and in dependency order, and reports cycles, missing sources, and source errors with module identity and location.",
+  "Users do not add the bundled standard library to dependencies, run package add, or vendor its files.",
+  "User and external package modules cannot shadow reserved std modules, and unknown std paths retain a standard-module diagnostic.",
+  "The selected standard source revision has a deterministic compiler-exposed identity, and source changes rebuild the embedded bundle; any future cross-compilation cache must include this identity."
+]
+
+[[items]]
+id = "R-3403"
+title = "Source-Derived API and Native Primitive Boundary"
+phase = "phase_34"
+owner = "semantic"
+priority = "P0"
+status = "complete"
+risk = "high"
+dependencies = ["R-3402", "R-3206", "R-3207", "R-3208"]
+summary = "Derive semantic exports from .spectra for source-backed std modules, compile their bodies normally, and preserve native capabilities through one explicit host-call contract."
+acceptance = [
+  "Public functions, types, traits, and re-exports in a source-backed module are visible to importing modules through semantic analysis.",
+  "Source-backed function bodies use ordinary Spectra lowering and code generation without a parallel Rust implementation for their pure behavior.",
+  "Each migrated public symbol has one semantic declaration source, and existing stable signatures and behavior match the stdlib contract.",
+  "Required host calls remain generated and registered through the native contract without duplicate source definitions or unresolved ABI symbols.",
+  "Contract and generated-table validation reports no drift for migrated and still-native modules."
+]
+
+[[items]]
+id = "R-3404"
+title = "Tooling and Release Distribution for Source Modules"
+phase = "phase_34"
+owner = "tooling"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3402", "R-3403", "R-1001", "R-901"]
+summary = "Use the same versioned standard-source bundle in CLI, package-aware builds, LSP, diagnostics, and installed compiler releases."
+acceptance = [
+  "spectralang check, run, package check, package build, JIT, and emitted AOT builds resolve source-backed std modules from the same bundled revision.",
+  "LSP completion, hover, go-to-definition, and source diagnostics work for a source-backed std API.",
+  "An installed release compiles the fixture without repository paths, source overrides, or network access.",
+  "The bundle is generated into the same build artifact as the compiler, with no separately installed or user-selected bundle that can become stale or incompatible.",
+  "The emitted AOT executable runs without access to .spectra source files."
+]
+
+[[items]]
+id = "R-3405"
+title = "First Production Source-Authored Standard Module"
+phase = "phase_34"
+owner = "runtime"
+priority = "P0"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3402", "R-3403", "R-3404"]
+summary = "Implement the low-risk pilot selected by R-3401 as a functional .spectra module and prove production consumers use only a std import in JIT and AOT."
+acceptance = [
+  "The pilot's public pure behavior is implemented in .spectra without a duplicate Rust implementation.",
+  "A consumer imports the pilot through std without package metadata, package add, vendored sources, network access, or special flags.",
+  "A .spectra integration fixture passes semantic checks and normal CLI/JIT execution with expected results.",
+  "The same fixture compiles to an AOT executable with matching results, and that executable runs without the standard source tree.",
+  "Diagnostics, generated API documentation, and the stdlib contract identify the bundled source module and public API."
+]
+
+[[items]]
+id = "R-3406"
+title = "Incremental Standard Library Migration and Conformance Gate"
+phase = "phase_34"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3405", "R-3007"]
+summary = "Establish a repeatable module-by-module process for new source-authored std behavior and for migrating suitable existing APIs without claiming that every current native std operation has moved to .spectra."
+acceptance = [
+  "A migration ledger tracks every public std module, its source/hybrid/native classification, completed and remaining APIs, and native dependencies.",
+  "The contribution policy directs new pure std behavior to .spectra and requires a documented reason and contract entry for native behavior.",
+  "Each source-migrated module has coverage for every public function/type, stable signature and error behavior, normal CLI execution, and JIT/AOT parity.",
+  "The stdlib contract audit detects stale builtin declarations, duplicate source/native definitions, missing module sources, and undocumented native capabilities.",
+  "Unmigrated modules remain explicitly classified; source-file presence alone does not complete a module or the phase."
 ]

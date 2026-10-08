@@ -210,7 +210,18 @@ impl LanguageServer for Backend {
             }
         }
 
-        let Some(symbol) = document.analysis.symbol_at(line, column) else {
+        let symbol = document.analysis.symbol_at(line, column);
+        if symbol
+            .as_ref()
+            .and_then(|symbol| symbol.definition.as_ref())
+            .is_none()
+        {
+            if let Some(hover) = embedded_stdlib_hover_at(&document, text_position.position) {
+                return Ok(Some(hover));
+            }
+        }
+
+        let Some(symbol) = symbol else {
             return Ok(None);
         };
 
@@ -263,6 +274,11 @@ impl LanguageServer for Backend {
                 uri: text_position.text_document.uri,
                 range: span_to_range(definition.span),
             })));
+        }
+        if let Some(location) =
+            embedded_stdlib_definition_location_at(&document, text_position.position)
+        {
+            return Ok(Some(GotoDefinitionResponse::Scalar(location)));
         }
 
         let Some(identifier) = identifier_at_position(&document.text, text_position.position)
@@ -747,6 +763,7 @@ impl LanguageServer for Backend {
             })
             .collect();
         items.extend(std_api_completion_items());
+        items.extend(embedded_stdlib_completion_items());
         items.extend(snippet_completion_items());
 
         if let Some(document) = document {
@@ -822,4 +839,3 @@ impl LanguageServer for Backend {
         Ok(None)
     }
 }
-

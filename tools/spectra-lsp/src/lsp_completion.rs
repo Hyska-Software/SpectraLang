@@ -33,6 +33,197 @@ fn std_api_completion_items() -> Vec<CompletionItem> {
     items
 }
 
+fn embedded_stdlib_modules() -> &'static [(
+    spectra_compiler::EmbeddedStdlibSource,
+    spectra_compiler::ast::Module,
+)] {
+    static MODULES: OnceLock<
+        Vec<(
+            spectra_compiler::EmbeddedStdlibSource,
+            spectra_compiler::ast::Module,
+        )>,
+    > = OnceLock::new();
+    MODULES.get_or_init(|| {
+        spectra_compiler::embedded_stdlib_sources()
+            .iter()
+            .filter_map(|source| {
+                let tokens = spectra_compiler::Lexer::new(source.source)
+                    .tokenize()
+                    .ok()?;
+                let module = spectra_compiler::Parser::new(tokens).parse().ok()?;
+                (module.name == source.module).then_some((*source, module))
+            })
+            .collect()
+    })
+}
+
+fn embedded_stdlib_completion_items() -> Vec<CompletionItem> {
+    let mut items = Vec::new();
+    for (source, module) in embedded_stdlib_modules() {
+        items.push(CompletionItem {
+            label: source.module.to_string(),
+            kind: Some(CompletionItemKind::MODULE),
+            detail: Some(format!("bundled Spectra module ({})", source.display_path)),
+            ..Default::default()
+        });
+        for function in module.items.iter().filter_map(|item| match item {
+            spectra_compiler::ast::Item::Function(function)
+                if function.visibility == spectra_compiler::ast::Visibility::Public =>
+            {
+                Some(function)
+            }
+            _ => None,
+        }) {
+            items.push(CompletionItem {
+                label: format!("{}.{}", source.module, function.name),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(format_function_signature(function)),
+                documentation: Some(Documentation::String(format!(
+                    "Implemented in `{}`",
+                    source.display_path
+                ))),
+                ..Default::default()
+            });
+        }
+    }
+    items
+}
+
+fn embedded_stdlib_function(
+    module_name: &str,
+    function_name: &str,
+) -> Option<(
+    spectra_compiler::EmbeddedStdlibSource,
+    spectra_compiler::ast::Function,
+)> {
+    let (source, module) = embedded_stdlib_modules()
+        .iter()
+        .find(|(source, _)| source.module == module_name)?;
+    let function = module.items.iter().find_map(|item| match item {
+        spectra_compiler::ast::Item::Function(function)
+            if function.name == function_name
+                && function.visibility == spectra_compiler::ast::Visibility::Public =>
+        {
+            Some(function.clone())
+        }
+        _ => None,
+    })?;
+    Some((*source, function))
+}
+
+fn imported_embedded_stdlib_function_at(
+    document: &DocumentState,
+    position: Position,
+) -> Option<(
+    spectra_compiler::EmbeddedStdlibSource,
+    spectra_compiler::ast::Function,
+)> {
+    let module = document.analysis.module.as_ref()?;
+    let identifier = identifier_at_position(&document.text, position)?;
+    let mut identifier_offset =
+        position_to_offset(&document.text, position).min(document.text.len());
+    let bytes = document.text.as_bytes();
+    while identifier_offset > 0 && is_identifier_byte(bytes[identifier_offset - 1]) {
+        identifier_offset -= 1;
+    }
+    let prefix = document.text.get(..identifier_offset)?.trim_end();
+
+    for import in module.items.iter().filter_map(|item| match item {
+        spectra_compiler::ast::Item::Import(import) => Some(import),
+        _ => None,
+    }) {
+        let module_name = import.path.join(".");
+        if import.names.is_some() {
+            let imported_name = import.names.as_ref()?.iter().find_map(|name| {
+                (name.alias.as_deref().unwrap_or(&name.name) == identifier)
+                    .then_some(name.name.as_str())
+            });
+            if let Some(imported_name) = imported_name {
+                if let Some(function) = embedded_stdlib_function(&module_name, imported_name) {
+                    return Some(function);
+                }
+            }
+            continue;
+        }
+
+        let leaf = import.path.last().map(String::as_str).unwrap_or("");
+        let binding = import.alias.as_deref().unwrap_or(leaf);
+        let qualified_prefixes = [format!("{binding}."), format!("{module_name}.")];
+        if qualified_prefixes
+            .iter()
+            .any(|qualified| prefix.ends_with(qualified))
+        {
+            if let Some(function) = embedded_stdlib_function(&module_name, &identifier) {
+                return Some(function);
+            }
+        }
+    }
+    None
+}
+
+fn embedded_stdlib_definition_location_at(
+    document: &DocumentState,
+    position: Position,
+) -> Option<Location> {
+    let (source, function) = imported_embedded_stdlib_function_at(document, position)?;
+    let path = embedded_stdlib_source_path(source)?;
+    let uri = Url::from_file_path(path).ok()?;
+    Some(Location {
+        uri,
+        range: span_to_range(function.span),
+    })
+}
+
+fn embedded_stdlib_source_path(source: spectra_compiler::EmbeddedStdlibSource) -> Option<PathBuf> {
+    let development_path = PathBuf::from(source.path);
+    if development_path.is_file() {
+        return Some(development_path);
+    }
+
+    let cache_root = std::env::temp_dir()
+        .join("spectralang")
+        .join("stdlib")
+        .join(spectra_compiler::embedded_stdlib_bundle_id());
+    materialize_embedded_stdlib_source_at(source, &cache_root)
+}
+
+fn materialize_embedded_stdlib_source_at(
+    source: spectra_compiler::EmbeddedStdlibSource,
+    cache_root: &std::path::Path,
+) -> Option<PathBuf> {
+    let relative_path = std::path::Path::new(source.display_path);
+    if relative_path
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let path = cache_root.join(relative_path);
+    let parent = path.parent()?;
+    std::fs::create_dir_all(parent).ok()?;
+    let existing = std::fs::read_to_string(&path).ok();
+    if existing.as_deref() != Some(source.source) {
+        std::fs::write(&path, source.source).ok()?;
+    }
+    Some(path)
+}
+
+fn embedded_stdlib_hover_at(document: &DocumentState, position: Position) -> Option<Hover> {
+    let (source, function) = imported_embedded_stdlib_function_at(document, position)?;
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: format!(
+                "```spectra\npublic {}\n```\n\nMódulo: `{}`\n\nFonte: `{}`",
+                format_function_signature(&function),
+                source.module,
+                source.display_path
+            ),
+        }),
+        range: Some(span_to_range(function.span)),
+    })
+}
+
 fn route_completion_items(module: &spectra_compiler::ast::Module) -> Vec<CompletionItem> {
     let mut seen = HashSet::new();
     let mut items = Vec::new();
@@ -380,7 +571,6 @@ fn expression_path(expr: &spectra_compiler::ast::Expression) -> Option<String> {
         _ => None,
     }
 }
-
 
 /// Frequent-pattern completion snippets. Only the items built here carry
 /// `InsertTextFormat::SNIPPET` (2); plain keyword/std-api/symbol completions

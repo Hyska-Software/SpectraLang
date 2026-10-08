@@ -38,6 +38,7 @@ semantic = ["compiler/src/semantic/builtin_modules.rs"]
 runtime = ["runtime/src/stdlib"]
 api_runtime = ["packages/spectra-api/src"]
 lowering = ["midend/src/lowering.rs"]
+spectra = ["stdlib/src"]
 backend = ["backend/src/codegen.rs"]
 
 [contract_defaults]
@@ -191,6 +192,11 @@ id = "api-json-derive"
 path = "tests/validation/357_json_derive_roundtrip.spectra"
 covers = ["std.api.json.quote_string", "std.api.json.quote_char", "std.api.json.encode_number", "std.api.json.decode_field", "std.api.json.typed_error_field"]
 
+[[probe]]
+id = "source-stdlib-algorithms"
+path = "tests/validation/794_std_source_algorithms.spectra"
+covers = ["std.algorithms.gcd_nonnegative", "std.algorithms.is_prime"]
+
 [[follow_up]]
 prefix = "std.tensor.diff"
 owner = "ml"
@@ -273,6 +279,12 @@ prefix = "std.collections.iterator_from_values"
 owner = "midend"
 roadmap = "R-2902"
 reason = "Compiler-only array materialization adapter for Iterator<T>; intentionally absent from the source semantic exports."
+
+[[namespace]]
+prefix = "std.algorithms"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3405"
 
 [[namespace]]
 prefix = "std.io"

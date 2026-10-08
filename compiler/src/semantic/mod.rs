@@ -4,7 +4,10 @@ use crate::{
         ExpressionKind, FStringPart, FloatWidth, Function, IntWidth, Item, Module, Pattern,
         Statement, StatementKind, StaticDecl, Type, UnaryOperator, Visibility,
     },
-    error::SemanticError,
+    embedded_stdlib::{embedded_stdlib_source, embedded_stdlib_sources},
+    error::{CompilerError, SemanticError},
+    lexer::Lexer,
+    parser::Parser,
     span::Span,
 };
 use std::collections::{hash_map::Entry, HashMap, HashSet};
@@ -30,9 +33,149 @@ pub mod surface;
 use builtin_modules::register_builtin_modules;
 use module_registry::{
     ExportVisibility, ExportedFunction, ExportedJsonDerive, ExportedJsonField, ExportedMethod,
-    ExportedSelfParamKind, ExportedStatic, ExportedTrait, ExportedTraitImpl,
-    ExportedTraitMethod, ExportedType, ModuleExports, ModuleRegistry,
+    ExportedSelfParamKind, ExportedStatic, ExportedTrait, ExportedTraitImpl, ExportedTraitMethod,
+    ExportedType, ModuleExports, ModuleRegistry,
 };
+
+/// Parse and register semantic exports for requested embedded `.spectra`
+/// modules and their embedded dependencies. Source modules are analyzed in
+/// dependency order and keep ordinary module exports (`stdlib_path` remains
+/// unset), so their calls lower to their compiled Spectra implementations.
+pub fn register_embedded_stdlib_dependencies(
+    registry: Arc<RwLock<ModuleRegistry>>,
+    root_modules: impl IntoIterator<Item = String>,
+) -> Vec<CompilerError> {
+    let mut errors = Vec::new();
+    let mut requested = Vec::new();
+    let mut requested_names = HashSet::new();
+    for module in root_modules {
+        if embedded_stdlib_source(&module).is_some() && requested_names.insert(module.clone()) {
+            requested.push(module);
+        }
+    }
+
+    let mut pending_index = 0;
+    let mut pending = Vec::new();
+    while pending_index < requested.len() {
+        let module_name = requested[pending_index].clone();
+        pending_index += 1;
+        let Some(source) = embedded_stdlib_source(&module_name) else {
+            continue;
+        };
+        let tokens = match Lexer::new(source.source).tokenize() {
+            Ok(tokens) => tokens,
+            Err(lexical_errors) => {
+                errors.extend(lexical_errors.into_iter().map(CompilerError::Lexical));
+                continue;
+            }
+        };
+        let module = match Parser::new(tokens).parse() {
+            Ok(module) if module.name == source.module => module,
+            Ok(module) => {
+                errors.push(CompilerError::Semantic(
+                    SemanticError::new(
+                        format!(
+                            "embedded std source '{}' declares module '{}'",
+                            source.module, module.name
+                        ),
+                        module.span,
+                    )
+                    .with_code("E033"),
+                ));
+                continue;
+            }
+            Err(parse_errors) => {
+                errors.extend(parse_errors.into_iter().map(CompilerError::Parse));
+                continue;
+            }
+        };
+        for dependency in module.items.iter().filter_map(|item| match item {
+            Item::Import(import) => Some(import.path.join(".")),
+            _ => None,
+        }) {
+            if embedded_stdlib_source(&dependency).is_some()
+                && requested_names.insert(dependency.clone())
+            {
+                requested.push(dependency);
+            }
+        }
+        pending.push(module);
+    }
+
+    register_parsed_embedded_stdlib_modules(registry, pending, &mut errors);
+    errors
+}
+
+/// Parse and register every embedded source module. Used by whole-library
+/// contract extraction; normal analysis uses the imported dependency closure.
+pub fn register_embedded_stdlib_sources(
+    registry: Arc<RwLock<ModuleRegistry>>,
+) -> Vec<CompilerError> {
+    register_embedded_stdlib_dependencies(
+        registry,
+        embedded_stdlib_sources()
+            .iter()
+            .map(|source| source.module.to_string()),
+    )
+}
+
+fn register_parsed_embedded_stdlib_modules(
+    registry: Arc<RwLock<ModuleRegistry>>,
+    mut pending: Vec<Module>,
+    errors: &mut Vec<CompilerError>,
+) {
+    while !pending.is_empty() {
+        let pending_names: HashSet<String> =
+            pending.iter().map(|module| module.name.clone()).collect();
+        let ready = pending.iter().position(|module| {
+            module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::Import(import) => Some(import.path.join(".")),
+                    _ => None,
+                })
+                .all(|dependency| {
+                    registry
+                        .read()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .is_registered(&dependency)
+                        || !pending_names.contains(&dependency)
+                })
+        });
+
+        let Some(index) = ready else {
+            for module in &pending {
+                errors.push(CompilerError::Semantic(
+                    SemanticError::new(
+                        format!(
+                            "cyclic dependency among embedded std modules includes '{}'",
+                            module.name
+                        ),
+                        module.span,
+                    )
+                    .with_code("E028"),
+                ));
+            }
+            break;
+        };
+
+        let mut module = pending.remove(index);
+        let module_name = module.name.clone();
+        let mut analyzer = SemanticAnalyzer::new_with_registry(Arc::clone(&registry), None);
+        analyzer.set_current_module_name(Some(module_name.clone()));
+        let module_errors = analyzer.analyze_module(&mut module);
+        if module_errors.is_empty() {
+            let exports = analyzer.collect_module_exports(&module, None);
+            registry
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .register_module(module_name, exports);
+        } else {
+            errors.extend(module_errors.into_iter().map(CompilerError::Semantic));
+        }
+    }
+}
 
 type GenericStructDefinition = (
     Vec<crate::ast::TypeParameter>,
@@ -138,6 +281,21 @@ pub fn analyze_modules(modules: &mut [&mut Module]) -> Result<(), Vec<SemanticEr
         register_builtin_modules(&mut reg);
         Arc::new(RwLock::new(reg))
     };
+    let embedded_roots = modules
+        .iter()
+        .flat_map(|module| module.items.iter())
+        .filter_map(|item| match item {
+            Item::Import(import) => Some(import.path.join(".")),
+            _ => None,
+        });
+    errors.extend(
+        register_embedded_stdlib_dependencies(Arc::clone(&registry), embedded_roots)
+            .into_iter()
+            .filter_map(|error| match error {
+                CompilerError::Semantic(error) => Some(error),
+                _ => None,
+            }),
+    );
 
     // Analyze dependency modules before importers, even when the workspace's
     // filesystem order puts an importer first. This keeps forward imports and
@@ -860,3 +1018,45 @@ mod semantic_traits;
 mod semantic_type_system;
 #[path = "semantic_use_after_free.rs"]
 mod semantic_use_after_free;
+
+#[cfg(test)]
+mod embedded_stdlib_tests {
+    use super::*;
+
+    #[test]
+    fn imported_source_exports_are_public_ordinary_spectra_functions() {
+        let mut registry = ModuleRegistry::new();
+        register_builtin_modules(&mut registry);
+        let registry = Arc::new(RwLock::new(registry));
+        let errors = register_embedded_stdlib_dependencies(
+            Arc::clone(&registry),
+            ["std.algorithms".to_string()],
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+
+        let registry = registry
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let exports = registry
+            .get_module("std.algorithms")
+            .expect("source module is registered");
+        assert_eq!(exports.functions.len(), 2);
+        assert!(exports.functions.contains_key("gcd_nonnegative"));
+        assert!(exports.functions.contains_key("is_prime"));
+        assert!(exports.stdlib_path.is_none());
+    }
+
+    #[test]
+    fn unimported_embedded_sources_are_not_registered_by_dependency_loading() {
+        let registry = Arc::new(RwLock::new(ModuleRegistry::new()));
+        let errors = register_embedded_stdlib_dependencies(
+            Arc::clone(&registry),
+            ["std.algorithms_missing".to_string()],
+        );
+        assert!(errors.is_empty());
+        assert!(!registry
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_registered("std.algorithms"));
+    }
+}

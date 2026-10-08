@@ -49,6 +49,14 @@ The first production AI roadmap baseline is now tracked as complete in
 - interop/package/tooling/security/serving/documentation baseline
 - closure values with deterministic by-value captures
 
+The public standard-library surface comes mainly from compiler-registered module
+exports and runtime host calls. Phase 34 now also bundles repository-owned
+`.spectra` sources into the compiler and resolves imported `std.*` modules as
+ordinary Spectra modules. `std.algorithms` is the first source-authored module;
+other modules retain their current native or hybrid implementations until each
+is migrated and validated. The explicit native boundary and the separate
+`spectra.api` package remain in place.
+
 ---
 
 # Phase 0: Program Setup and Technical Governance
@@ -2701,3 +2709,113 @@ compile-only evidence.
   beta under the maturity policy. A broader runtime-suite failure in unrelated
   `ml_disttcp` tests is recorded in the backlog; collection and affected
   compiler/midend/backend gates pass.
+
+# Phase 34: Source-Authored Standard Library
+
+## Goal
+
+Allow the SpectraLang repository to maintain standard-library modules in
+`.spectra` under a dedicated standard-library source tree, bundle those sources
+with the toolchain, and compile imported modules automatically. Production
+applications should use ordinary `import std...` statements without declaring
+a package dependency, copying standard-library sources, or requiring a
+repository checkout at build or runtime. Deliver the capability first, then
+move suitable APIs incrementally; this phase does not require rewriting every
+existing `std` operation.
+
+## Target Architecture
+
+- Keep standard-library `.spectra` sources in a dedicated repository directory,
+  rooted at `stdlib/src/`. Do not mix them into
+  `runtime/src/stdlib/`, which contains Rust runtime implementation files.
+- Give source-backed modules canonical `std.*` names. Resolve and compile only
+  the imported standard-module dependency closure, in dependency order, using
+  source text embedded in the compiler at build time. The generated index is
+  sorted by canonical module name and carries a deterministic content ID.
+- Derive semantic exports for source-backed modules from their parsed source
+  declarations. Compile their function bodies as ordinary Spectra functions.
+- Keep operating-system, accelerator, and other runtime capabilities behind
+  the existing compiler/runtime native-function contract. A module can remain
+  hybrid while pure public behavior moves into `.spectra`.
+- Prevent project or package sources from shadowing reserved standard modules.
+  Keep unknown `std.*` imports diagnosable. The compiler executable itself
+  carries the matching source bundle, so there is no separately installed
+  source directory that can drift from the compiler.
+- Keep `spectra.api` as its separately versioned API package. Phase 34 concerns
+  implementation and distribution of the language's core `std` namespace.
+
+## Workstreams
+
+- `R-3401`: settle the source architecture and inventory public modules and
+  native dependencies.
+- `R-3402`: load bundled standard-library sources into the compilation graph
+  automatically and reproducibly.
+- `R-3403`: derive source-backed semantic exports while preserving an explicit
+  native host-call boundary.
+- `R-3404`: make the same bundled source set available to production builds,
+  package commands, and language tooling.
+- `R-3405`: ship a low-risk source-authored module and prove the import-only
+  application workflow in JIT and AOT.
+- `R-3406`: establish the per-module migration and conformance process for
+  gradual standard-library growth.
+
+## Incremental Delivery Order
+
+1. `R-3401` produces an architecture decision and a module/API inventory that
+   classifies every registered core `std.*` module as source, native, or
+   hybrid. `spectra.api` remains separate.
+2. `R-3402` makes the deterministic standard source bundle part of normal project
+   compilation. It resolves transitive imports without package installation
+   or network access.
+3. `R-3403` uses source declarations for source-backed semantic APIs, compiles
+   their bodies normally, and leaves required host calls explicitly native.
+4. `R-3404` connects the same source bundle and source locations to the CLI,
+   package-aware builds, LSP, and release packaging.
+5. `R-3405` adds `std.algorithms` with `gcd_nonnegative` and `is_prime`. Its
+   consumer project imports the API directly; its JIT and emitted AOT
+   executable pass without runtime access to the source tree.
+6. `R-3406` defines repeatable contribution and migration gates. New pure
+   standard-library behavior defaults to `.spectra`; existing modules move in
+   small, independently validated batches. Native operations remain native
+   where they require runtime or platform capabilities.
+
+## Acceptance Direction
+
+- Installed toolchains can compile a project that imports a bundled
+  source-authored `std.*` module while offline and outside the SpectraLang
+  checkout.
+- CLI checks, `run`, package checks/builds, JIT, emitted AOT executables, and
+  LSP completion, hover, navigation, and diagnostics use the same embedded
+  standard source index.
+- Imported source modules and their transitive imports are type-checked and
+  compiled before dependent application modules. A compiled AOT executable
+  does not require loose `.spectra` files at runtime.
+- A source-backed public API has one semantic source of truth. Native host
+  calls remain covered by the registered host-call contract, without duplicate
+  definitions or changed public signatures during migration.
+- The pilot's `.spectra` fixture proves direct import, expected output/exit
+  behavior, public edge cases, named and aliased imports, and parity between
+  JIT and emitted AOT execution. Its catalog entry records a compiled Spectra
+  ABI and no host effect.
+- The migration ledger in `docs/architecture/stdlib-source-migration.md`
+  distinguishes source, hybrid, and native modules and tracks migrated versus
+  remaining public functions. It does not claim that the full stdlib has moved.
+- Existing `spectra.api` package ownership and imports remain unchanged.
+
+## Planning State
+
+The first Phase 34 increment is complete: R-3401 through R-3406 cover the
+architecture, embedded source resolver, normal semantic/codegen path, tooling,
+`std.algorithms`, and the per-module migration/conformance gate. This does not
+imply that the remaining native or hybrid modules have moved to `.spectra`;
+their current state and remaining public functions are recorded in the migration
+ledger. Status and validation evidence are mirrored in the human backlog and
+`roadmap/roadmap.toml`.
+
+### Cross-reference
+
+- Executable backlog: `docs/roadmap-backlog.md`, Phase 34.
+- Machine-readable tracker: `roadmap/roadmap.toml`, items `R-3401` to
+  `R-3406` in `phase_34`.
+- Existing stdlib contracts and host-call inventory remain governed by
+  `R-3007`, `R-3206`, `R-3207`, and `R-3208`.

@@ -374,8 +374,9 @@ fn execute_impact(options: ImpactOptions) -> CliResult<()> {
     let mut modules: Vec<(String, IrModule)> = Vec::new();
     for module in plan.modules() {
         let path = module.path.clone();
-        let source = fs::read_to_string(&path)
-            .map_err(|error| CliError::io(format!("Failed to read '{}': {error}", path.display())))?;
+        let source = module.read_source().map_err(|error| {
+            CliError::io(format!("Failed to read '{}': {error}", path.display()))
+        })?;
         compiler.set_current_package_name(module.package_name.clone());
         match compiler.compile_module_ir(&source, &path_to_string(&path)) {
             Ok(ir_module) => modules.push((module.name.clone(), ir_module)),

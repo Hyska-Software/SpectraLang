@@ -1,0 +1,25 @@
+module std_source_algorithms
+
+import std.algorithms as alg
+from std.algorithms import gcd_nonnegative as gcd
+
+public func main() returns int {
+    if gcd(0, 0) != 0 {
+        return 1
+    }
+    if gcd(0, 14) != 14 or gcd(84, 30) != 6 {
+        return 2
+    }
+
+    if alg.is_prime(-7) or alg.is_prime(0) or alg.is_prime(1) {
+        return 3
+    }
+    if not alg.is_prime(2) or not alg.is_prime(3) or alg.is_prime(4) {
+        return 4
+    }
+    if not alg.is_prime(29) or alg.is_prime(49) {
+        return 5
+    }
+
+    return 0
+}

@@ -6,10 +6,10 @@
 ---
 
 **PT-BR:**  
-A Biblioteca Padrão (stdlib) do SpectraLang é implementada como funções hospedadas (*host functions*) que são registradas pelo runtime e chamadas pelo código JIT via FFI. Existem **12 módulos** com mais de **100 funções**.
+A Biblioteca Padrão (stdlib) combina módulos `.spectra` compilados como código Spectra comum e módulos nativos registrados pelo runtime. `std.algorithms` é o primeiro módulo-fonte embutido na toolchain; os módulos nativos mantêm seus contratos atuais.
 
 **EN-US:**  
-SpectraLang's Standard Library (stdlib) is implemented as host functions registered by the runtime and called from JIT code via FFI. There are **12 modules** with over **100 functions**.
+SpectraLang's Standard Library (stdlib) combines `.spectra` modules compiled as regular Spectra code with native modules registered by the runtime. `std.algorithms` is the first source module embedded in the toolchain; native modules keep their existing contracts.
 
 ## Exact-width numeric contract (R-2901)
 
@@ -41,6 +41,9 @@ explicit modular operations for the supported integer widths.
 11. [std.result — Operações em Result / Result Operations](#11-stdresult--operações-em-result--result-operations)
 12. [std.char — Operações em Caracteres / Character Operations](#12-stdchar--operações-em-caracteres--character-operations)
 13. [std.time — Tempo / Time](#13-stdtime--tempo--time)
+14. [std.ml — AI/ML runtime](#14-stdml--aiml-runtime)
+15. [std.serve — Serving and guardrails](#15-stdserve--serving-and-guardrails)
+16. [std.algorithms — Algoritmos / Algorithms](#16-stdalgorithms--algoritmos--algorithms)
 
 ---
 
@@ -2190,6 +2193,34 @@ serve.server_warmup(server)
 
 These APIs emit versioned JSON for request metrics, latency/error/throughput,
 input/output distribution summaries, drift checks, and observability export.
+
+---
+
+## 16. std.algorithms — Algoritmos / Algorithms
+
+`std.algorithms` is implemented in `stdlib/src/algorithms.spectra`, bundled with
+the compiler, and compiled as an ordinary Spectra module. Importing it does not
+require a package dependency, copied source files, or network access. It has no
+native host-call dependency. An AOT executable contains the compiled functions
+and does not need the `.spectra` source after the build.
+
+```spectra
+import std.algorithms as alg
+from std.algorithms import gcd_nonnegative as gcd
+
+let common_divisor = gcd(84, 30)
+let prime = alg.is_prime(29)
+```
+
+### `gcd_nonnegative(a: int, b: int) -> int`
+
+Recebe dois valores não negativos e retorna o máximo divisor comum. Por
+convenção, `(0, 0)` retorna `0`.
+
+### `is_prime(value: int) -> bool`
+
+Retorna `false` para valores menores que `2`; nos demais casos, informa se o
+valor é primo.
 
 ---
 

@@ -5,6 +5,58 @@ catalog_version = "stdlib/v1"
 # Do not edit individual entries manually; update the owning contract/source instead.
 
 [[entry]]
+path = "std.algorithms"
+kind = "module"
+namespace = "std"
+signature = "module std.algorithms"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.algorithms"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.algorithms.gcd_nonnegative"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int, int) -> int"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.gcd_nonnegative"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/794_std_source_algorithms.spectra"
+
+[[entry]]
+path = "std.algorithms.is_prime"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> bool"
+params = [{ name = "arg0", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.is_prime"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/794_std_source_algorithms.spectra"
+
+[[entry]]
 path = "std.api"
 kind = "module"
 namespace = "std"

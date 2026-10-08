@@ -10303,3 +10303,242 @@ least 34.78% in every measured group and median.
 - The release benchmark measures the implemented `Vector<T>` against
   `List<T>` and records capacity, checksums, and operation latency. The isolated
   Rust storage probe is not treated as Spectra ABI performance evidence.
+
+# Phase 34: Source-Authored Standard Library
+
+## Scope
+
+Add first-party `.spectra` modules to a dedicated standard-library source tree
+in the SpectraLang repository and ship that source set with the compiler. An
+application should resolve these APIs through ordinary `import std...`
+statements without `package add`, source copying, network access, or a
+repository checkout. Build the loading and distribution path first, prove it
+with one low-risk module, then grow and migrate the library in small validated
+batches. Do not treat the phase as a requirement to rewrite every existing
+stdlib host operation. Native OS, accelerator, and runtime capabilities stay
+behind the existing host-call contract, and `spectra.api` remains a separate
+package.
+
+## Execution Order
+
+| Order | Item | Deliverable |
+|---|---|---|
+| 1 | `R-3401` | Architecture decision and inventory of source-suitable, hybrid, and native APIs |
+| 2 | `R-3402` | Versioned standard-source bundle and automatic dependency-ordered module loading |
+| 3 | `R-3403` | Source-derived semantic exports and an explicit native-function boundary |
+| 4 | `R-3404` | Matching behavior across CLI, package builds, LSP, and installed releases |
+| 5 | `R-3405` | One end-to-end `.spectra` module consumed only through imports, proven in JIT and AOT |
+| 6 | `R-3406` | Per-module incremental contribution, migration, and conformance process |
+
+The first Phase 34 delivery is complete: the compiler bundles and resolves
+`.spectra` std modules, and the `std.algorithms` import-only pilot passes its
+acceptance gates. The migration ledger remains the source of truth for the
+native and hybrid modules that have not moved to `.spectra`; this completion
+does not claim that the whole standard library has been rewritten.
+
+## R-3401 Standard Library Source Architecture and Migration Inventory
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `ecosystem`
+- Risk: `medium`
+- Dependencies: `R-3007`, `R-3206`
+
+Record the source layout, canonical module naming, distribution model, import
+and shadowing rules, compatibility policy, and the boundary between ordinary
+`.spectra` implementations and compiler/runtime native capabilities. Use
+`stdlib/src/` as the initial layout proposal, separate from Rust files in
+`runtime/src/stdlib/`. Inventory each existing public `std` module and classify
+its APIs as source-suitable, hybrid, or native, including the reason for native
+dependencies and candidates for the source pilot. Keep `spectra.api` outside
+this migration.
+
+### Acceptance
+
+- An accepted architecture decision records the source root, module naming,
+  build/release bundling, imported-source selection, shadowing rules, and
+  compiler/source compatibility rule.
+- A checked-in inventory accounts for every registered public `std` module and
+  classifies its current public behavior as source-suitable, hybrid, or native.
+- The inventory names the initial pilot and records its current public
+  signatures and dependencies.
+- The decision explicitly keeps required runtime capabilities native and
+  leaves `spectra.api` as a package.
+
+Evidence: `docs/architecture/stdlib-source-migration.md` inventories all 20
+registered core modules, records the source/native boundary, names the pilot,
+and documents the build-time compatibility rule.
+
+## R-3402 Bundled Standard-Module Loading
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `tooling`
+- Risk: `high`
+- Dependencies: `R-3401`
+
+Extend project compilation to load repository-owned standard-library
+`.spectra` modules from the installed, compiler-versioned source bundle. Resolve
+only the transitive module closure required by a project and order source
+modules before their importers. Make compilation independent of package
+installation, network access, the current checkout, and an environment-only
+source path. Keep unregistered `std.*` imports diagnosable and reject user or
+package shadowing of reserved standard modules.
+
+### Acceptance
+
+- An installed CLI can check and compile a consumer of a bundled `std.*`
+  `.spectra` source module while offline and with the repository checkout
+  unavailable.
+- The resolver includes transitive standard imports once, in dependency order,
+  and reports cycles, missing sources, and source errors with their module
+  identity and location.
+- Users do not add the bundled standard library to `[dependencies]`, run
+  `package add`, or vendor its files into their project.
+- User and external package modules cannot replace or shadow reserved `std.*`
+  modules; an unknown standard path continues to produce a standard-module
+  diagnostic.
+- The selected standard source revision has a deterministic identity exposed
+  by the compiler, and changes to a source rebuild the embedded bundle. The
+  compiler currently has no cross-compilation cache; if one is introduced,
+  its cache key must include this identity.
+
+Evidence: resolver tests cover transitive dependency ordering, de-duplication,
+cycles, unknown std imports, and reserved-name shadowing. A copied CLI checked
+and ran the consumer from a temporary directory outside the checkout.
+
+## R-3403 Source-Derived API and Native Primitive Boundary
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `semantic`
+- Risk: `high`
+- Dependencies: `R-3402`, `R-3206`, `R-3207`, `R-3208`
+
+Build semantic exports for source-backed modules from their `.spectra`
+declarations and compile their implementations as ordinary module functions.
+Remove duplicated compiler-side declarations only for APIs actually migrated
+to source. Preserve the current host-call catalog and runtime registration for
+native capabilities; represent each public operation through one authoritative
+contract so source functions are not accidentally lowered as host calls and
+native primitives are not duplicated or exposed with a changed ABI.
+
+### Acceptance
+
+- Public functions, types, traits, and re-exports in a source-backed module are
+  visible to imports from the parsed source module through semantic analysis.
+- Source-backed function bodies use ordinary Spectra lowering/code generation
+  and do not require a Rust implementation for their public behavior.
+- Every migrated public symbol has one semantic declaration source; existing
+  stable signatures and behavior are checked against the stdlib contract.
+- Required host calls remain generated/registered through the existing native
+  contract and have no duplicate source definitions or unresolved ABI symbols.
+- Contract and generated-table validation reports no drift for migrated and
+  still-native modules.
+
+Evidence: imported source exports pass the compiler semantic tests; the
+generated catalog identifies both pilot functions as compiled Spectra APIs
+without host effects or Rust host symbols. `cargo test -p spectra-contract`
+passes all catalog and generated-binding checks.
+
+## R-3404 Tooling and Release Distribution for Source Modules
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `tooling`
+- Risk: `medium`
+- Dependencies: `R-3402`, `R-3403`, `R-1001`, `R-901`
+
+Use the same versioned source bundle and module registry across normal CLI
+commands, package-aware builds, and language tooling. Include the source bundle
+or its generated equivalent in official toolchain distribution so users do not
+depend on a checkout. Preserve source identities for diagnostics, navigation,
+completion, and documentation, and prevent tools from each maintaining their
+own standard-module inventory.
+
+### Acceptance
+
+- `spectralang check`, `run`, `package check`, `package build`, JIT, and emitted
+  AOT builds resolve source-authored std modules from the same compiler-bundled
+  revision.
+- The LSP offers module/symbol completion, hover, and go-to-definition for a
+  source-backed std API, and reports errors against its standard source file.
+- A clean installed release can compile the fixture without repository paths,
+  an environment-specific source override, or network access.
+- The embedded bundle is generated in the same build artifact as the compiler.
+  No separately installed or user-selected bundle can become stale or
+  incompatible; build-time source change tracking regenerates the index.
+- The emitted AOT executable runs without access to `.spectra` source files.
+
+Evidence: CLI and package check/run/build paths passed for the source-only
+consumer, all 21 LSP tests passed, and the emitted AOT fixture ran after being
+copied to an isolated directory without adjacent source files.
+
+## R-3405 First Production Source-Authored Standard Module
+
+- Status: `complete`
+- Priority: `P0`
+- Owner: `runtime`
+- Risk: `medium`
+- Dependencies: `R-3402`, `R-3403`, `R-3404`
+
+Implement the low-risk pilot selected by `R-3401` as a repository-owned
+`.spectra` module, and consume it from a normal application using only its
+standard import. The pilot must demonstrate a fully functional source-backed
+public API, not a declaration-only file or a forwarding facade that requires a
+parallel Rust implementation for its pure behavior.
+
+### Acceptance
+
+- The pilot's public pure behavior is implemented in `.spectra` and passes its
+  public API contract without a duplicate Rust implementation.
+- A consumer project imports the pilot through `std.*` without package
+  metadata, `package add`, vendored sources, network access, or special flags.
+- A `.spectra` integration fixture passes semantic checks and normal CLI/JIT
+  execution with expected results.
+- The same fixture compiles to an AOT executable with matching results, and
+  that executable runs without the standard source tree.
+- Diagnostics, generated API documentation, and the stdlib contract identify
+  the bundled source module and its public API.
+
+Evidence: `tests/validation/794_std_source_algorithms.spectra` passes check,
+JIT, and AOT coverage for both functions, aliased and named imports, and the
+documented edge cases. The reference, generated catalog, and source migration
+ledger describe the API.
+
+## R-3406 Incremental Standard Library Migration and Conformance Gate
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `runtime`
+- Risk: `medium`
+- Dependencies: `R-3405`, `R-3007`
+
+Establish the ongoing module-by-module workflow for developing the library
+over time. New pure standard-library behavior defaults to `.spectra`. Existing
+modules move only when the inventory marks their behavior as suitable; native
+and hybrid modules remain valid outcomes. Each migration is isolated to one
+module or a tightly coupled cluster and receives its own API compatibility and
+runtime evidence before release. This item delivers the migration/conformance
+process and first increment; it does not claim that every existing stdlib
+function has been rewritten.
+
+### Acceptance
+
+- A migration ledger tracks each public std module and its source, hybrid, or
+  native classification, completed APIs, remaining APIs, and native
+  dependencies.
+- The contribution policy directs new pure `std` functionality to `.spectra`
+  and requires a documented reason plus a contract entry for native behavior.
+- Each source-migrated module has coverage for every public function/type,
+  stable signature and error behavior, normal CLI execution, and JIT/AOT parity.
+- The stdlib contract audit detects stale builtin declarations, duplicate
+  source/native definitions, missing module sources, and undocumented native
+  capabilities.
+- Unmigrated modules remain explicitly classified; neither the phase nor an
+  individual module is marked complete from source-file presence alone.
+
+Evidence: the migration ledger classifies all registered modules and lists
+remaining functions and native dependencies. The contribution gate and source
+contract auditor are documented and covered by 18 focused Python tests. Future
+module migrations remain separate, independently validated increments.

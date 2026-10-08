@@ -103,6 +103,37 @@ class R3007ContractTests(unittest.TestCase):
         self.assertTrue(runtime["std.demo.from_insert"].runtime_registered)
         self.assertTrue(runtime["std.demo.literal"].runtime_registered)
 
+    def test_spectra_sources_are_implementation_evidence_not_host_call_gaps(self) -> None:
+        evidence = audit.SymbolEvidence(
+            sources={"spectra"},
+            semantic_declared=True,
+            source_implemented=True,
+        )
+        self.assertTrue(evidence.source_implemented)
+
+        manifest = copy.deepcopy(self.manifest)
+        manifest["follow_up"] = []
+        inventory = audit.SourceInventory(
+            symbols={"std.algorithms.is_prime": evidence},
+            files={category: [] for category in audit.SOURCE_KEYS},
+            signals=[],
+        )
+        report = audit.build_report(audit.ROOT, manifest, inventory, [])
+        self.assertFalse(
+            any(
+                blocker.get("kind") == "divergence_without_follow_up"
+                for blocker in report["blockers"]
+            )
+        )
+
+    def test_source_module_path_must_match_its_declared_name(self) -> None:
+        manifest = copy.deepcopy(self.manifest)
+        manifest["sources"]["spectra"] = ["tests/validation"]
+        errors = audit.validate_manifest(audit.ROOT, manifest)
+        self.assertEqual(errors, [])
+        inventory = audit.discover_sources(audit.ROOT, manifest)
+        self.assertTrue(any("outside stdlib/src" in error for error in inventory.errors))
+
     def test_multiline_modules_and_generated_numeric_functions_are_discovered(self) -> None:
         symbols = {}
         audit.semantic_inventory(

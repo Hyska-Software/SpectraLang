@@ -369,7 +369,7 @@ fn execute_surface(options: SurfaceOptions) -> CliResult<()> {
     for module in plan.modules() {
         let path = module.path.clone();
         let display_path = path_to_string(&path);
-        let source = match fs::read_to_string(&path) {
+        let source = match module.read_source() {
             Ok(contents) => contents,
             Err(error) => {
                 let message = format!("Failed to read '{}': {error}", path.display());

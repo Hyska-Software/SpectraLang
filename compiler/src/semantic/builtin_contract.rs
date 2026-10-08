@@ -7,6 +7,8 @@ use super::*;
 
 use crate::ast::{FloatWidth, IntWidth, Type, TypeAnnotation, TypeAnnotationKind};
 use crate::semantic::module_registry::{ExportedType, ModuleRegistry};
+use crate::semantic::register_embedded_stdlib_sources;
+use std::sync::{Arc, RwLock};
 
 /// Compiler-owned snapshot of one public builtin contract symbol.
 ///
@@ -221,10 +223,19 @@ fn exported_function_signature(
 
 /// Extract the builtin semantic surface used by contract tooling.
 pub fn builtin_contract_symbols() -> Vec<BuiltinContractSymbol> {
-    let mut registry = ModuleRegistry::new();
-    register_builtin_modules(&mut registry);
+    let mut builtin_registry = ModuleRegistry::new();
+    register_builtin_modules(&mut builtin_registry);
+    let registry = Arc::new(RwLock::new(builtin_registry));
+    let source_errors = register_embedded_stdlib_sources(Arc::clone(&registry));
+    assert!(
+        source_errors.is_empty(),
+        "embedded std sources must have valid semantic exports: {source_errors:?}"
+    );
     let mut symbols = Vec::new();
 
+    let registry = registry
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     for (module_path, exports) in registry.iter_modules() {
         symbols.push(BuiltinContractSymbol {
             path: module_path.to_string(),

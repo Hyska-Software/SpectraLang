@@ -69,6 +69,92 @@ mod tests {
     }
 
     #[test]
+    fn embedded_std_source_completion_includes_modules_and_public_functions() {
+        let items = embedded_stdlib_completion_items();
+        assert!(items.iter().any(|item| {
+            item.label == "std.algorithms" && item.kind == Some(CompletionItemKind::MODULE)
+        }));
+        assert!(items.iter().any(|item| {
+            item.label == "std.algorithms.is_prime"
+                && item.kind == Some(CompletionItemKind::FUNCTION)
+                && item.detail.as_deref().unwrap_or("").contains("value: int")
+        }));
+    }
+
+    #[test]
+    fn embedded_std_source_hover_and_definition_follow_module_aliases() {
+        let source = "module std_lsp_alias\nimport std.algorithms as alg\npublic func main() returns bool {\n    return alg.is_prime(29)\n}\n";
+        let document = analyzed_document(source);
+        let offset = source.find("alg.is_prime").expect("call exists") + "alg.is_".len();
+        let position = offset_to_position(source, offset);
+
+        let hover = embedded_stdlib_hover_at(&document, position).expect("std hover");
+        let HoverContents::Markup(markup) = hover.contents else {
+            panic!("expected markdown hover");
+        };
+        assert!(markup.value.contains("is_prime(value: int) returns bool"));
+        assert!(markup.value.contains("std.algorithms"));
+
+        let definition = embedded_stdlib_definition_location_at(&document, position)
+            .expect("std source definition");
+        let expected = Url::from_file_path(
+            spectra_compiler::embedded_stdlib_source("std.algorithms")
+                .expect("source module")
+                .path,
+        )
+        .expect("source path becomes a file URI");
+        assert_eq!(definition.uri, expected);
+        assert!(definition.range.end.line > definition.range.start.line);
+    }
+
+    #[test]
+    fn embedded_std_source_navigation_resolves_named_import_aliases() {
+        let source = "module std_lsp_named\nfrom std.algorithms import gcd_nonnegative as gcd\npublic func main() returns int {\n    return gcd(84, 30)\n}\n";
+        let document = analyzed_document(source);
+        let position = offset_to_position(
+            source,
+            source.find("gcd(84").expect("named call exists") + 1,
+        );
+        let hover = embedded_stdlib_hover_at(&document, position).expect("named import hover");
+        let HoverContents::Markup(markup) = hover.contents else {
+            panic!("expected markdown hover");
+        };
+        assert!(markup
+            .value
+            .contains("gcd_nonnegative(a: int, b: int) returns int"));
+        assert!(embedded_stdlib_definition_location_at(&document, position).is_some());
+    }
+
+    #[test]
+    fn embedded_std_source_materializes_for_installed_toolchain_navigation() {
+        let source = *spectra_compiler::embedded_stdlib_source("std.algorithms")
+            .expect("source module");
+        let unavailable_checkout = spectra_compiler::EmbeddedStdlibSource {
+            path: "missing-checkout/stdlib/src/algorithms.spectra",
+            ..source
+        };
+        let cache_root = std::env::temp_dir()
+            .join("spectralang-lsp-tests")
+            .join(format!("{}-{}", std::process::id(), source.module));
+        let path = materialize_embedded_stdlib_source_at(unavailable_checkout, &cache_root)
+            .expect("embedded source materializes into the LSP cache");
+
+        assert!(path.starts_with(cache_root));
+        assert_eq!(
+            std::fs::read_to_string(path).expect("materialized source is readable"),
+            source.source
+        );
+    }
+
+    #[test]
+    fn lsp_analysis_reports_unknown_source_std_imports() {
+        let document = analyzed_document("module std_lsp_error\nimport std.algorithms_missing\n");
+        assert!(document.analysis.diagnostics.iter().any(|error| {
+            matches!(error, CompilerError::Semantic(semantic) if semantic.code.as_deref() == Some("E033"))
+        }));
+    }
+
+    #[test]
     fn keyword_completion_items_cover_current_language_surface() {
         for keyword in [
             "async", "await", "from", "public", "record", "when", "then",
@@ -455,4 +541,3 @@ public async func handle(request: std.api.http.Request)  returns  std.api.http.R
         );
     }
 }
-

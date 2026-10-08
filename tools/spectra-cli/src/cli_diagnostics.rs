@@ -73,7 +73,7 @@ fn run_structured_diagnostics(
         let display_path = path_to_string(&path);
         let diagnostics = files.entry(path.clone()).or_default();
 
-        let source = match fs::read_to_string(&path) {
+        let source = match module.read_source() {
             Ok(contents) => contents,
             Err(error) => {
                 diagnostics.push(io_error_diagnostic(&error));
