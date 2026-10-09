@@ -1,0 +1,48 @@
+// Consumer for the `std.testing` assertion surface: every documented passing
+// path is exercised here, so the fixture fails (and reports the assertion that
+// broke) if any comparison, message or tolerance path rejects a value it must
+// accept. The failing path — `error.panic` with `expected <e>, found <a>` and
+// exit code 70 — is covered by
+// `tests/projects/stdlib_testing_assertion_failure`.
+module std_source_testing
+
+import std.testing as testing
+
+public func main() returns int {
+    // ── assert_true ──────────────────────────────────────────────────────
+    testing.assert_true(true, "literal condition must hold")
+    testing.assert_true(1 == 1, "equality expression must hold")
+    testing.assert_true(3 > 2, "ordered comparison must hold")
+    testing.assert_true(true and not false, "boolean composition must hold")
+
+    // ── assert_false ─────────────────────────────────────────────────────
+    testing.assert_false(false, "literal condition must not hold")
+    testing.assert_false(2 > 3, "ordered comparison must not hold")
+    testing.assert_false(false or false, "boolean composition must not hold")
+
+    // ── assert_eq_int ────────────────────────────────────────────────────
+    testing.assert_eq_int(2 + 2, 4, "arithmetic must match")
+    testing.assert_eq_int(0, 0, "zero must match")
+    testing.assert_eq_int(-7, -7, "negative values must match")
+    testing.assert_eq_int(3 - 10, -7, "negative arithmetic must match")
+
+    // ── assert_eq_bool ───────────────────────────────────────────────────
+    testing.assert_eq_bool(true, true, "true must match true")
+    testing.assert_eq_bool(false, false, "false must match false")
+    testing.assert_eq_bool(1 < 2, true, "expression must match true")
+
+    // ── assert_eq_str ────────────────────────────────────────────────────
+    testing.assert_eq_str("a" + "b", "ab", "concatenation must match")
+    testing.assert_eq_str("", "", "empty strings must match")
+    testing.assert_eq_str("héllo", "héllo", "utf-8 content must match byte-wise")
+
+    // ── assert_eq_f ──────────────────────────────────────────────────────
+    testing.assert_eq_f(1.0, 1.0005, 0.001, "difference below tolerance must pass")
+    testing.assert_eq_f(-0.0, 0.0, 0.0, "signed zero must match zero")
+    testing.assert_eq_f(0.0, 0.0, 0.0, "exact equality must pass")
+    testing.assert_eq_f(0.0, 0.001, 0.001, "difference at tolerance must pass")
+    testing.assert_eq_f(-1.5, -1.4, 0.2, "negative values within tolerance must pass")
+    testing.assert_eq_f(2.5, 2.5, 0.0001, "identical floats must pass")
+
+    return 0
+}

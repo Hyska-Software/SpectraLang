@@ -1,0 +1,16 @@
+// Intentionally failing assertion, driven by `main`: `spectralang run <dir>`
+// executes it, `std.testing.assert_eq_int` terminates the process through
+// `std.error.panic` and stderr carries `expected 4, found 3: counter must
+// match` with exit code 70. `spectralang package test --root <dir>` proves the
+// same panic through `tests/assertion_failure_test.spectra`, because the
+// package-test runner only executes `#[spectra_async_test]` cases.
+module failure
+
+import std.io as io
+import std.testing as testing
+
+public func main() returns int {
+    io.println("checking counter")
+    testing.assert_eq_int(3, 4, "counter must match")
+    return 0
+}

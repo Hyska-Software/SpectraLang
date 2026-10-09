@@ -1,0 +1,136 @@
+// Consumer for `std.vector`: dot/norm/cosine, normalization, element-wise add
+// and scaling over `List<float>`, including length mismatches, the zero vector
+// and non-mutation guarantees.
+module std_source_vector
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+import std.vector as vector
+
+func close(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.000000001
+}
+
+func series(values: [float], count: int) returns List<float> {
+    let list: List<float> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func value_at(values: List<float>, index: int) returns float {
+    return option.option_unwrap_or(collections.list_get(values, index), -999.0)
+}
+
+public func main() returns int {
+    let a = series([1.0, 2.0, 3.0], 3)
+    let b = series([4.0, 5.0, 6.0], 3)
+    let empty: List<float> = collections.list_new()
+
+    // ── dot product ──────────────────────────────────────────────────────
+    if not close(option.option_unwrap_or(vector.dot_f(a, b), -1.0), 32.0) {
+        return 1
+    }
+    if option.is_some(vector.dot_f(a, series([1.0], 1))) {
+        return 2
+    }
+    if not close(option.option_unwrap_or(vector.dot_f(empty, empty), -1.0), 0.0) {
+        return 3
+    }
+
+    // ── norm ─────────────────────────────────────────────────────────────
+    if not close(vector.norm_f(a), 3.7416573867739413) {
+        return 4
+    }
+    if not close(vector.norm_f(empty), 0.0) {
+        return 5
+    }
+    if not close(vector.norm_f(series([3.0, 4.0], 2)), 5.0) {
+        return 6
+    }
+
+    // ── cosine ───────────────────────────────────────────────────────────
+    if not close(option.option_unwrap_or(vector.cosine_f(a, b), -2.0), 0.9746318461970762) {
+        return 7
+    }
+    if not close(option.option_unwrap_or(vector.cosine_f(a, a), -2.0), 1.0) {
+        return 8
+    }
+    if option.is_some(vector.cosine_f(a, series([1.0], 1))) {
+        return 9
+    }
+    let zeros = series([0.0, 0.0, 0.0], 3)
+    if option.is_some(vector.cosine_f(a, zeros)) {
+        return 10
+    }
+    if option.is_some(vector.cosine_f(empty, empty)) {
+        return 11
+    }
+
+    // ── normalize ────────────────────────────────────────────────────────
+    let unit = vector.normalize_f(a)
+    if not option.is_some(unit) {
+        return 12
+    }
+    let unit_values = option.option_unwrap_or(unit, empty)
+    if collections.list_len(unit_values) != 3 {
+        return 13
+    }
+    if not close(value_at(unit_values, 0), 0.2672612419124244) {
+        return 14
+    }
+    if not close(value_at(unit_values, 1), 0.5345224838248488) {
+        return 15
+    }
+    if not close(value_at(unit_values, 2), 0.8017837257372732) {
+        return 16
+    }
+    if not close(vector.norm_f(unit_values), 1.0) {
+        return 17
+    }
+    if option.is_some(vector.normalize_f(zeros)) {
+        return 18
+    }
+    if option.is_some(vector.normalize_f(empty)) {
+        return 19
+    }
+
+    // ── add ──────────────────────────────────────────────────────────────
+    let sum = option.option_unwrap_or(vector.add_f(a, b), empty)
+    if not close(value_at(sum, 0), 5.0) or not close(value_at(sum, 1), 7.0) or not close(value_at(sum, 2), 9.0) {
+        return 20
+    }
+    if option.is_some(vector.add_f(a, series([1.0], 1))) {
+        return 21
+    }
+    if collections.list_len(option.option_unwrap_or(vector.add_f(empty, empty), empty)) != 0 {
+        return 22
+    }
+
+    // ── scale ────────────────────────────────────────────────────────────
+    let doubled = vector.scale_f(a, 2.0)
+    if not close(value_at(doubled, 0), 2.0) or not close(value_at(doubled, 1), 4.0) or not close(value_at(doubled, 2), 6.0) {
+        return 23
+    }
+    let shrunk = vector.scale_f(a, -1.5)
+    if not close(value_at(shrunk, 0), -1.5) or not close(value_at(shrunk, 2), -4.5) {
+        return 24
+    }
+    if collections.list_len(vector.scale_f(empty, 3.0)) != 0 {
+        return 25
+    }
+
+    // ── inputs are never mutated ─────────────────────────────────────────
+    if not close(value_at(a, 0), 1.0) or not close(value_at(a, 2), 3.0) {
+        return 26
+    }
+    if not close(value_at(b, 0), 4.0) or collections.list_len(b) != 3 {
+        return 27
+    }
+
+    return 0
+}

@@ -269,7 +269,15 @@ fn operator_trait_and_method(
         BinaryOperator::LessEqual => Some(("Ord", "le")),
         BinaryOperator::Greater => Some(("Ord", "gt")),
         BinaryOperator::GreaterEqual => Some(("Ord", "ge")),
-        BinaryOperator::And | BinaryOperator::Or => None, // logical ops not overloadable
+        // Logical and bitwise operators are not overloadable: `&&`/`||`
+        // short-circuit, and bitwise semantics are fixed by the operand width.
+        BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::BitAnd
+        | BinaryOperator::BitOr
+        | BinaryOperator::BitXor
+        | BinaryOperator::Shl
+        | BinaryOperator::Shr => None,
     }
 }
 

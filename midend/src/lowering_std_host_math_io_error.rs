@@ -207,6 +207,11 @@ pub(crate) fn lookup_std_host_group_math_io_error(
             return_type: IRType::Bool,
             returns_value: true,
         }),
+        ("error", "panic") => Some(HostFunctionDescriptor {
+            runtime_name: "spectra.std.error.panic",
+            return_type: IRType::Void,
+            returns_value: false,
+        }),
         ("collections", "list_new") => Some(HostFunctionDescriptor {
             runtime_name: spectra_contract::STD_COLLECTIONS_LIST_NEW_BINDING,
             return_type: IRType::Struct {

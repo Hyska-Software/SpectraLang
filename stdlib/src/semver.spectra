@@ -1,6 +1,7 @@
 module std.semver
 
 import std.collections as collections
+import std.convert as convert
 import std.option as option
 import std.string as str
 
@@ -385,4 +386,482 @@ func compare_span(left: string, left_start: int, left_end: int, right: string, r
         return -1
     }
     return 1
+}
+
+// ── Range satisfaction ───────────────────────────────────────────────────
+
+// True when `text` lies inside `range`, false when it does not, and None when
+// `text` is not a valid semantic version or `range` is malformed.
+//
+// Range grammar (npm `semver` subset):
+//   range      := set ("||" set)*          a version satisfies when ANY set does
+//   set        := comparator+              space-separated; ALL must match
+//   comparator := "*" | "x"                any version
+//               | partial                  "1", "1.2", "1.x", "1.2.x": prefix match
+//               | "="? partial             exact "1.2.3" / "=1.2.3", or prefix
+//               | (">"|">="|"<"|"<=") partial
+//               | "^" partial              >= lower and < next major
+//               | "~" partial              >= lower and <= next minor base
+//               | partial " - " partial    hyphen range, both ends inclusive
+//
+// An omitted trailing component of a partial is filled with zero for a lower
+// bound (`>=1.2` is `>=1.2.0`) and bumped for an exclusive upper bound
+// (`<1.2` is `<1.2.0`, `<=1.2` is `<1.3.0`, `>1.2` is `>=1.3.0`).
+//
+// Pre-release policy (npm): a version carrying a pre-release only satisfies a
+// set that contains at least one comparator with a pre-release on the SAME
+// `major.minor.patch`; otherwise the set never matches it.
+public func satisfies(text: string, range: string) returns Option<bool> {
+    if not is_valid(text) {
+        return Option::None
+    }
+    let sets = str.split_by(range, "||")
+    if collections.list_len(sets) == 0 {
+        return Option::None
+    }
+
+    // Every branch of the union must parse before a match is reported, so a
+    // malformed later branch turns the whole range into `None` instead of
+    // being masked by an earlier `true`.
+    let matched = false
+    let index = 0
+    while index < collections.list_len(sets) {
+        let raw = option.option_unwrap_or(collections.list_get(sets, index), "")
+        let verdict = set_matches(text, str.trim(raw))
+        if not option.is_some(verdict) {
+            return Option::None
+        }
+        if option.option_unwrap_or(verdict, false) {
+            matched = true
+        }
+        index = index + 1
+    }
+    if matched {
+        return Option::Some(true)
+    }
+    return Option::Some(false)
+}
+
+// Every space-separated comparator of one set must match; None when malformed.
+func set_matches(text: string, set: string) returns Option<bool> {
+    let tokens = tokenize_set(set)
+    if collections.list_len(tokens) == 0 {
+        return Option::None
+    }
+    // Pre-release eligibility is a property of the whole set, so compute it
+    // up front but only apply it after the shape has been validated.
+    let granted = set_grants_prerelease(text, tokens)
+    let all_match = true
+
+    let position = 0
+    while position < collections.list_len(tokens) {
+        if token_text(tokens, position) == "-" {
+            return Option::None
+        }
+        if next_is_hyphen(tokens, position) {
+            if position + 2 >= collections.list_len(tokens) {
+                return Option::None
+            }
+            let span = hyphen_matches(text, token_text(tokens, position), token_text(tokens, position + 2))
+            if not option.is_some(span) {
+                return Option::None
+            }
+            if not option.option_unwrap_or(span, false) {
+                all_match = false
+            }
+            position = position + 3
+        } else {
+            let verdict = comparator_matches(text, token_text(tokens, position))
+            if not option.is_some(verdict) {
+                return Option::None
+            }
+            if not option.option_unwrap_or(verdict, false) {
+                all_match = false
+            }
+            position = position + 1
+        }
+    }
+
+    // A pre-release version is only eligible inside a set that mentions a
+    // pre-release on the same core version.
+    if str.len(prerelease_part(text)) > 0 and not granted {
+        return Option::Some(false)
+    }
+    return Option::Some(all_match)
+}
+
+func tokenize_set(set: string) returns List<string> {
+    let raw = str.split_by(set, " ")
+    let tokens: List<string> = collections.list_new()
+    let index = 0
+    while index < collections.list_len(raw) {
+        let piece = option.option_unwrap_or(collections.list_get(raw, index), "")
+        if str.len(piece) > 0 {
+            collections.list_push(tokens, piece)
+        }
+        index = index + 1
+    }
+    return tokens
+}
+
+func token_text(tokens: List<string>, index: int) returns string {
+    return option.option_unwrap_or(collections.list_get(tokens, index), "")
+}
+
+func next_is_hyphen(tokens: List<string>, position: int) returns bool {
+    if position + 1 >= collections.list_len(tokens) {
+        return false
+    }
+    return token_text(tokens, position + 1) == "-"
+}
+
+func is_any_version(token: string) returns bool {
+    return token == "*" or token == "x" or token == "X"
+}
+
+// Leading comparison operator of a comparator, or "" when it is a bare
+// version. Longest operators are tested first.
+func operator_of(token: string) returns string {
+    if str.starts_with(token, ">=") {
+        return ">="
+    }
+    if str.starts_with(token, "<=") {
+        return "<="
+    }
+    if str.starts_with(token, "^") {
+        return "^"
+    }
+    if str.starts_with(token, "~") {
+        return "~"
+    }
+    if str.starts_with(token, ">") {
+        return ">"
+    }
+    if str.starts_with(token, "<") {
+        return "<"
+    }
+    if str.starts_with(token, "=") {
+        return "="
+    }
+    return ""
+}
+
+func comparator_matches(text: string, token: string) returns Option<bool> {
+    if is_any_version(token) {
+        return Option::Some(true)
+    }
+    let op = operator_of(token)
+    let operand = str.substring(token, str.len(op), str.len(token))
+    if str.len(operand) == 0 {
+        return Option::None
+    }
+    let parsed = parse_partial(operand)
+    if not option.is_some(parsed) {
+        return Option::None
+    }
+    let parts = option.option_unwrap_or(parsed, partial_text_parts("0", "", "", ""))
+
+    if op == ">" {
+        return Option::Some(greater_matches(text, parts))
+    }
+    if op == ">=" {
+        return Option::Some(least_matches(text, parts))
+    }
+    if op == "<" {
+        return Option::Some(less_matches(text, parts))
+    }
+    if op == "<=" {
+        return Option::Some(at_most_matches(text, parts))
+    }
+    if op == "^" {
+        return Option::Some(caret_matches(text, parts))
+    }
+    if op == "~" {
+        return Option::Some(tilde_matches(text, parts))
+    }
+    // "" (bare) and "=" are the same match.
+    return Option::Some(prefix_matches(text, parts))
+}
+
+// Prefix match for a bare or "=" partial: `1` = any 1.x.y, `1.2` = any 1.2.x,
+// `1.2.x` = any 1.2.y, `1.2.3` = exactly 1.2.3.
+func prefix_matches(text: string, parts: List<string>) returns bool {
+    if str.len(part_pre(parts)) > 0 {
+        return exact_matches(text, parts)
+    }
+    let values = version_numbers(text)
+    if part_at(values, 0) != part_number(parts, 0) {
+        return false
+    }
+    if str.len(text_part(parts, 1)) > 0 and part_at(values, 1) != part_number(parts, 1) {
+        return false
+    }
+    if str.len(text_part(parts, 2)) > 0 and part_at(values, 2) != part_number(parts, 2) {
+        return false
+    }
+    return true
+}
+
+func exact_matches(text: string, parts: List<string>) returns bool {
+    if str.len(text_part(parts, 1)) == 0 or str.len(text_part(parts, 2)) == 0 {
+        return false
+    }
+    return order_of(text, render_lower(parts)) == 0
+}
+
+func greater_matches(text: string, parts: List<string>) returns bool {
+    if str.len(text_part(parts, 2)) > 0 {
+        return order_of(text, render_lower(parts)) > 0
+    }
+    return order_of(text, render_successor(parts)) >= 0
+}
+
+func least_matches(text: string, parts: List<string>) returns bool {
+    return order_of(text, render_lower(parts)) >= 0
+}
+
+func less_matches(text: string, parts: List<string>) returns bool {
+    return order_of(text, render_lower(parts)) < 0
+}
+
+func at_most_matches(text: string, parts: List<string>) returns bool {
+    if str.len(text_part(parts, 2)) > 0 {
+        return order_of(text, render_lower(parts)) <= 0
+    }
+    return order_of(text, render_successor(parts)) < 0
+}
+
+func caret_matches(text: string, parts: List<string>) returns bool {
+    if order_of(text, render_lower(parts)) < 0 {
+        return false
+    }
+    return order_of(text, render_next_major(parts)) < 0
+}
+
+// Tilde: `>= lower` and `< next minor` (npm), so `~1.2.3` accepts 1.2.9 but
+// not 1.3.0 or later.
+func tilde_matches(text: string, parts: List<string>) returns bool {
+    if order_of(text, render_lower(parts)) < 0 {
+        return false
+    }
+    return order_of(text, render_next_minor(parts)) < 0
+}
+
+// `A - B`: A is an inclusive lower bound, B an inclusive upper bound (a
+// partial B is bumped to its exclusive successor).
+func hyphen_matches(text: string, lower_token: string, upper_token: string) returns Option<bool> {
+    if str.len(operator_of(lower_token)) > 0 or str.len(operator_of(upper_token)) > 0 {
+        return Option::None
+    }
+    if is_any_version(lower_token) or is_any_version(upper_token) {
+        return Option::None
+    }
+    let lower = parse_partial(lower_token)
+    let upper = parse_partial(upper_token)
+    if not option.is_some(lower) or not option.is_some(upper) {
+        return Option::None
+    }
+    let low = option.option_unwrap_or(lower, partial_text_parts("0", "", "", ""))
+    let high = option.option_unwrap_or(upper, partial_text_parts("0", "", "", ""))
+    if order_of(text, render_lower(low)) < 0 {
+        return Option::Some(false)
+    }
+    if str.len(text_part(high, 2)) > 0 {
+        return Option::Some(order_of(text, render_lower(high)) <= 0)
+    }
+    return Option::Some(order_of(text, render_successor(high)) < 0)
+}
+
+// True when some comparator of the set carries a pre-release on the same core
+// version as `text`.
+func set_grants_prerelease(text: string, tokens: List<string>) returns bool {
+    let values = version_numbers(text)
+    let index = 0
+    while index < collections.list_len(tokens) {
+        let token = token_text(tokens, index)
+        if token != "-" and token_grants_prerelease(token, values) {
+            return true
+        }
+        index = index + 1
+    }
+    return false
+}
+
+func token_grants_prerelease(token: string, values: List<int>) returns bool {
+    if is_any_version(token) {
+        return false
+    }
+    let op = operator_of(token)
+    let operand = str.substring(token, str.len(op), str.len(token))
+    let parsed = parse_partial(operand)
+    if not option.is_some(parsed) {
+        return false
+    }
+    let parts = option.option_unwrap_or(parsed, partial_text_parts("0", "", "", ""))
+    if str.len(part_pre(parts)) == 0 {
+        return false
+    }
+    if part_number(parts, 0) != part_at(values, 0) {
+        return false
+    }
+    if part_number(parts, 1) != part_at(values, 1) {
+        return false
+    }
+    return part_number(parts, 2) == part_at(values, 2)
+}
+
+// Parses a comparator operand into [major, minor, patch, pre-release], where
+// an omitted or wildcard component is "". Returns None for an unknown shape.
+func parse_partial(vtext: string) returns Option<List<string>> {
+    let without_build = vtext
+    let plus = str.index_of(vtext, "+")
+    if plus >= 0 {
+        // Build metadata does not participate in comparison, but it must be
+        // syntactically valid before it is discarded (`1.2.3+` and
+        // `1.2.3+bad!` are not versions).
+        let build = str.substring(vtext, plus + 1, str.len(vtext))
+        if str.len(build) == 0 or not valid_build(build) {
+            return Option::None
+        }
+        without_build = str.substring(vtext, 0, plus)
+    }
+    let body = without_build
+    let pre = ""
+    let dash = str.index_of(without_build, "-")
+    if dash >= 0 {
+        pre = str.substring(without_build, dash + 1, str.len(without_build))
+        body = str.substring(without_build, 0, dash)
+    }
+
+    let raw = str.split_by(body, ".")
+    let count = collections.list_len(raw)
+    if count < 1 or count > 3 {
+        return Option::None
+    }
+    let major = segment_digits(token_text(raw, 0))
+    if str.len(major) == 0 {
+        return Option::None
+    }
+    let minor = ""
+    if count >= 2 {
+        minor = segment_digits(token_text(raw, 1))
+        if str.len(minor) == 0 and not is_wildcard(token_text(raw, 1)) {
+            return Option::None
+        }
+    }
+    let patch = ""
+    if count >= 3 {
+        patch = segment_digits(token_text(raw, 2))
+        if str.len(patch) == 0 and not is_wildcard(token_text(raw, 2)) {
+            return Option::None
+        }
+    }
+    // A component may only follow a concrete one.
+    if str.len(minor) == 0 and str.len(patch) > 0 {
+        return Option::None
+    }
+    if str.len(pre) > 0 {
+        if str.len(minor) == 0 or str.len(patch) == 0 {
+            return Option::None
+        }
+        if not valid_prerelease(pre) {
+            return Option::None
+        }
+    }
+    return Option::Some(partial_text_parts(major, minor, patch, pre))
+}
+
+func is_wildcard(segment: string) returns bool {
+    return segment == "x" or segment == "X" or segment == "*"
+}
+
+// Numeric segment text, or "" when it is not a valid number without leading
+// zeros.
+func segment_digits(segment: string) returns string {
+    if parse_number(segment, 0, str.len(segment)) < 0 {
+        return ""
+    }
+    return segment
+}
+
+func partial_text_parts(major: string, minor: string, patch: string, pre: string) returns List<string> {
+    let parts: List<string> = collections.list_new()
+    collections.list_push(parts, major)
+    collections.list_push(parts, minor)
+    collections.list_push(parts, patch)
+    collections.list_push(parts, pre)
+    return parts
+}
+
+func text_part(parts: List<string>, index: int) returns string {
+    return option.option_unwrap_or(collections.list_get(parts, index), "")
+}
+
+func part_pre(parts: List<string>) returns string {
+    return text_part(parts, 3)
+}
+
+func part_number(parts: List<string>, index: int) returns int {
+    let raw = text_part(parts, index)
+    if str.len(raw) == 0 {
+        return -1
+    }
+    return parse_number(raw, 0, str.len(raw))
+}
+
+func version_numbers(text: string) returns List<int> {
+    return option.option_unwrap_or(split_core(core_part(text)), empty_parts())
+}
+
+func order_of(left: string, right: string) returns int {
+    return option.option_unwrap_or(compare(left, right), 0)
+}
+
+// Lowest version a partial denotes, missing components filled with zero.
+func render_lower(parts: List<string>) returns string {
+    let text = core_text(part_number(parts, 0), part_number(parts, 1), part_number(parts, 2))
+    let pre = part_pre(parts)
+    if str.len(pre) == 0 {
+        return text
+    }
+    return text + "-" + pre
+}
+
+// First version past a partial: the lowest unspecified component is bumped.
+func render_successor(parts: List<string>) returns string {
+    let major = part_number(parts, 0)
+    let minor = part_number(parts, 1)
+    let patch = part_number(parts, 2)
+    if patch >= 0 {
+        return core_text(major, minor, patch + 1)
+    }
+    if minor >= 0 {
+        return core_text(major, minor + 1, 0)
+    }
+    return core_text(major + 1, 0, 0)
+}
+
+func render_next_major(parts: List<string>) returns string {
+    return core_text(part_number(parts, 0) + 1, 0, 0)
+}
+
+func render_next_minor(parts: List<string>) returns string {
+    let minor = part_number(parts, 1)
+    if minor >= 0 {
+        return core_text(part_number(parts, 0), minor + 1, 0)
+    }
+    return core_text(part_number(parts, 0) + 1, 0, 0)
+}
+
+func core_text(major: int, minor: int, patch: int) returns string {
+    let low_minor = minor
+    let low_patch = patch
+    if low_minor < 0 {
+        low_minor = 0
+    }
+    if low_patch < 0 {
+        low_patch = 0
+    }
+    let text = convert.int_to_string(major) + "." + convert.int_to_string(low_minor)
+    return text + "." + convert.int_to_string(low_patch)
 }

@@ -126,6 +126,53 @@ impl SemanticAnalyzer {
                             );
                         }
                     }
+                    BinaryOperator::BitAnd
+                    | BinaryOperator::BitOr
+                    | BinaryOperator::BitXor
+                    | BinaryOperator::Shl
+                    | BinaryOperator::Shr => {
+                        // Bitwise operators take integers only, and both
+                        // operands must share one type: mixing `int` with an
+                        // exact-width value (or two different widths) needs an
+                        // explicit cast so width and signedness stay visible.
+                        if !Self::is_integer_type(&left_type) && !matches!(left_type, Type::Unknown)
+                        {
+                            self.error_coded(
+                                "E049",
+                                format!(
+                                    "Left operand of bitwise operation must be an integer, found {}",
+                                    type_name(&left_type)
+                                ),
+                                left.span,
+                            );
+                        }
+                        if !Self::is_integer_type(&right_type)
+                            && !matches!(right_type, Type::Unknown)
+                        {
+                            self.error_coded(
+                                "E049",
+                                format!(
+                                    "Right operand of bitwise operation must be an integer, found {}",
+                                    type_name(&right_type)
+                                ),
+                                right.span,
+                            );
+                        }
+                        if Self::is_integer_type(&left_type)
+                            && Self::is_integer_type(&right_type)
+                            && left_type != right_type
+                        {
+                            self.error_coded(
+                                "E038",
+                                format!(
+                                    "Type mismatch in bitwise operation: {} and {}",
+                                    type_name(&left_type),
+                                    type_name(&right_type)
+                                ),
+                                expr.span,
+                            );
+                        }
+                    }
                     BinaryOperator::Equal | BinaryOperator::NotEqual => {
                         // Equality can compare any types, but they should match
                         if left_type != Type::Unknown
@@ -245,6 +292,20 @@ impl SemanticAnalyzer {
                             );
                         }
                     }
+                    crate::ast::UnaryOperator::BitNot => {
+                        if !Self::is_integer_type(&operand_type)
+                            && !matches!(operand_type, Type::Unknown)
+                        {
+                            self.error_coded(
+                                "E049",
+                                format!(
+                                    "Unary `~` requires an integer operand, found {}",
+                                    type_name(&operand_type)
+                                ),
+                                operand.span,
+                            );
+                        }
+                    }
                 }
             }
             _ => unreachable!("expression category mismatch"),
@@ -305,6 +366,11 @@ impl SemanticAnalyzer {
             BinaryOperator::Multiply => "*",
             BinaryOperator::Divide => "/",
             BinaryOperator::Modulo => "%",
+            BinaryOperator::BitAnd => "&",
+            BinaryOperator::BitOr => "|",
+            BinaryOperator::BitXor => "^",
+            BinaryOperator::Shl => "<<",
+            BinaryOperator::Shr => ">>",
             BinaryOperator::Equal => "==",
             BinaryOperator::NotEqual => "!=",
             BinaryOperator::Less => "<",

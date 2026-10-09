@@ -442,6 +442,11 @@ impl CodeGenerator {
             | InstructionKind::Mul { lhs, rhs, .. }
             | InstructionKind::Div { lhs, rhs, .. }
             | InstructionKind::Rem { lhs, rhs, .. }
+            | InstructionKind::BitAnd { lhs, rhs, .. }
+            | InstructionKind::BitOr { lhs, rhs, .. }
+            | InstructionKind::BitXor { lhs, rhs, .. }
+            | InstructionKind::Shl { lhs, rhs, .. }
+            | InstructionKind::Shr { lhs, rhs, .. }
             | InstructionKind::Eq { lhs, rhs, .. }
             | InstructionKind::Ne { lhs, rhs, .. }
             | InstructionKind::Lt { lhs, rhs, .. }

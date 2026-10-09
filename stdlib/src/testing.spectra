@@ -1,0 +1,87 @@
+// Source-authored `std.testing` assertion surface.
+//
+// Every failed assertion terminates the process through `std.error.panic`,
+// which prints the documented `expected <e>, found <a>` diagnostic followed by
+// the caller's message and exits with code 70 (the "unhandled internal error"
+// status). Assertions therefore have no return value: a passing check falls
+// through, a failing check never returns.
+module std.testing
+
+import std.convert as convert
+import std.error as error
+import std.math as math
+import std.string as str
+
+// ── Diagnostics ──────────────────────────────────────────────────────────
+
+// Builds the documented failure text. The caller message is appended after
+// `expected <e>, found <a>`; an empty message leaves no trailing separator.
+func format_failure(expected: string, actual: string, message: string) returns string {
+    if str.len(message) == 0 {
+        return "expected " + expected + ", found " + actual
+    }
+    return "expected " + expected + ", found " + actual + ": " + message
+}
+
+// ── Assertions ───────────────────────────────────────────────────────────
+
+// Fails unless `condition` is true.
+public func assert_true(condition: bool, message: string) {
+    if not condition {
+        error.panic(format_failure("true", "false", message))
+    }
+}
+
+// Fails unless `condition` is false.
+public func assert_false(condition: bool, message: string) {
+    if condition {
+        error.panic(format_failure("false", "true", message))
+    }
+}
+
+// Fails unless `actual == expected`.
+public func assert_eq_int(actual: int, expected: int, message: string) {
+    if actual != expected {
+        error.panic(
+            format_failure(convert.int_to_string(expected), convert.int_to_string(actual), message)
+        )
+    }
+}
+
+// Fails unless `actual == expected`.
+public func assert_eq_bool(actual: bool, expected: bool, message: string) {
+    if actual != expected {
+        error.panic(
+            format_failure(convert.bool_to_string(expected), convert.bool_to_string(actual), message)
+        )
+    }
+}
+
+// Fails unless `actual == expected`.
+public func assert_eq_str(actual: string, expected: string, message: string) {
+    if actual != expected {
+        error.panic(format_failure(expected, actual, message))
+    }
+}
+
+// Fails when `math.abs_f(actual - expected) > tolerance`; the comparison is
+// inclusive, so a difference exactly equal to `tolerance` passes. Any NaN
+// operand (value or tolerance) fails instead of slipping through the ordered
+// comparison, because `NaN > tolerance` is false.
+public func assert_eq_f(actual: float, expected: float, tolerance: float, message: string) {
+    if math.is_nan_f(actual) or math.is_nan_f(expected) or math.is_nan_f(tolerance) {
+        error.panic(
+            format_failure(convert.float_to_string(expected), convert.float_to_string(actual), message)
+        )
+    }
+    if math.abs_f(actual - expected) > tolerance {
+        error.panic(
+            format_failure(convert.float_to_string(expected), convert.float_to_string(actual), message)
+        )
+    }
+}
+
+// Fails unconditionally with the caller's message.
+public func fail(message: string) {
+    error.panic(message)
+}

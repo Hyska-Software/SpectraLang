@@ -1,0 +1,162 @@
+// Consumer for the extended `std.text` surface: title case, words, dedent,
+// centering, similarity, middle truncation, hard wrap and newline
+// normalization.
+module std_source_text_extended
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+import std.text as text
+
+func close(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.0005
+}
+
+public func main() returns int {
+    // ── title case ───────────────────────────────────────────────────────
+    if text.title_case("hello world") != "Hello World" {
+        return 1
+    }
+    if text.title_case("HELLO wORLD") != "Hello World" {
+        return 2
+    }
+    if text.title_case("café ZÉ") != "Café ZÉ" {
+        return 3
+    }
+    if text.title_case("") != "" {
+        return 4
+    }
+
+    // ── words ────────────────────────────────────────────────────────────
+    let words = text.split_words("  a b\tc\n")
+    if collections.list_len(words) != 3 {
+        return 5
+    }
+    if option.option_unwrap_or(collections.list_get(words, 1), "x") != "b" {
+        return 6
+    }
+    if collections.list_len(text.split_words("   ")) != 0 {
+        return 7
+    }
+
+    // ── dedent ───────────────────────────────────────────────────────────
+    if text.dedent("    a\n      b\n") != "a\n  b\n" {
+        return 8
+    }
+    if text.dedent("solo") != "solo" {
+        return 9
+    }
+    if text.dedent("") != "" {
+        return 10
+    }
+
+    // ── center ───────────────────────────────────────────────────────────
+    if text.center("ab", 6, '-') != "--ab--" {
+        return 11
+    }
+    if text.center("ab", 5, '-') != "-ab--" {
+        return 12
+    }
+    if text.center("abc", 2, '-') != "abc" {
+        return 13
+    }
+
+    // ── similarity ───────────────────────────────────────────────────────
+    if not close(text.jaro_winkler("", ""), 1.0) {
+        return 14
+    }
+    if not close(text.jaro_winkler("abc", ""), 0.0) {
+        return 15
+    }
+    if not close(text.jaro_winkler("abc", "abc"), 1.0) {
+        return 16
+    }
+    if not close(text.jaro_winkler("MARTHA", "MARHTA"), 0.9611) {
+        return 17
+    }
+    if not close(text.jaro_winkler("DIXON", "DICKSONX"), 0.8133) {
+        return 18
+    }
+    // Three matched scalars, no transpositions, prefix 3.
+    if not close(text.jaro_winkler("café", "cafe"), 0.8833) {
+        return 19
+    }
+    if text.jaro_winkler("abc", "xyz") > 0.001 {
+        return 20
+    }
+
+    // ── middle truncation ────────────────────────────────────────────────
+    if text.truncate_middle("abcdefghij", 7) != "ab…ij" {
+        return 21
+    }
+    if text.truncate_middle("café", 5) != "café" {
+        return 22
+    }
+    if text.truncate_middle("abcdef", 3) != "abc" {
+        return 23
+    }
+    if text.truncate_middle("abc", 0) != "" or text.truncate_middle("abc", -1) != "" {
+        return 24
+    }
+    // Rune boundaries are respected on both ends.
+    if text.truncate_middle("café!", 5) != "c…!" {
+        return 25
+    }
+
+    // ── hard wrap ────────────────────────────────────────────────────────
+    let chunks = text.hard_wrap("abcdefg", 3)
+    if collections.list_len(chunks) != 3 {
+        return 26
+    }
+    if option.option_unwrap_or(collections.list_get(chunks, 1), "x") != "def" {
+        return 27
+    }
+    if option.option_unwrap_or(collections.list_get(chunks, 2), "x") != "g" {
+        return 28
+    }
+    let accented = text.hard_wrap("café", 3)
+    if collections.list_len(accented) != 2 {
+        return 29
+    }
+    if option.option_unwrap_or(collections.list_get(accented, 1), "x") != "é" {
+        return 30
+    }
+    if collections.list_len(text.hard_wrap("abc", 0)) != 0 {
+        return 31
+    }
+
+    // ── newlines ─────────────────────────────────────────────────────────
+    if text.normalize_newlines("a\r\nb\rc\nd") != "a\nb\nc\nd" {
+        return 32
+    }
+    if text.normalize_newlines("plain") != "plain" {
+        return 33
+    }
+
+    // ── rune-aware layout, similarity and newline preservation ───────────
+    // `width` is characters, not bytes: "é" plus one pad on each side.
+    if text.center("é", 3, '-') != "-é-" {
+        return 34
+    }
+    // One-rune inputs must still score a perfect match.
+    if not close(text.jaro_winkler("a", "a"), 1.0) {
+        return 35
+    }
+    if not close(text.jaro_winkler("ab", "ac"), 0.7) {
+        return 36
+    }
+    // Non-ASCII runes survive newline normalization.
+    if text.normalize_newlines("café\r\nx") != "café\nx" {
+        return 37
+    }
+    // A rune wider than `width` is emitted alone instead of looping forever.
+    let narrow = text.hard_wrap("é", 1)
+    if collections.list_len(narrow) != 1 {
+        return 38
+    }
+    if option.option_unwrap_or(collections.list_get(narrow, 0), "x") != "é" {
+        return 39
+    }
+
+    return 0
+}

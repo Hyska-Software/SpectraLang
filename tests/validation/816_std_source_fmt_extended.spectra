@@ -1,0 +1,92 @@
+// Consumer for the extended `std.fmt` surface: scientific notation, centering,
+// human durations and percentages.
+module std_source_fmt_extended
+
+import std.fmt as fmt
+import std.option as option
+
+public func main() returns int {
+    // ── scientific ───────────────────────────────────────────────────────
+    if option.option_unwrap_or(fmt.float_scientific(1500.0, 1), "x") != "1.5e3" {
+        return 1
+    }
+    if option.option_unwrap_or(fmt.float_scientific(0.0, 2), "x") != "0.00e0" {
+        return 2
+    }
+    if option.option_unwrap_or(fmt.float_scientific(-0.00025, 1), "x") != "-2.5e-4" {
+        return 3
+    }
+    if option.option_unwrap_or(fmt.float_scientific(42.0, 0), "x") != "4e1" {
+        return 4
+    }
+    if option.is_some(fmt.float_scientific(1.0, 13)) {
+        return 5
+    }
+    if option.is_some(fmt.float_scientific(1.0, -1)) {
+        return 6
+    }
+
+    // ── centering ────────────────────────────────────────────────────────
+    if option.is_some(fmt.pad_center("ab", 6, '.')) {
+        return 7
+    }
+    if option.option_unwrap_or(fmt.pad_center("ab", 6, ' '), "x") != "  ab  " {
+        return 8
+    }
+    if option.option_unwrap_or(fmt.pad_center("ab", 5, ' '), "x") != " ab  " {
+        return 9
+    }
+    if option.option_unwrap_or(fmt.pad_center("abc", 2, ' '), "x") != "abc" {
+        return 10
+    }
+    if option.is_some(fmt.pad_center("abc", -1, ' ')) {
+        return 11
+    }
+    // `width` counts characters, so "é" counts as one and gets both pads.
+    if option.option_unwrap_or(fmt.pad_center("é", 3, ' '), "x") != " é " {
+        return 22
+    }
+    if option.option_unwrap_or(fmt.pad_center("é", 2, ' '), "x") != "é " {
+        return 23
+    }
+
+    // ── durations ────────────────────────────────────────────────────────
+    if fmt.human_duration(0) != "0ms" {
+        return 12
+    }
+    if fmt.human_duration(999) != "999ms" {
+        return 13
+    }
+    if fmt.human_duration(1500) != "1.500s" {
+        return 14
+    }
+    if fmt.human_duration(125000) != "2m 05s" {
+        return 15
+    }
+    if fmt.human_duration(3661000) != "1h 01m 01s" {
+        return 16
+    }
+    if fmt.human_duration(-1500) != "-1.500s" {
+        return 17
+    }
+    // The minimum magnitude is formatted component-wise, keeping one sign.
+    if fmt.human_duration(-9223372036854775808) != "-2562047788015h 12m 55s" {
+        return 24
+    }
+
+    // ── percent ──────────────────────────────────────────────────────────
+    if option.option_unwrap_or(fmt.percent(0.256, 1), "x") != "25.6%" {
+        return 18
+    }
+    if option.option_unwrap_or(fmt.percent(1.0, 0), "x") != "100%" {
+        return 19
+    }
+    if option.option_unwrap_or(fmt.percent(-0.5, 1), "x") != "-50.0%" {
+        return 20
+    }
+    if option.is_some(fmt.percent(0.5, 13)) {
+        return 21
+    }
+
+    return 0
+}

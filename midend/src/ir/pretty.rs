@@ -95,6 +95,52 @@ fn format_block(output: &mut String, block: &BasicBlock) -> std::fmt::Result {
                     fmt_value(*rhs)
                 )
             }
+            InstructionKind::BitAnd { result, lhs, rhs } => {
+                format!(
+                    "{} = bitand {}, {}",
+                    fmt_value(*result),
+                    fmt_value(*lhs),
+                    fmt_value(*rhs)
+                )
+            }
+            InstructionKind::BitOr { result, lhs, rhs } => {
+                format!(
+                    "{} = bitor {}, {}",
+                    fmt_value(*result),
+                    fmt_value(*lhs),
+                    fmt_value(*rhs)
+                )
+            }
+            InstructionKind::BitXor { result, lhs, rhs } => {
+                format!(
+                    "{} = bitxor {}, {}",
+                    fmt_value(*result),
+                    fmt_value(*lhs),
+                    fmt_value(*rhs)
+                )
+            }
+            InstructionKind::Shl { result, lhs, rhs } => {
+                format!(
+                    "{} = shl {}, {}",
+                    fmt_value(*result),
+                    fmt_value(*lhs),
+                    fmt_value(*rhs)
+                )
+            }
+            InstructionKind::Shr {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
+                format!(
+                    "{} = {}shr {}, {}",
+                    fmt_value(*result),
+                    if *unsigned { "u" } else { "s" },
+                    fmt_value(*lhs),
+                    fmt_value(*rhs)
+                )
+            }
             InstructionKind::Div { result, lhs, rhs, .. } => {
                 format!(
                     "{} = div {}, {}",

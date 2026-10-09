@@ -172,6 +172,38 @@ pub enum InstructionKind {
         /// See `Div::unsigned`.
         unsigned: bool,
     },
+    /// Bitwise AND (`&`) on integer operands of one type.
+    BitAnd {
+        result: Value,
+        lhs: Value,
+        rhs: Value,
+    },
+    /// Bitwise OR (`|`).
+    BitOr {
+        result: Value,
+        lhs: Value,
+        rhs: Value,
+    },
+    /// Bitwise XOR (`^`).
+    BitXor {
+        result: Value,
+        lhs: Value,
+        rhs: Value,
+    },
+    /// Left shift (`<<`); the count is masked to the operand width by lowering.
+    Shl {
+        result: Value,
+        lhs: Value,
+        rhs: Value,
+    },
+    /// Right shift (`>>`). `unsigned` selects logical (`ushr`) instead of
+    /// arithmetic (`sshr`) shifting.
+    Shr {
+        result: Value,
+        lhs: Value,
+        rhs: Value,
+        unsigned: bool,
+    },
 
     // Comparisons
     Eq {

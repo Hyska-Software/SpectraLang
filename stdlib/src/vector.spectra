@@ -1,0 +1,120 @@
+module std.vector
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+
+// Dense float-vector helpers over `List<float>`. This is a small, flat source
+// layer for ordinary numeric code: it does **not** replace `std.tensor`, which
+// owns handles, shape metadata, device placement and autodiff. Reach for
+// `std.vector` when the data never needs to leave the interpreter's lists.
+//
+// Every function is non-mutating: inputs are read only and results are fresh
+// lists. Length mismatches and the degenerate zero vector return `None` rather
+// than a sentinel value.
+
+// Dot product of two equal-length vectors; `None` when the lengths differ.
+public func dot_f(a: List<float>, b: List<float>) returns Option<float> {
+    let count = collections.list_len(a)
+    if count != collections.list_len(b) {
+        return Option::None
+    }
+
+    let total = 0.0
+    let index = 0
+    while index < count {
+        let left = option.option_unwrap_or(collections.list_get(a, index), 0.0)
+        let right = option.option_unwrap_or(collections.list_get(b, index), 0.0)
+        total = total + left * right
+        index = index + 1
+    }
+
+    return Option::Some(total)
+}
+
+// Euclidean norm of `values`; the empty vector has norm 0.0.
+public func norm_f(values: List<float>) returns float {
+    let count = collections.list_len(values)
+    let total = 0.0
+    let index = 0
+
+    while index < count {
+        let value = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        total = total + value * value
+        index = index + 1
+    }
+
+    return math.sqrt_f(total)
+}
+
+// Cosine similarity in `[-1.0, 1.0]`. `None` when the lengths differ or either
+// vector has norm 0.0 (the angle is undefined).
+public func cosine_f(a: List<float>, b: List<float>) returns Option<float> {
+    let product = dot_f(a, b)
+    if not option.is_some(product) {
+        return Option::None
+    }
+
+    let norm_a = norm_f(a)
+    let norm_b = norm_f(b)
+    if norm_a == 0.0 or norm_b == 0.0 {
+        return Option::None
+    }
+
+    return Option::Some(option.option_unwrap_or(product, 0.0) / (norm_a * norm_b))
+}
+
+// Unit vector in the direction of `values`; `None` when the norm is 0.0. The
+// input list is never mutated.
+public func normalize_f(values: List<float>) returns Option<List<float>> {
+    let norm = norm_f(values)
+    if norm == 0.0 {
+        return Option::None
+    }
+
+    let count = collections.list_len(values)
+    let result: List<float> = collections.list_new()
+    let index = 0
+    while index < count {
+        let value = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        collections.list_push(result, value / norm)
+        index = index + 1
+    }
+
+    return Option::Some(result)
+}
+
+// Element-wise sum of two equal-length vectors; `None` when the lengths differ.
+// Neither input is mutated.
+public func add_f(a: List<float>, b: List<float>) returns Option<List<float>> {
+    let count = collections.list_len(a)
+    if count != collections.list_len(b) {
+        return Option::None
+    }
+
+    let result: List<float> = collections.list_new()
+    let index = 0
+    while index < count {
+        let left = option.option_unwrap_or(collections.list_get(a, index), 0.0)
+        let right = option.option_unwrap_or(collections.list_get(b, index), 0.0)
+        collections.list_push(result, left + right)
+        index = index + 1
+    }
+
+    return Option::Some(result)
+}
+
+// Every element of `values` multiplied by `k`. The input list is not mutated.
+public func scale_f(values: List<float>, k: float) returns List<float> {
+    let count = collections.list_len(values)
+    let result: List<float> = collections.list_new()
+    let index = 0
+
+    while index < count {
+        let value = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        collections.list_push(result, value * k)
+        index = index + 1
+    }
+
+    return result
+}

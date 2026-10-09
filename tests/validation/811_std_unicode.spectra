@@ -1,0 +1,173 @@
+// Consumer for `std.unicode`: rune geometry, code-point conversion and strict
+// UTF-8 byte validation.
+module std_unicode
+
+import std.collections as collections
+import std.option as option
+import std.unicode as unicode
+
+func series(values: [int], count: int) returns List<int> {
+    let list: List<int> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+public func main() returns int {
+    // ── rune geometry ────────────────────────────────────────────────────
+    if unicode.rune_count("") != 0 {
+        return 1
+    }
+    if unicode.rune_count("abc") != 3 {
+        return 2
+    }
+    if unicode.rune_count("café") != 4 {
+        return 3
+    }
+    if unicode.rune_count("😀") != 1 {
+        return 4
+    }
+    if unicode.rune_count("a😀b") != 3 {
+        return 5
+    }
+
+    if option.option_unwrap_or(unicode.rune_at("café", 3), -1) != 233 {
+        return 6
+    }
+    if option.option_unwrap_or(unicode.rune_at("😀", 0), -1) != 128512 {
+        return 7
+    }
+    if option.is_some(unicode.rune_at("café", 4)) {
+        return 8
+    }
+    if option.is_some(unicode.rune_at("café", -1)) {
+        return 9
+    }
+
+    if option.option_unwrap_or(unicode.byte_offset("café", 0), -1) != 0 {
+        return 10
+    }
+    if option.option_unwrap_or(unicode.byte_offset("café", 3), -1) != 3 {
+        return 11
+    }
+    if option.option_unwrap_or(unicode.byte_offset("café", 4), -1) != 5 {
+        return 12
+    }
+    if option.is_some(unicode.byte_offset("café", 5)) {
+        return 13
+    }
+
+    // ── slicing ──────────────────────────────────────────────────────────
+    if option.option_unwrap_or(unicode.slice_runes("café", 0, 3), "x") != "caf" {
+        return 14
+    }
+    if option.option_unwrap_or(unicode.slice_runes("café", 1, 3), "x") != "af" {
+        return 15
+    }
+    if option.option_unwrap_or(unicode.slice_runes("café", 3, 4), "x") != "é" {
+        return 16
+    }
+    if option.option_unwrap_or(unicode.slice_runes("café", 0, 4), "x") != "café" {
+        return 17
+    }
+    if option.option_unwrap_or(unicode.slice_runes("café", 2, 2), "x") != "" {
+        return 18
+    }
+    if option.is_some(unicode.slice_runes("café", 2, 1)) {
+        return 19
+    }
+    if option.is_some(unicode.slice_runes("café", 0, 5)) {
+        return 20
+    }
+    if option.is_some(unicode.slice_runes("café", -1, 2)) {
+        return 21
+    }
+
+    // ── code points ──────────────────────────────────────────────────────
+    let codes = unicode.to_codepoints("Aé😀")
+    if collections.list_len(codes) != 3 {
+        return 22
+    }
+    if option.option_unwrap_or(collections.list_get(codes, 0), -1) != 65 {
+        return 23
+    }
+    if option.option_unwrap_or(collections.list_get(codes, 1), -1) != 233 {
+        return 24
+    }
+    if option.option_unwrap_or(collections.list_get(codes, 2), -1) != 128512 {
+        return 25
+    }
+    if option.option_unwrap_or(unicode.from_codepoints(codes), "x") != "Aé😀" {
+        return 26
+    }
+    if option.option_unwrap_or(unicode.from_codepoints(series([], 0)), "x") != "" {
+        return 27
+    }
+    if option.option_unwrap_or(unicode.from_codepoints(series([1114111], 1)), "x") != "􏿿" {
+        return 28
+    }
+    // Invalid code points and NUL are rejected.
+    if option.is_some(unicode.from_codepoints(series([0], 1))) {
+        return 29
+    }
+    if option.is_some(unicode.from_codepoints(series([-1], 1))) {
+        return 30
+    }
+    if option.is_some(unicode.from_codepoints(series([55296], 1))) {
+        return 31
+    }
+    if option.is_some(unicode.from_codepoints(series([1114112], 1))) {
+        return 32
+    }
+    if option.is_some(unicode.from_codepoints(series([65, 0], 2))) {
+        return 33
+    }
+
+    // ── strict UTF-8 validation ──────────────────────────────────────────
+    if not unicode.valid_utf8_bytes(series([65], 1)) {
+        return 34
+    }
+    if not unicode.valid_utf8_bytes(series([99, 97, 102, 195, 169], 5)) {
+        return 35
+    }
+    if not unicode.valid_utf8_bytes(series([240, 159, 152, 128], 4)) {
+        return 36
+    }
+    // NUL is valid UTF-8 (only `std.bytes.from_bytes` rejects it as text).
+    if not unicode.valid_utf8_bytes(series([0], 1)) {
+        return 37
+    }
+    if unicode.valid_utf8_bytes(series([192, 128], 2)) {
+        return 38
+    }
+    if unicode.valid_utf8_bytes(series([237, 160, 128], 3)) {
+        return 39
+    }
+    if unicode.valid_utf8_bytes(series([244, 144, 128, 128], 4)) {
+        return 40
+    }
+    if unicode.valid_utf8_bytes(series([195], 1)) {
+        return 41
+    }
+    if unicode.valid_utf8_bytes(series([256], 1)) {
+        return 42
+    }
+    if unicode.valid_utf8_bytes(series([-1], 1)) {
+        return 43
+    }
+
+    if not unicode.is_scalar_value(65) or unicode.is_scalar_value(0) {
+        return 44
+    }
+    if unicode.is_scalar_value(55296) or unicode.is_scalar_value(57343) {
+        return 45
+    }
+    if not unicode.is_scalar_value(57344) or unicode.is_scalar_value(1114112) {
+        return 46
+    }
+
+    return 0
+}

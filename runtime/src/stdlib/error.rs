@@ -14,6 +14,7 @@ pub(crate) const ERROR_OPERATION: &str = spectra_contract::STD_ERROR_OPERATION_B
 pub(crate) const ERROR_CONTEXT: &str = spectra_contract::STD_ERROR_CONTEXT_BINDING;
 pub(crate) const ERROR_ORIGIN: &str = spectra_contract::STD_ERROR_ORIGIN_BINDING;
 pub(crate) const ERROR_RETRYABLE: &str = spectra_contract::STD_ERROR_RETRYABLE_BINDING;
+pub(crate) const ERROR_PANIC: &str = spectra_contract::STD_ERROR_PANIC_BINDING;
 
 pub(crate) const ERROR_FIELD_CODE: usize = 0;
 pub(crate) const ERROR_FIELD_MESSAGE: usize = 1;
@@ -37,6 +38,7 @@ pub(super) fn register() {
     register_host_function(ERROR_CONTEXT, std_error_context);
     register_host_function(ERROR_ORIGIN, std_error_origin);
     register_host_function(ERROR_RETRYABLE, std_error_retryable);
+    register_host_function(ERROR_PANIC, std_error_panic);
 }
 
 /// Allocate an `Error` record using the same word layout as the midend.
@@ -89,6 +91,37 @@ pub(crate) unsafe fn read_error_field(
         return None;
     }
     Some(*((error as *const i64).add(field)))
+}
+
+/// Terminates the process after printing `error: <message>` to stderr.
+///
+/// Used by invariants and `std.testing` assertions. The exit code (70) is part
+/// of the public contract: the CLI and the package-test runner report it as an
+/// unhandled internal error. The function never returns, so no result value is
+/// written.
+pub(crate) extern "C" fn std_error_panic(ctx: *mut SpectraHostCallContext) -> i32 {
+    if ctx.is_null() {
+        return HOST_STATUS_INVALID_ARGUMENT;
+    }
+
+    let message = unsafe {
+        let ctx_ref = &mut *ctx;
+        if ctx_ref.arg_len != 1 || ctx_ref.args.is_null() {
+            return HOST_STATUS_INVALID_ARGUMENT;
+        }
+        let args = slice::from_raw_parts(ctx_ref.args, ctx_ref.arg_len);
+        match read_spectra_string(args[0]) {
+            Some(value) => value,
+            None => return HOST_STATUS_INVALID_ARGUMENT,
+        }
+    };
+
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let mut stderr = std::io::stderr();
+    let _ = writeln!(stderr, "error: {message}");
+    let _ = stderr.flush();
+    std::process::exit(70);
 }
 
 pub(crate) extern "C" fn std_error_new(ctx: *mut SpectraHostCallContext) -> i32 {

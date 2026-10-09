@@ -434,6 +434,13 @@ pub(crate) fn make_std_error() -> ModuleExports {
             error.clone(),
         ),
     );
+    // panic(message: string) -> unit
+    // Terminates the process after printing the message: invariants and test
+    // assertions use it, and the CLI/reporting surface treats exit code 70 as
+    // "unhandled internal error".
+    exports
+        .functions
+        .insert("panic".to_string(), pub_fn(vec![Type::String], Type::Unit));
     for (name, return_type) in [
         ("code", Type::Int),
         ("message", Type::String),

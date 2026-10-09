@@ -479,12 +479,15 @@ impl SemanticAnalyzer {
             (ConstValue::Int(value), target @ (Type::Int | Type::ExactInt { .. })) => {
                 let (signed, bits) = match target {
                     Type::Int => (true, 64),
-                    Type::ExactInt { signed, width } => (*signed, match width {
-                    IntWidth::I8 => 8,
-                    IntWidth::I16 => 16,
-                    IntWidth::I32 => 32,
-                    IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
-                    }),
+                    Type::ExactInt { signed, width } => (
+                        *signed,
+                        match width {
+                            IntWidth::I8 => 8,
+                            IntWidth::I16 => 16,
+                            IntWidth::I32 => 32,
+                            IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
+                        },
+                    ),
                     _ => unreachable!(),
                 };
                 let fits = if signed {
@@ -631,6 +634,17 @@ impl SemanticAnalyzer {
                     }
                     (UnaryOperator::Negate, ConstValue::Float(v)) => Some(ConstValue::Float(-v)),
                     (UnaryOperator::Not, ConstValue::Bool(v)) => Some(ConstValue::Bool(!v)),
+                    // `~x` complements in the operand's own width: the semantic
+                    // walk already recorded the operand's exact type, so the
+                    // constant result agrees with runtime lowering (`~0u8` is
+                    // 0xFF, not -1).
+                    (UnaryOperator::BitNot, ConstValue::Int(v)) => {
+                        let operand_type = self
+                            .symbol_resolutions
+                            .get(&operand.span)
+                            .map(|info| info.ty.clone());
+                        Some(ConstValue::Int(fold_bit_not(v, operand_type.as_ref())))
+                    }
                     _ => None,
                 }
             }
@@ -699,6 +713,29 @@ impl SemanticAnalyzer {
             BinaryOperator::Modulo => match (left, right) {
                 (Int(_), Int(0)) => None,
                 (Int(a), Int(b)) => a.checked_rem(b).map(Int),
+                _ => None,
+            },
+            BinaryOperator::BitAnd => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a & b)),
+                _ => None,
+            },
+            BinaryOperator::BitOr => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a | b)),
+                _ => None,
+            },
+            BinaryOperator::BitXor => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a ^ b)),
+                _ => None,
+            },
+            // Shifts fold with `int` (signed 64-bit) semantics: the count is
+            // masked to 63 and `>>` sign-fills. Unsigned exact-width shifts are
+            // a runtime operation (see docs/reference/05-stdlib.md).
+            BinaryOperator::Shl => match (left, right) {
+                (Int(a), Int(b)) => Some(Int((a as i64).wrapping_shl((b as u32) & 63) as i128)),
+                _ => None,
+            },
+            BinaryOperator::Shr => match (left, right) {
+                (Int(a), Int(b)) => Some(Int((a as i64).wrapping_shr((b as u32) & 63) as i128)),
                 _ => None,
             },
             BinaryOperator::Equal => Some(Bool(self.const_values_equal(&left, &right))),
@@ -855,4 +892,32 @@ impl SemanticAnalyzer {
             _ => None,
         }
     }
+}
+
+/// Bitwise complement of `value` in the operand's exact width, matching runtime
+/// lowering (`~x` is `x XOR -1` at the operand's own representation). A missing
+/// or non-exact operand type folds in the signed 64-bit `int` view.
+fn fold_bit_not(value: i128, operand_type: Option<&Type>) -> i128 {
+    let Some(Type::ExactInt { signed, width }) = operand_type else {
+        return !(value as i64) as i128;
+    };
+    let bits = match width {
+        IntWidth::I8 => 8,
+        IntWidth::I16 => 16,
+        IntWidth::I32 => 32,
+        IntWidth::I64 | IntWidth::Isize | IntWidth::Usize => 64,
+    };
+    let complemented = !(value as i64) as i128;
+    if bits == 64 {
+        if *signed {
+            return complemented;
+        }
+        return complemented & ((1_i128 << 64) - 1);
+    }
+
+    let masked = complemented & ((1_i128 << bits) - 1);
+    if *signed && masked & (1_i128 << (bits - 1)) != 0 {
+        return masked - (1_i128 << bits);
+    }
+    masked
 }

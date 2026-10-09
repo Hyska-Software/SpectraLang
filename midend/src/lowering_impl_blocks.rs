@@ -1177,6 +1177,7 @@ impl ASTLowering {
                 match operator {
                     UnaryOperator::Negate => inner.checked_neg(),
                     UnaryOperator::Not => Some(if inner == 0 { 1 } else { 0 }),
+                    UnaryOperator::BitNot => Some(!inner),
                 }
             }
             ExpressionKind::Binary {
@@ -1204,6 +1205,11 @@ impl ASTLowering {
                             Some(lhs % rhs)
                         }
                     }
+                    BinaryOperator::BitAnd => Some(lhs & rhs),
+                    BinaryOperator::BitOr => Some(lhs | rhs),
+                    BinaryOperator::BitXor => Some(lhs ^ rhs),
+                    BinaryOperator::Shl => Some(lhs.wrapping_shl((rhs as u32) & 63)),
+                    BinaryOperator::Shr => Some(lhs.wrapping_shr((rhs as u32) & 63)),
                     BinaryOperator::Equal => Some(if lhs == rhs { 1 } else { 0 }),
                     BinaryOperator::NotEqual => Some(if lhs != rhs { 1 } else { 0 }),
                     BinaryOperator::Less => Some(if lhs < rhs { 1 } else { 0 }),

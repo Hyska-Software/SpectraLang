@@ -1,0 +1,9 @@
+// Regression: bitwise operands must be integers of one type. Floats and
+// booleans are rejected with E049, and mixed integer widths with E038.
+module core_bitwise_non_integer_operand
+
+public func main() returns int {
+    let ratio = 1.5
+    let masked = ratio & 1
+    return masked
+}

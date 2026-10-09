@@ -1,0 +1,196 @@
+// Consumer for the extended `std.calendar` surface: ISO date-time parsing,
+// month/week anchors and calendar-day differences over explicit UTC stamps.
+module std_source_calendar_extended
+
+import std.calendar as calendar
+import std.option as option
+
+// UTC midnight timestamp for an ISO `YYYY-MM-DD`, or -1 when invalid.
+func stamp(iso: string) returns int {
+    return option.option_unwrap_or(calendar.parse_iso_date(iso), -1)
+}
+
+// Timestamp for an ISO date-time, or -1 when invalid.
+func parsed(text: string) returns int {
+    return option.option_unwrap_or(calendar.parse_iso_datetime(text), -1)
+}
+
+public func main() returns int {
+    let leap_stamp = stamp("2024-02-29")
+    if leap_stamp < 0 {
+        return 1
+    }
+
+    // ── parse_iso_datetime: accepted shapes ──────────────────────────────
+    // Date-only form agrees with parse_iso_date.
+    let date_only = option.option_unwrap_or(calendar.parse_iso_date("2024-02-29"), -1)
+    if parsed("2024-02-29") != date_only or date_only < 0 {
+        return 2
+    }
+    if parsed("2024-02-29T12:30:45Z") != leap_stamp + 45045 {
+        return 3
+    }
+    if parsed("2024-02-29 00:00") != leap_stamp {
+        return 4
+    }
+    if parsed("2024-02-29T12:30") != leap_stamp + 45000 {
+        return 5
+    }
+    if parsed("2024-02-29T12:30:45") != leap_stamp + 45045 {
+        return 6
+    }
+    if parsed("2024-02-29 12:30") != leap_stamp + 45000 {
+        return 7
+    }
+    if parsed("2024-02-29 12:30:45") != leap_stamp + 45045 {
+        return 8
+    }
+    if parsed("2024-02-29 12:30:45Z") != leap_stamp + 45045 {
+        return 9
+    }
+    // Midnight and end-of-day boundaries.
+    if parsed("2024-02-29T00:00:00Z") != leap_stamp {
+        return 10
+    }
+    if parsed("2024-02-29T23:59:59") != leap_stamp + 86399 {
+        return 11
+    }
+
+    // ── parse_iso_datetime: rejected shapes ──────────────────────────────
+    if option.is_some(calendar.parse_iso_datetime("2024-02-30")) {
+        return 12
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-13-01")) {
+        return 13
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T24:00")) {
+        return 14
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T00:60")) {
+        return 15
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01X00:00")) {
+        return 16
+    }
+    if option.is_some(calendar.parse_iso_datetime("2023-02-29")) {
+        return 17
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T00:00:60")) {
+        return 18
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T00:00:45z")) {
+        return 19
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T12")) {
+        return 20
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T12:3")) {
+        return 21
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T2:30")) {
+        return 22
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-01-01T12-30")) {
+        return 23
+    }
+    if option.is_some(calendar.parse_iso_datetime("")) {
+        return 24
+    }
+
+    // ── add_months ───────────────────────────────────────────────────────
+    // Jan 31 has no February counterpart.
+    if option.is_some(calendar.add_months(stamp("2024-01-31"), 1)) {
+        return 25
+    }
+    let plus_one = calendar.add_months(stamp("2024-01-15"), 1)
+    if not option.is_some(plus_one) {
+        return 26
+    }
+    if calendar.format_iso_date(option.option_unwrap_or(plus_one, -1)) != "2024-02-15" {
+        return 27
+    }
+    // Time of day is preserved.
+    let noon = parsed("2024-01-15T12:34:56")
+    let shifted = calendar.add_months(noon, 1)
+    if not option.is_some(shifted) {
+        return 28
+    }
+    if calendar.format_iso_timestamp(option.option_unwrap_or(shifted, -1)) != "2024-02-15T12:34:56Z" {
+        return 29
+    }
+    // Year rollover forward, and backward to a short month.
+    let december = calendar.add_months(stamp("2024-12-15"), 1)
+    if calendar.format_iso_date(option.option_unwrap_or(december, -1)) != "2025-01-15" {
+        return 30
+    }
+    if option.is_some(calendar.add_months(stamp("2024-03-31"), -1)) {
+        return 31
+    }
+    let back = calendar.add_months(stamp("2024-03-31"), -3)
+    if calendar.format_iso_date(option.option_unwrap_or(back, -1)) != "2023-12-31" {
+        return 32
+    }
+
+    // ── start_of_month ───────────────────────────────────────────────────
+    if calendar.format_iso_date(calendar.start_of_month(stamp("2024-03-17"))) != "2024-03-01" {
+        return 33
+    }
+    // Any time of day collapses to midnight on the first.
+    if calendar.start_of_month(parsed("2024-03-17T18:45:10")) != stamp("2024-03-01") {
+        return 34
+    }
+    if calendar.start_of_month(stamp("2024-03-01")) != stamp("2024-03-01") {
+        return 35
+    }
+
+    // ── start_of_week (Monday) ───────────────────────────────────────────
+    // 2024-03-17 is a Sunday; its ISO week starts Monday 2024-03-11.
+    if calendar.format_iso_date(calendar.start_of_week(stamp("2024-03-17"))) != "2024-03-11" {
+        return 36
+    }
+    // A Monday is already the week anchor.
+    if calendar.start_of_week(stamp("2024-03-11")) != stamp("2024-03-11") {
+        return 37
+    }
+    if calendar.start_of_week(parsed("2024-03-17T23:59:59")) != stamp("2024-03-11") {
+        return 38
+    }
+    // Sunday 2024-03-10 -> Monday 2024-03-04; Monday 2024-03-18 -> itself.
+    if calendar.start_of_week(stamp("2024-03-10")) != stamp("2024-03-04") {
+        return 39
+    }
+    if calendar.start_of_week(stamp("2024-03-18")) != stamp("2024-03-18") {
+        return 40
+    }
+
+    // ── days_between ─────────────────────────────────────────────────────
+    let span = calendar.days_between(stamp("2024-03-03"), stamp("2024-03-01"))
+    if not option.is_some(span) or option.option_unwrap_or(span, -1) != 2 {
+        return 41
+    }
+    if option.is_some(calendar.days_between(stamp("2024-03-01"), stamp("2024-03-03"))) {
+        return 42
+    }
+    let same = calendar.days_between(stamp("2024-03-01"), stamp("2024-03-01"))
+    if not option.is_some(same) or option.option_unwrap_or(same, -1) != 0 {
+        return 43
+    }
+    // Calendar days ignore the time of day.
+    let partial = calendar.days_between(parsed("2024-03-03T01:00:00"), parsed("2024-03-01T23:00:00"))
+    if not option.is_some(partial) or option.option_unwrap_or(partial, -1) != 2 {
+        return 44
+    }
+
+    // ── minute precision with a trailing Z ───────────────────────────────
+    if parsed("2024-02-29T12:30Z") != leap_stamp + 45000 {
+        return 45
+    }
+    if parsed("2024-02-29 12:30Z") != leap_stamp + 45000 {
+        return 46
+    }
+    if option.is_some(calendar.parse_iso_datetime("2024-02-29T12:30z")) {
+        return 47
+    }
+
+    return 0
+}

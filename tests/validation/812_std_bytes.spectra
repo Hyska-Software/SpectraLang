@@ -1,0 +1,95 @@
+// Consumer for `std.bytes`: text/byte bridging, NUL and range rejection, and
+// ASCII checks.
+module std_bytes
+
+import std.bytes as bytes
+import std.collections as collections
+import std.option as option
+
+func series(values: [int], count: int) returns List<int> {
+    let list: List<int> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+public func main() returns int {
+    // ── text to bytes ────────────────────────────────────────────────────
+    let encoded = bytes.to_bytes("café")
+    if collections.list_len(encoded) != 5 {
+        return 1
+    }
+    if option.option_unwrap_or(collections.list_get(encoded, 3), -1) != 195 {
+        return 2
+    }
+    if option.option_unwrap_or(collections.list_get(encoded, 4), -1) != 169 {
+        return 3
+    }
+    if collections.list_len(bytes.to_bytes("")) != 0 {
+        return 4
+    }
+
+    // ── bytes to text ────────────────────────────────────────────────────
+    if option.option_unwrap_or(bytes.from_bytes(encoded), "x") != "café" {
+        return 5
+    }
+    if option.option_unwrap_or(bytes.from_bytes(series([], 0)), "x") != "" {
+        return 6
+    }
+    if option.option_unwrap_or(bytes.from_bytes(series([240, 159, 152, 128], 4)), "x") != "😀" {
+        return 7
+    }
+    // NUL is valid UTF-8 but cannot be carried by text.
+    if option.is_some(bytes.from_bytes(series([0], 1))) {
+        return 8
+    }
+    if option.is_some(bytes.from_bytes(series([65, 0, 66], 3))) {
+        return 9
+    }
+    // Truncated, out of range and overlong inputs are rejected.
+    if option.is_some(bytes.from_bytes(series([195], 1))) {
+        return 10
+    }
+    if option.is_some(bytes.from_bytes(series([256], 1))) {
+        return 11
+    }
+    if option.is_some(bytes.from_bytes(series([-1], 1))) {
+        return 12
+    }
+    if option.is_some(bytes.from_bytes(series([192, 128], 2))) {
+        return 13
+    }
+
+    // ── byte access and ASCII ────────────────────────────────────────────
+    if option.option_unwrap_or(bytes.byte_at("café", 3), -1) != 195 {
+        return 14
+    }
+    if option.option_unwrap_or(bytes.byte_at("café", 0), -1) != 99 {
+        return 15
+    }
+    if option.is_some(bytes.byte_at("café", 5)) {
+        return 16
+    }
+    if option.is_some(bytes.byte_at("café", -1)) {
+        return 17
+    }
+
+    if not bytes.is_ascii("hello") {
+        return 18
+    }
+    if not bytes.is_ascii("") {
+        return 19
+    }
+    if bytes.is_ascii("café") {
+        return 20
+    }
+    // Round-trip through the bridge keeps every byte.
+    if option.option_unwrap_or(bytes.from_bytes(bytes.to_bytes("Aé😀B")), "x") != "Aé😀B" {
+        return 21
+    }
+
+    return 0
+}

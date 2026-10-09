@@ -38,6 +38,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
 
 [[entry]]
+path = "std.algorithms.binary_search_string"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(List<string>, string) -> int"
+params = [{ name = "arg0", ty = "List<string>" }, { name = "arg1", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.binary_search_string"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
+
+[[entry]]
 path = "std.algorithms.binomial"
 kind = "function"
 namespace = "std.algorithms"
@@ -57,6 +76,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
 
 [[entry]]
+path = "std.algorithms.chinese_remainder"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(List<int>, List<int>) -> Option<int>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "List<int>" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.chinese_remainder"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
+
+[[entry]]
 path = "std.algorithms.collatz_steps"
 kind = "function"
 namespace = "std.algorithms"
@@ -74,6 +112,25 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.damerau_levenshtein"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string, string) -> int"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.damerau_levenshtein"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
 
 [[entry]]
 path = "std.algorithms.digit_sum"
@@ -152,6 +209,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/794_std_source_algorithms.spectra"
 
 [[entry]]
+path = "std.algorithms.integer_sqrt"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.integer_sqrt"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
+
+[[entry]]
 path = "std.algorithms.is_prime"
 kind = "function"
 namespace = "std.algorithms"
@@ -169,6 +245,44 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/794_std_source_algorithms.spectra"
+
+[[entry]]
+path = "std.algorithms.kmp_find"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string, string) -> int"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.kmp_find"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.lcs"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(string, string) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.lcs"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
 
 [[entry]]
 path = "std.algorithms.levenshtein"
@@ -207,6 +321,25 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/797_std_source_algorithms_extended.spectra"
+
+[[entry]]
+path = "std.algorithms.mod_pow"
+kind = "function"
+namespace = "std.algorithms"
+signature = "fn(int, int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.algorithms.mod_pow"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/821_std_source_algorithms_extended.spectra"
 
 [[entry]]
 path = "std.algorithms.roman_decode"
@@ -12422,6 +12555,96 @@ docs = "docs/api/README.md"
 fixture = "tests/validation/343_api_websocket.spectra"
 
 [[entry]]
+path = "std.bytes"
+kind = "module"
+namespace = "std"
+signature = "module std.bytes"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.bytes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.bytes.byte_at"
+kind = "function"
+namespace = "std.bytes"
+signature = "fn(string, int) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.bytes.byte_at"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/812_std_bytes.spectra"
+
+[[entry]]
+path = "std.bytes.from_bytes"
+kind = "function"
+namespace = "std.bytes"
+signature = "fn(List<int>) -> Option<string>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.bytes.from_bytes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/812_std_bytes.spectra"
+
+[[entry]]
+path = "std.bytes.is_ascii"
+kind = "function"
+namespace = "std.bytes"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.bytes.is_ascii"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/812_std_bytes.spectra"
+
+[[entry]]
+path = "std.bytes.to_bytes"
+kind = "function"
+namespace = "std.bytes"
+signature = "fn(string) -> List<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.bytes.to_bytes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/812_std_bytes.spectra"
+
+[[entry]]
 path = "std.calendar"
 kind = "module"
 namespace = "std"
@@ -12455,6 +12678,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/803_std_source_calendar.spectra"
 
 [[entry]]
+path = "std.calendar.add_months"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.add_months"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/819_std_source_calendar_extended.spectra"
+
+[[entry]]
 path = "std.calendar.day_of_week"
 kind = "function"
 namespace = "std.calendar"
@@ -12472,6 +12714,25 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.days_between"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int, int) -> Option<int>"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.days_between"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/819_std_source_calendar_extended.spectra"
 
 [[entry]]
 path = "std.calendar.days_in_month"
@@ -12624,6 +12885,63 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/803_std_source_calendar.spectra"
+
+[[entry]]
+path = "std.calendar.parse_iso_datetime"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.parse_iso_datetime"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/819_std_source_calendar_extended.spectra"
+
+[[entry]]
+path = "std.calendar.start_of_month"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.start_of_month"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/819_std_source_calendar_extended.spectra"
+
+[[entry]]
+path = "std.calendar.start_of_week"
+kind = "function"
+namespace = "std.calendar"
+signature = "fn(int) -> int"
+params = [{ name = "arg0", ty = "int" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.calendar.start_of_week"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/819_std_source_calendar_extended.spectra"
 
 [[entry]]
 path = "std.char"
@@ -16216,6 +16534,129 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.csv"
+kind = "module"
+namespace = "std"
+signature = "module std.csv"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.csv"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.csv.parse"
+kind = "function"
+namespace = "std.csv"
+signature = "fn(string) -> Option<List<List<string>>>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<List<List<string>>>"
+ir_return = "Option<List<List<string>>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.csv.parse"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/822_std_source_csv.spectra"
+
+[[entry]]
+path = "std.csv.parse_row"
+kind = "function"
+namespace = "std.csv"
+signature = "fn(string) -> Option<List<string>>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<List<string>>"
+ir_return = "Option<List<string>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.csv.parse_row"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/822_std_source_csv.spectra"
+
+[[entry]]
+path = "std.csv.write"
+kind = "function"
+namespace = "std.csv"
+signature = "fn(List<List<string>>) -> string"
+params = [{ name = "arg0", ty = "List<List<string>>" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.csv.write"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/822_std_source_csv.spectra"
+
+[[entry]]
+path = "std.diff"
+kind = "module"
+namespace = "std"
+signature = "module std.diff"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.diff"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.diff.diff_lines"
+kind = "function"
+namespace = "std.diff"
+signature = "fn(List<string>, List<string>) -> List<string>"
+params = [{ name = "arg0", ty = "List<string>" }, { name = "arg1", ty = "List<string>" }]
+returns = "List<string>"
+ir_return = "List<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.diff.diff_lines"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/823_std_source_diff.spectra"
+
+[[entry]]
+path = "std.diff.same_lines"
+kind = "function"
+namespace = "std.diff"
+signature = "fn(List<string>, List<string>) -> bool"
+params = [{ name = "arg0", ty = "List<string>" }, { name = "arg1", ty = "List<string>" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.diff.same_lines"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/823_std_source_diff.spectra"
+
+[[entry]]
 path = "std.encoding"
 kind = "module"
 namespace = "std"
@@ -16228,6 +16669,82 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.encoding.base32_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base32_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
+
+[[entry]]
+path = "std.encoding.base32_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base32_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
+
+[[entry]]
+path = "std.encoding.base58_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base58_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
+
+[[entry]]
+path = "std.encoding.base58_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base58_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
 
 [[entry]]
 path = "std.encoding.base64_decode"
@@ -16266,6 +16783,44 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/798_std_source_encoding.spectra"
+
+[[entry]]
+path = "std.encoding.base85_decode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base85_decode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
+
+[[entry]]
+path = "std.encoding.base85_encode"
+kind = "function"
+namespace = "std.encoding"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.encoding.base85_encode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/825_std_source_encoding_more.spectra"
 
 [[entry]]
 path = "std.encoding.hex_decode"
@@ -16635,6 +17190,24 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/stability_structured_errors.spectra"
 
 [[entry]]
+path = "std.error.panic"
+kind = "function"
+namespace = "std.error"
+signature = "fn(string) -> unit"
+params = [{ name = "arg0", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "host(ctx: SpectraHostCallContext) -> i32"
+effects = ["host"]
+error_model = "host status + typed return"
+binding = "spectra.std.error.panic"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/809_error_panic_exit_code.spectra"
+
+[[entry]]
 path = "std.error.retryable"
 kind = "function"
 namespace = "std.error"
@@ -16705,6 +17278,44 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/805_std_source_fmt.spectra"
 
 [[entry]]
+path = "std.fmt.float_scientific"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(float, int) -> Option<string>"
+params = [{ name = "arg0", ty = "float" }, { name = "arg1", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.float_scientific"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.human_duration"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(int) -> string"
+params = [{ name = "arg0", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.human_duration"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
 path = "std.fmt.int_padded"
 kind = "function"
 namespace = "std.fmt"
@@ -16718,6 +17329,44 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.fmt.int_padded"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.pad_center"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(string, int, char) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "char" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.pad_center"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/805_std_source_fmt.spectra"
+
+[[entry]]
+path = "std.fmt.percent"
+kind = "function"
+namespace = "std.fmt"
+signature = "fn(float, int) -> Option<string>"
+params = [{ name = "arg0", ty = "float" }, { name = "arg1", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.fmt.percent"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -16937,6 +17586,77 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/fs_directories.spectra"
 
 [[entry]]
+path = "std.hash"
+kind = "module"
+namespace = "std"
+signature = "module std.hash"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.hash"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.hash.crc32"
+kind = "function"
+namespace = "std.hash"
+signature = "fn(string) -> int"
+params = [{ name = "arg0", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.hash.crc32"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/828_std_source_hash.spectra"
+
+[[entry]]
+path = "std.hash.djb2_str"
+kind = "function"
+namespace = "std.hash"
+signature = "fn(string) -> int"
+params = [{ name = "arg0", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.hash.djb2_str"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/828_std_source_hash.spectra"
+
+[[entry]]
+path = "std.hash.fnv1a64_str"
+kind = "function"
+namespace = "std.hash"
+signature = "fn(string) -> int"
+params = [{ name = "arg0", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.hash.fnv1a64_str"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/828_std_source_hash.spectra"
+
+[[entry]]
 path = "std.io"
 kind = "module"
 namespace = "std"
@@ -17129,6 +17849,120 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/804_std_source_iter.spectra"
 
 [[entry]]
+path = "std.iter.dedup_adjacent_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>) -> List<int>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.dedup_adjacent_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.enumerate_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>) -> List<(int, int)>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "List<(int, int)>"
+ir_return = "List<(int,int)>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.enumerate_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.flatten_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<List<int>>) -> List<int>"
+params = [{ name = "arg0", ty = "List<List<int>>" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.flatten_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.max_by_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, fn(int) -> int) -> Option<int>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "fn(int) -> int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.max_by_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.min_by_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, fn(int) -> int) -> Option<int>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "fn(int) -> int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.min_by_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.partition_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, fn(int) -> bool) -> (List<int>, List<int>)"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "fn(int) -> bool" }]
+returns = "(List<int>, List<int>)"
+ir_return = "(List<int>,List<int>)"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.partition_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
 path = "std.iter.position_if_int"
 kind = "function"
 namespace = "std.iter"
@@ -17224,6 +18058,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/804_std_source_iter.spectra"
 
 [[entry]]
+path = "std.iter.unique_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>) -> List<int>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.unique_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
 path = "std.iter.window_sum_int"
 kind = "function"
 namespace = "std.iter"
@@ -17237,6 +18090,25 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.iter.window_sum_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/804_std_source_iter.spectra"
+
+[[entry]]
+path = "std.iter.zip_int"
+kind = "function"
+namespace = "std.iter"
+signature = "fn(List<int>, List<int>) -> List<(int, int)>"
+params = [{ name = "arg0", ty = "List<int>" }, { name = "arg1", ty = "List<int>" }]
+returns = "List<(int, int)>"
+ir_return = "List<(int,int)>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.iter.zip_int"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -21197,6 +22069,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.path.components"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> List<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "List<string>"
+ir_return = "List<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.components"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
 path = "std.path.extension"
 kind = "function"
 namespace = "std.path"
@@ -21235,6 +22126,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/801_std_source_path.spectra"
 
 [[entry]]
+path = "std.path.glob_match"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string, string) -> bool"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.glob_match"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
 path = "std.path.is_absolute"
 kind = "function"
 namespace = "std.path"
@@ -21248,6 +22158,25 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.path.is_absolute"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.is_relative"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.is_relative"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -21311,6 +22240,44 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/801_std_source_path.spectra"
 
 [[entry]]
+path = "std.path.relative_to"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string, string) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.relative_to"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.sanitize"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.sanitize"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
 path = "std.path.stem"
 kind = "function"
 namespace = "std.path"
@@ -21324,6 +22291,25 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.path.stem"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/801_std_source_path.spectra"
+
+[[entry]]
+path = "std.path.with_extension"
+kind = "function"
+namespace = "std.path"
+signature = "fn(string, string) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.path.with_extension"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -21854,6 +22840,25 @@ maturity = "stable"
 owner = "ecosystem"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/806_std_source_semver.spectra"
+
+[[entry]]
+path = "std.semver.satisfies"
+kind = "function"
+namespace = "std.semver"
+signature = "fn(string, string) -> Option<bool>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "Option<bool>"
+ir_return = "Option<bool>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.semver.satisfies"
+maturity = "stable"
+owner = "ecosystem"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/820_std_source_semver_satisfies.spectra"
 
 [[entry]]
 path = "std.serve"
@@ -22480,6 +23485,63 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/799_std_source_stats.spectra"
 
 [[entry]]
+path = "std.stats.entropy_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.entropy_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
+
+[[entry]]
+path = "std.stats.histogram_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, int) -> Option<List<int>>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "int" }]
+returns = "Option<List<int>>"
+ir_return = "Option<List<int>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.histogram_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
+
+[[entry]]
+path = "std.stats.linear_regression_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, List<float>) -> Option<(float, float)>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<(float, float)>"
+ir_return = "Option<(float,float)>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.linear_regression_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
+
+[[entry]]
 path = "std.stats.mean_f"
 kind = "function"
 namespace = "std.stats"
@@ -22516,6 +23578,44 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.mode_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.mode_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
+
+[[entry]]
+path = "std.stats.moving_average_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, int) -> Option<List<float>>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "int" }]
+returns = "Option<List<float>>"
+ir_return = "Option<List<float>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.moving_average_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
 
 [[entry]]
 path = "std.stats.percentile_f"
@@ -22630,6 +23730,25 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/799_std_source_stats.spectra"
+
+[[entry]]
+path = "std.stats.zscore_f"
+kind = "function"
+namespace = "std.stats"
+signature = "fn(List<float>, float) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "float" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.stats.zscore_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/818_std_source_stats_extended.spectra"
 
 [[entry]]
 path = "std.string"
@@ -25248,6 +26367,153 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/68_tensor_phase4_kernels.spectra"
 
 [[entry]]
+path = "std.testing"
+kind = "module"
+namespace = "std"
+signature = "module std.testing"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.testing"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.testing.assert_eq_bool"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(bool, bool, string) -> unit"
+params = [{ name = "arg0", ty = "bool" }, { name = "arg1", ty = "bool" }, { name = "arg2", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_eq_bool"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.assert_eq_f"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(float, float, float, string) -> unit"
+params = [{ name = "arg0", ty = "float" }, { name = "arg1", ty = "float" }, { name = "arg2", ty = "float" }, { name = "arg3", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_eq_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.assert_eq_int"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(int, int, string) -> unit"
+params = [{ name = "arg0", ty = "int" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_eq_int"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.assert_eq_str"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(string, string, string) -> unit"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }, { name = "arg2", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_eq_str"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.assert_false"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(bool, string) -> unit"
+params = [{ name = "arg0", ty = "bool" }, { name = "arg1", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_false"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.assert_true"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(bool, string) -> unit"
+params = [{ name = "arg0", ty = "bool" }, { name = "arg1", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.assert_true"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
+path = "std.testing.fail"
+kind = "function"
+namespace = "std.testing"
+signature = "fn(string) -> unit"
+params = [{ name = "arg0", ty = "string" }]
+returns = "unit"
+ir_return = "void"
+returns_value = false
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.testing.fail"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/827_std_source_testing.spectra"
+
+[[entry]]
 path = "std.text"
 kind = "module"
 namespace = "std"
@@ -25260,6 +26526,44 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.text.center"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, int, char) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "char" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.center"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.dedent"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.dedent"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
 
 [[entry]]
 path = "std.text.escape_json"
@@ -25275,6 +26579,63 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.text.escape_json"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.hard_wrap"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, int) -> List<string>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "List<string>"
+ir_return = "List<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.hard_wrap"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.jaro_winkler"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, string) -> float"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "string" }]
+returns = "float"
+ir_return = "float"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.jaro_winkler"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.normalize_newlines"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.normalize_newlines"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -25338,6 +26699,44 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/802_std_source_text.spectra"
 
 [[entry]]
+path = "std.text.split_words"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> List<string>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "List<string>"
+ir_return = "List<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.split_words"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.title_case"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.title_case"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
 path = "std.text.truncate"
 kind = "function"
 namespace = "std.text"
@@ -25351,6 +26750,25 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.text.truncate"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/802_std_source_text.spectra"
+
+[[entry]]
+path = "std.text.truncate_middle"
+kind = "function"
+namespace = "std.text"
+signature = "fn(string, int) -> string"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.text.truncate_middle"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -25884,6 +27302,300 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
 
 [[entry]]
+path = "std.unicode"
+kind = "module"
+namespace = "std"
+signature = "module std.unicode"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.unicode"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.unicode.byte_offset"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(string, int) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.byte_offset"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.codepoints_from_bytes"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(List<int>) -> Option<List<int>>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "Option<List<int>>"
+ir_return = "Option<List<int>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.codepoints_from_bytes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.from_codepoints"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(List<int>) -> Option<string>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.from_codepoints"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.is_scalar_value"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(int) -> bool"
+params = [{ name = "arg0", ty = "int" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.is_scalar_value"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.rune_at"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(string, int) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.rune_at"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.rune_count"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(string) -> int"
+params = [{ name = "arg0", ty = "string" }]
+returns = "int"
+ir_return = "int"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.rune_count"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.slice_runes"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(string, int, int) -> Option<string>"
+params = [{ name = "arg0", ty = "string" }, { name = "arg1", ty = "int" }, { name = "arg2", ty = "int" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.slice_runes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.to_codepoints"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(string) -> List<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "List<int>"
+ir_return = "List<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.to_codepoints"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.unicode.valid_utf8_bytes"
+kind = "function"
+namespace = "std.unicode"
+signature = "fn(List<int>) -> bool"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.unicode.valid_utf8_bytes"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/811_std_unicode.spectra"
+
+[[entry]]
+path = "std.uuid"
+kind = "module"
+namespace = "std"
+signature = "module std.uuid"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.uuid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.uuid.format"
+kind = "function"
+namespace = "std.uuid"
+signature = "fn(List<int>) -> Option<string>"
+params = [{ name = "arg0", ty = "List<int>" }]
+returns = "Option<string>"
+ir_return = "Option<string>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.uuid.format"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/826_std_source_uuid.spectra"
+
+[[entry]]
+path = "std.uuid.is_valid"
+kind = "function"
+namespace = "std.uuid"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.uuid.is_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/826_std_source_uuid.spectra"
+
+[[entry]]
+path = "std.uuid.parse"
+kind = "function"
+namespace = "std.uuid"
+signature = "fn(string) -> Option<List<int>>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<List<int>>"
+ir_return = "Option<List<int>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.uuid.parse"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/826_std_source_uuid.spectra"
+
+[[entry]]
+path = "std.uuid.v4"
+kind = "function"
+namespace = "std.uuid"
+signature = "fn() -> string"
+params = []
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.uuid.v4"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/826_std_source_uuid.spectra"
+
+[[entry]]
+path = "std.uuid.version"
+kind = "function"
+namespace = "std.uuid"
+signature = "fn(string) -> Option<int>"
+params = [{ name = "arg0", ty = "string" }]
+returns = "Option<int>"
+ir_return = "Option<int>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.uuid.version"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/826_std_source_uuid.spectra"
+
+[[entry]]
 path = "std.validate"
 kind = "module"
 namespace = "std"
@@ -25896,6 +27608,63 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.validate.card_brand"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> string"
+params = [{ name = "arg0", ty = "string" }]
+returns = "string"
+ir_return = "string"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.card_brand"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.cnh_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.cnh_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.cnpj_alpha_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.cnpj_alpha_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
 
 [[entry]]
 path = "std.validate.cnpj_valid"
@@ -25936,6 +27705,25 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/800_std_source_validate.spectra"
 
 [[entry]]
+path = "std.validate.e164_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.e164_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
 path = "std.validate.email_is_valid"
 kind = "function"
 namespace = "std.validate"
@@ -25949,6 +27737,25 @@ implementation = "spectra-source"
 effects = []
 error_model = "none"
 binding = "spectra.std.validate.email_is_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.gtin_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.gtin_valid"
 maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
@@ -26031,6 +27838,44 @@ docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/800_std_source_validate.spectra"
 
 [[entry]]
+path = "std.validate.pis_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.pis_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.validate.titulo_eleitor_valid"
+kind = "function"
+namespace = "std.validate"
+signature = "fn(string) -> bool"
+params = [{ name = "arg0", ty = "string" }]
+returns = "bool"
+ir_return = "bool"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.validate.titulo_eleitor_valid"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
 path = "std.validate.url_is_valid"
 kind = "function"
 namespace = "std.validate"
@@ -26048,3 +27893,131 @@ maturity = "stable"
 owner = "runtime"
 docs = "docs/reference/05-stdlib.md"
 fixture = "tests/validation/800_std_source_validate.spectra"
+
+[[entry]]
+path = "std.vector"
+kind = "module"
+namespace = "std"
+signature = "module std.vector"
+abi = "semantic descriptor"
+effects = []
+error_model = "none"
+binding = "spectra.module.std.vector"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/185_stdlib_contract_audit.spectra"
+
+[[entry]]
+path = "std.vector.add_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>, List<float>) -> Option<List<float>>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<List<float>>"
+ir_return = "Option<List<float>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.add_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"
+
+[[entry]]
+path = "std.vector.cosine_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>, List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.cosine_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"
+
+[[entry]]
+path = "std.vector.dot_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>, List<float>) -> Option<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "List<float>" }]
+returns = "Option<float>"
+ir_return = "Option<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.dot_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"
+
+[[entry]]
+path = "std.vector.norm_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>) -> float"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "float"
+ir_return = "float"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.norm_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"
+
+[[entry]]
+path = "std.vector.normalize_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>) -> Option<List<float>>"
+params = [{ name = "arg0", ty = "List<float>" }]
+returns = "Option<List<float>>"
+ir_return = "Option<List<float>>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.normalize_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"
+
+[[entry]]
+path = "std.vector.scale_f"
+kind = "function"
+namespace = "std.vector"
+signature = "fn(List<float>, float) -> List<float>"
+params = [{ name = "arg0", ty = "List<float>" }, { name = "arg1", ty = "float" }]
+returns = "List<float>"
+ir_return = "List<float>"
+returns_value = true
+abi = "compiled Spectra function"
+implementation = "spectra-source"
+effects = []
+error_model = "none"
+binding = "spectra.std.vector.scale_f"
+maturity = "stable"
+owner = "runtime"
+docs = "docs/reference/05-stdlib.md"
+fixture = "tests/validation/824_std_source_vector.spectra"

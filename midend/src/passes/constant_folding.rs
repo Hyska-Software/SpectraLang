@@ -166,6 +166,11 @@ impl ConstantFolding {
             | InstructionKind::Mul { result, .. }
             | InstructionKind::Div { result, .. }
             | InstructionKind::Rem { result, .. }
+            | InstructionKind::BitAnd { result, .. }
+            | InstructionKind::BitOr { result, .. }
+            | InstructionKind::BitXor { result, .. }
+            | InstructionKind::Shl { result, .. }
+            | InstructionKind::Shr { result, .. }
             | InstructionKind::And { result, .. }
             | InstructionKind::Or { result, .. }
             | InstructionKind::Not { result, .. } => Some(*result),

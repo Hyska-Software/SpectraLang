@@ -10329,12 +10329,21 @@ package.
 | 4 | `R-3404` | Matching behavior across CLI, package builds, LSP, and installed releases |
 | 5 | `R-3405` | One end-to-end `.spectra` module consumed only through imports, proven in JIT and AOT |
 | 6 | `R-3406` | Per-module incremental contribution, migration, and conformance process |
+| 7 | `R-3407` | Language prerequisites (bitwise/shift, `panic`, nesting budget, bytes contract) |
+| 8 | `R-3408` | Source expansion wave 2 (18 modules, 178 public functions) |
 
 The first Phase 34 delivery is complete: the compiler bundles and resolves
 `.spectra` std modules, and the `std.algorithms` import-only pilot passes its
 acceptance gates. The migration ledger remains the source of truth for the
 native and hybrid modules that have not moved to `.spectra`; this completion
 does not claim that the whole standard library has been rewritten.
+
+Wave 2 continues that process: `R-3407` closes the language gaps that blocked
+whole families of modules, and `R-3408` grows the source surface to 18 modules
+and 178 public functions. Ten wave-1 modules gained additional functions, and
+eight modules (`std.unicode`, `std.bytes`, `std.csv`, `std.diff`,
+`std.vector`, `std.uuid`, `std.testing`, `std.hash`) are new. Native and hybrid
+modules keep their current implementation and remain classified in the ledger.
 
 ## R-3401 Standard Library Source Architecture and Migration Inventory
 
@@ -10542,3 +10551,98 @@ Evidence: the migration ledger classifies all registered modules and lists
 remaining functions and native dependencies. The contribution gate and source
 contract auditor are documented and covered by 18 focused Python tests. Future
 module migrations remain separate, independently validated increments.
+
+## R-3407 Language Prerequisites for Further Source-Authored Standard Modules
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `frontend`
+- Risk: `medium`
+- Dependencies: `R-3401`, `R-3406`
+
+Remove the language blockers that stopped the standard library from growing in
+categories rather than one function at a time: integer bitwise and shift
+operators, a `panic` primitive that can terminate a program from source, a
+nesting budget shared by parser/semantic/lint and derived from the real stack,
+and a recorded contract for strings versus bytes.
+
+### Acceptance
+
+- `& | ^ << >>` and unary `~` parse, type-check, constant-fold, and lower with
+  documented operand rules and shift masking; JIT and AOT produce identical
+  results (`tests/validation/808_core_bitwise_operators.spectra`).
+- A non-integer operand reports the documented semantic error with exit 65
+  (`tests/errors/720_core_bitwise_non_integer_operand.spectra`).
+- `std.error.panic(message)` writes `error: <message>` to stderr and terminates
+  with status 70 in JIT, in an AOT binary, and through
+  `spectralang package test`, proven by
+  `tests/validation/809_error_panic_exit_code.spectra` and
+  `tests/projects/invalid/stdlib_testing_assertion_failure`.
+- Parser, semantic analysis, and lint share one nesting budget derived from the
+  available stack: legitimate deep nesting compiles in a 1 MiB thread while
+  pathological input still reports `P013`
+  (`tests/validation/810_core_deep_nesting_parse.spectra`).
+- `docs/architecture/stdlib-bytes-contract.md` records the string/bytes
+  contract and the `std.bytes`/`std.unicode` fixtures pass in JIT and AOT.
+
+Evidence: `tests/validation/808_core_bitwise_operators.spectra` covers every
+operator in `const` and at runtime across the exact-width matrix, and
+`tests/errors/720_core_bitwise_non_integer_operand.spectra` asserts the operand
+diagnostic (exit 65). `tests/validation/809_error_panic_exit_code.spectra`
+returns 70 in JIT and AOT, and
+`tools/spectra-cli/tests/cli_contract.rs::package_test_reports_std_testing_failure_with_exit_70`
+proves the same status and message through `spectralang package test` on
+`tests/projects/invalid/stdlib_testing_assertion_failure`.
+`compiler/src/lint/mod.rs::nested_module_passes_parser_semantic_and_lint_on_a_one_mib_thread`
+pins the shared parser/semantic/lint budget on a 1 MiB thread, and fixture 810
+executes deep but legitimate nesting. The operators, the `panic` primitive, and
+the nesting guard are documented in `docs/language-feature-maturity.md` and
+`docs/reference/06-referencia-rapida.md`.
+
+## R-3408 Standard Library Source Expansion Wave 2
+
+- Status: `complete`
+- Priority: `P1`
+- Owner: `runtime`
+- Risk: `medium`
+- Dependencies: `R-3406`, `R-3407`
+
+Grow the source-authored surface to 18 modules and 178 public functions:
+extend ten wave-1 modules (`algorithms`, `encoding`, `stats`, `validate`,
+`path`, `text`, `calendar`, `iter`, `fmt`, `semver`) and add eight modules
+(`unicode`, `bytes`, `csv`, `diff`, `vector`, `uuid`, `testing`, `hash`). The
+shared UTF-8 and byte behavior lives in `std.unicode`/`std.bytes`, and the
+duplicated private helpers of wave 1 are deleted.
+
+### Acceptance
+
+- `stdlib/src/` contains the eight new modules in addition to the wave-1 set,
+  and the generated catalog labels every public function of those modules
+  `spectra-source` with a compiled-Spectra ABI and no host symbol.
+- Every module has an import-only consumer fixture executed in JIT and AOT with
+  matching exit codes recorded in `tests/execution-baseline.json`.
+- `validate_r3007_stdlib_contract.py --binary target/debug/spectralang.exe
+  --require-catalog` reports `blockers: 0`, with a documentation reference and a
+  probe for every source symbol.
+- `docs/reference/05-stdlib.md` and `docs/reference/06-referencia-rapida.md`
+  document every public source function, and the migration ledger classifies
+  each module form and remaining native dependency.
+- No duplicated UTF-8 decoding or validation helper remains in
+  `std.algorithms`, `std.encoding`, `std.text`, or `std.path`: the shared
+  behavior lives in `std.unicode`/`std.bytes` (small byte-width steppers used by
+  incremental scans are not duplicates of that public surface).
+
+Evidence: the generated catalog labels all 178 public functions of the 18
+source modules `spectra-source` with a compiled-Spectra ABI, and
+`scripts/validate_r3007_stdlib_contract.py --require-catalog --timeout-seconds
+900` reports `blockers: 0` with `catalog: complete` and every probe passing.
+Fixtures 794-828 pass in JIT and AOT and are recorded in
+`tests/execution-baseline.json` (687 fixtures);
+`scripts/validate_execution_coverage.py --mode both` reports 683 passed and no
+failures. `cargo test --workspace --all-targets --no-fail-fast` passes. Two
+independent reviews of the increment found 16 source defects (including a
+non-terminating `hard_wrap`, UTF-8 corruption in `sanitize`/`normalize_newlines`
+and byte-vs-character width in `center`/`pad_center`), an exact-width `~`
+constant-folding divergence, two quadratic scans, and nine documentation or
+evidence gaps; all were fixed and re-verified, with regression assertions added
+to fixtures 808, 813, 815, 816, 817, 819, 820, and 822.

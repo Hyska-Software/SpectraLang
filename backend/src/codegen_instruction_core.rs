@@ -29,6 +29,11 @@ impl CodeGenerator {
             | InstructionKind::Mul { .. }
             | InstructionKind::Div { .. }
             | InstructionKind::Rem { .. }
+            | InstructionKind::BitAnd { .. }
+            | InstructionKind::BitOr { .. }
+            | InstructionKind::BitXor { .. }
+            | InstructionKind::Shl { .. }
+            | InstructionKind::Shr { .. }
             | InstructionKind::Eq { .. }
             | InstructionKind::Ne { .. }
             | InstructionKind::Lt { .. }

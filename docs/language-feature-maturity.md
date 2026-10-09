@@ -61,13 +61,35 @@ particular host.
 - `let mut` is accepted as a redundant binding marker; local bindings remain
   reassignable by default, so `mut` does not establish a separate mutability
   mode
+- bitwise and shift operators (`& | ^ << >>`, unary `~`) on `int` and the
+  exact-width integer matrix: both operands must share one type, shift counts
+  are masked with 63, `>>` is arithmetic on signed types and logical on
+  unsigned ones, and constant folding uses the signed 64-bit interpretation
+  (see `docs/reference/06-referencia-rapida.md` §2)
 - tuple, struct, enum, and OR-patterns in the validated pattern surface
 - closures/lambdas with by-value captures in the currently validated surface
 - qualified stdlib calls such as `std.io.println(...)`
 - source-authored std modules bundled with the compiler (`std.algorithms`,
   `std.encoding`, `std.stats`, `std.validate`, `std.path`, `std.text`,
-  `std.calendar`, `std.iter`, `std.fmt`, `std.semver`), documented in
-  `docs/reference/05-stdlib.md` and covered by JIT+AOT fixtures
+  `std.calendar`, `std.iter`, `std.fmt`, `std.semver`, `std.unicode`,
+  `std.bytes`, `std.csv`, `std.diff`, `std.vector`, `std.uuid`, `std.testing`,
+  `std.hash`), documented in `docs/reference/05-stdlib.md` and covered by
+  JIT+AOT fixtures
+- `std.error.panic(message: string)`: writes `error: <message>` to stderr and
+  terminates the process with exit status 70; `std.testing` assertions build on
+  it, so a failing assertion in `spectralang run`, an AOT binary or
+  `spectralang package test` observes the same message and status
+  (`tests/projects/invalid/stdlib_testing_assertion_failure`)
+- frontend nesting guard: the parser, semantic analysis, lint, and formatter
+  share one budget derived from the calling thread's real stack (60% of the
+  reported stack, with a 128 KiB floor and a fixed 512 KiB fallback where the
+  platform cannot report it), plus a 1000-level depth cap. Legitimate nesting
+  compiles when the thread has room; pathological or over-deep input fails with
+  `P013` instead of exhausting the stack. Because the guard is relative, a
+  thread with a small stack (the Windows executable's default main thread, or a
+  test thread) rejects deeply nested files that a thread with a large stack
+  accepts, and tools that run the guard (for example `fmt` and `check`) inherit
+  that limit.
 - `std.tensor` production baseline runtime API for tensor handles, safe views, shape metadata, elementwise ops, reductions, transforms, 2D matmul, and batched matmul
 - `std.tensor` production baseline reverse-mode autodiff for float tensor handles, scalar tensor losses, gradient accumulation, and inference/no-grad mode
 - Phase 14 tensor language core baseline:

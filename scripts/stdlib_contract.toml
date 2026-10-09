@@ -208,6 +208,23 @@ path = "tests/validation/797_std_source_algorithms_extended.spectra"
 covers = ["std.algorithms.*"]
 
 [[probe]]
+id = "error-panic"
+path = "tests/validation/809_error_panic_exit_code.spectra"
+# `std.error.panic` terminates the process with status 70 by contract.
+expect_exit_code = 70
+covers = ["std.error.panic"]
+
+[[probe]]
+id = "source-stdlib-unicode"
+path = "tests/validation/811_std_unicode.spectra"
+covers = ["std.unicode.*"]
+
+[[probe]]
+id = "source-stdlib-bytes"
+path = "tests/validation/812_std_bytes.spectra"
+covers = ["std.bytes.*"]
+
+[[probe]]
 id = "source-stdlib-encoding"
 path = "tests/validation/798_std_source_encoding.spectra"
 covers = ["std.encoding.*"]
@@ -251,6 +268,61 @@ covers = ["std.fmt.*"]
 id = "source-stdlib-semver"
 path = "tests/validation/806_std_source_semver.spectra"
 covers = ["std.semver.*"]
+
+[[probe]]
+id = "source-stdlib-stats-extended"
+path = "tests/validation/818_std_source_stats_extended.spectra"
+covers = ["std.stats.mode_f", "std.stats.zscore_f", "std.stats.histogram_f", "std.stats.moving_average_f", "std.stats.linear_regression_f", "std.stats.entropy_f"]
+
+[[probe]]
+id = "source-stdlib-calendar-extended"
+path = "tests/validation/819_std_source_calendar_extended.spectra"
+covers = ["std.calendar.parse_iso_datetime", "std.calendar.add_months", "std.calendar.start_of_month", "std.calendar.start_of_week", "std.calendar.days_between"]
+
+[[probe]]
+id = "source-stdlib-semver-satisfies"
+path = "tests/validation/820_std_source_semver_satisfies.spectra"
+covers = ["std.semver.satisfies"]
+
+[[probe]]
+id = "source-stdlib-algorithms-extra"
+path = "tests/validation/821_std_source_algorithms_extended.spectra"
+covers = ["std.algorithms.binary_search_string", "std.algorithms.kmp_find", "std.algorithms.lcs", "std.algorithms.damerau_levenshtein", "std.algorithms.mod_pow", "std.algorithms.integer_sqrt", "std.algorithms.chinese_remainder"]
+
+[[probe]]
+id = "source-stdlib-csv"
+path = "tests/validation/822_std_source_csv.spectra"
+covers = ["std.csv.*"]
+
+[[probe]]
+id = "source-stdlib-diff"
+path = "tests/validation/823_std_source_diff.spectra"
+covers = ["std.diff.*"]
+
+[[probe]]
+id = "source-stdlib-vector"
+path = "tests/validation/824_std_source_vector.spectra"
+covers = ["std.vector.*"]
+
+[[probe]]
+id = "source-stdlib-encoding-extended"
+path = "tests/validation/825_std_source_encoding_more.spectra"
+covers = ["std.encoding.base32_encode", "std.encoding.base32_decode", "std.encoding.base58_encode", "std.encoding.base58_decode", "std.encoding.base85_encode", "std.encoding.base85_decode"]
+
+[[probe]]
+id = "source-stdlib-uuid"
+path = "tests/validation/826_std_source_uuid.spectra"
+covers = ["std.uuid.*"]
+
+[[probe]]
+id = "source-stdlib-testing"
+path = "tests/validation/827_std_source_testing.spectra"
+covers = ["std.testing.*"]
+
+[[probe]]
+id = "source-stdlib-hash"
+path = "tests/validation/828_std_source_hash.spectra"
+covers = ["std.hash.*"]
 
 [[follow_up]]
 prefix = "std.tensor.diff"
@@ -354,6 +426,18 @@ classification = "production"
 roadmap = "R-3406"
 
 [[namespace]]
+prefix = "std.unicode"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.bytes"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
 prefix = "std.validate"
 owner = "runtime"
 classification = "production"
@@ -395,6 +479,41 @@ owner = "ecosystem"
 classification = "production"
 roadmap = "R-3406"
 
+[[namespace]]
+prefix = "std.csv"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.diff"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.vector"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.uuid"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.testing"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
+
+[[namespace]]
+prefix = "std.hash"
+owner = "runtime"
+classification = "production"
+roadmap = "R-3408"
 [[namespace]]
 prefix = "std.io"
 owner = "runtime"
@@ -454,7 +573,7 @@ reason = "Filesystem sentinel behavior is retained only as an explicit migration
 prefix = "std.error"
 owner = "runtime"
 classification = "production"
-roadmap = "R-1204"
+roadmap = "R-3407"
 
 [[namespace]]
 prefix = "std.compat.collections"

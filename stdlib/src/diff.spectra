@@ -1,0 +1,325 @@
+module std.diff
+
+import std.collections as collections
+import std.convert as convert
+import std.option as option
+import std.string as str
+
+// Line diffing in the unified format, without file headers.
+//
+// `diff_lines` returns hunk headers (`@@ -a,b +c,d @@`, 1-based, where `b` and
+// `d` are the number of lines the hunk takes from each side) followed by body
+// lines prefixed `" "` (context), `"-"` (left only) or `"+"` (right only). A
+// replacement is always emitted as its `-` lines followed by its `+` lines.
+//
+// Every hunk carries three context lines around its changes, and two changes
+// share a hunk while at most six unchanged lines separate them; a longer gap
+// starts a new hunk. Identical inputs have no changes and produce an empty list.
+// Hunk starts are always reported 1-based, so a change at the top of the file
+// starts at `1` and an empty side contributes `0` lines
+// (`@@ -1,0 +1,2 @@`).
+//
+// Line matching is a longest-common-subsequence dynamic program, so the cost is
+// quadratic in the input sizes; it targets text-sized inputs. A mismatch drops
+// the left line only when that keeps strictly more matches; when both choices
+// are equal the right line is added instead.
+
+// True when both lists hold the same lines in the same order.
+public func same_lines(left: List<string>, right: List<string>) returns bool {
+    let count = collections.list_len(left)
+    if collections.list_len(right) != count {
+        return false
+    }
+
+    let index = 0
+    while index < count {
+        let left_line = option.option_unwrap_or(collections.list_get(left, index), "")
+        let right_line = option.option_unwrap_or(collections.list_get(right, index), "")
+        if left_line != right_line {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+// Unified diff of `left` against `right` with three context lines per hunk; an
+// empty list means the inputs are identical.
+public func diff_lines(left: List<string>, right: List<string>) returns List<string> {
+    let ops = line_ops(left, right)
+    let changes: List<int> = collections.list_new()
+    collect_changes(ops, changes)
+
+    let result: List<string> = collections.list_new()
+    let change_count = collections.list_len(changes)
+    if change_count == 0 {
+        return result
+    }
+
+    let count = collections.list_len(ops)
+    let (left_prefix, right_prefix) = prefix_counts(ops)
+    let group = 0
+    while group < change_count {
+        let first_change = option.option_unwrap_or(collections.list_get(changes, group), 0)
+        let last_change = first_change
+        let cursor = group
+        while cursor + 1 < change_count {
+            let next_change = option.option_unwrap_or(collections.list_get(changes, cursor + 1), 0)
+            if next_change - last_change - 1 > 6 {
+                break
+            }
+            last_change = next_change
+            cursor = cursor + 1
+        }
+        append_hunk(result, ops, left_prefix, right_prefix, hunk_start(first_change), hunk_end(last_change, count))
+        group = cursor + 1
+    }
+    return result
+}
+
+// ── Ops ──────────────────────────────────────────────────────────────────
+
+// Unified-diff lines for `left` against `right`, each already carrying its
+// prefix, with removals ordered before additions inside every change run.
+func line_ops(left: List<string>, right: List<string>) returns List<string> {
+    let (lengths, width) = build_lengths(left, right)
+    return grouped_ops(backtrack_ops(left, right, lengths, width))
+}
+
+// `lengths[row * width + column]` is the LCS length of `left[row..]` and
+// `right[column..]`; `width` is the matching row width, and the extra final row
+// and column stay zero.
+func build_lengths(left: List<string>, right: List<string>) returns (List<int>, int) {
+    let left_count = collections.list_len(left)
+    let right_count = collections.list_len(right)
+    let width = right_count + 1
+    let lengths: List<int> = collections.list_new()
+    let total = (left_count + 1) * width
+    let filled = 0
+    while filled < total {
+        collections.list_push(lengths, 0)
+        filled = filled + 1
+    }
+
+    let row = left_count - 1
+    while row >= 0 {
+        let column = right_count - 1
+        while column >= 0 {
+            let score = cell_score(left, right, lengths, width, row, column)
+            collections.list_set(lengths, row * width + column, score)
+            column = column - 1
+        }
+        row = row - 1
+    }
+    return (lengths, width)
+}
+
+// Score of the cell at `(row, column)`: one more than the diagonal when the
+// lines match, otherwise the better of dropping the left or the right line.
+func cell_score(left: List<string>, right: List<string>, lengths: List<int>, width: int, row: int, column: int) returns int {
+    let left_line = option.option_unwrap_or(collections.list_get(left, row), "")
+    let right_line = option.option_unwrap_or(collections.list_get(right, column), "")
+    if left_line == right_line {
+        let diagonal = option.option_unwrap_or(collections.list_get(lengths, (row + 1) * width + column + 1), 0)
+        return diagonal + 1
+    }
+
+    let drop_left = option.option_unwrap_or(collections.list_get(lengths, (row + 1) * width + column), 0)
+    let drop_right = option.option_unwrap_or(collections.list_get(lengths, row * width + column + 1), 0)
+    if drop_right > drop_left {
+        return drop_right
+    }
+    return drop_left
+}
+
+// Walks the table from the top-left, emitting context for matching lines and a
+// removal or addition otherwise; the left line is only dropped when that keeps
+// strictly more matches, which makes the choice deterministic.
+func backtrack_ops(left: List<string>, right: List<string>, lengths: List<int>, width: int) returns List<string> {
+    let left_count = collections.list_len(left)
+    let right_count = collections.list_len(right)
+    let ops: List<string> = collections.list_new()
+    let left_index = 0
+    let right_index = 0
+
+    while left_index < left_count and right_index < right_count {
+        let left_line = option.option_unwrap_or(collections.list_get(left, left_index), "")
+        let right_line = option.option_unwrap_or(collections.list_get(right, right_index), "")
+        if left_line == right_line {
+            collections.list_push(ops, " " + left_line)
+            left_index = left_index + 1
+            right_index = right_index + 1
+        } else if drops_left(lengths, width, left_index, right_index) {
+            collections.list_push(ops, "-" + left_line)
+            left_index = left_index + 1
+        } else {
+            collections.list_push(ops, "+" + right_line)
+            right_index = right_index + 1
+        }
+    }
+
+    append_tail(ops, left, left_index, "-")
+    append_tail(ops, right, right_index, "+")
+    return ops
+}
+
+// True when dropping the left line keeps strictly more matches than dropping
+// the right one, so a tie turns into an addition of the right line and the
+// diff stays compact around replacements.
+func drops_left(lengths: List<int>, width: int, left_index: int, right_index: int) returns bool {
+    let drop_left = option.option_unwrap_or(collections.list_get(lengths, (left_index + 1) * width + right_index), 0)
+    let drop_right = option.option_unwrap_or(collections.list_get(lengths, left_index * width + right_index + 1), 0)
+    return drop_left > drop_right
+}
+
+// Appends every line of `lines[from..]` to `ops` with `prefix`.
+func append_tail(ops: List<string>, lines: List<string>, start_index: int, prefix: string) {
+    let count = collections.list_len(lines)
+    let index = start_index
+    while index < count {
+        collections.list_push(ops, prefix + option.option_unwrap_or(collections.list_get(lines, index), ""))
+        index = index + 1
+    }
+}
+
+// Rewrites every run of adjacent changes so all of its removals come before all
+// of its additions.
+func grouped_ops(ops: List<string>) returns List<string> {
+    let grouped: List<string> = collections.list_new()
+    let count = collections.list_len(ops)
+    let index = 0
+    while index < count {
+        let op = option.option_unwrap_or(collections.list_get(ops, index), " ")
+        if is_context(op) {
+            collections.list_push(grouped, op)
+            index = index + 1
+        } else {
+            let removals: List<string> = collections.list_new()
+            let additions: List<string> = collections.list_new()
+            index = collect_run(ops, index, removals, additions)
+            append_list(grouped, removals)
+            append_list(grouped, additions)
+        }
+    }
+    return grouped
+}
+
+// Splits the adjacent changes starting at `index` into `removals` and
+// `additions`, returning the index of the first context line (or the end).
+func collect_run(ops: List<string>, index: int, removals: List<string>, additions: List<string>) returns int {
+    let count = collections.list_len(ops)
+    let cursor = index
+    while cursor < count {
+        let op = option.option_unwrap_or(collections.list_get(ops, cursor), " ")
+        if is_context(op) {
+            return cursor
+        }
+        if is_addition(op) {
+            collections.list_push(additions, op)
+        } else {
+            collections.list_push(removals, op)
+        }
+        cursor = cursor + 1
+    }
+    return cursor
+}
+
+func append_list(dest: List<string>, source: List<string>) {
+    let count = collections.list_len(source)
+    let index = 0
+    while index < count {
+        collections.list_push(dest, option.option_unwrap_or(collections.list_get(source, index), ""))
+        index = index + 1
+    }
+}
+
+func is_context(op: string) returns bool {
+    return str.starts_with(op, " ")
+}
+
+func is_addition(op: string) returns bool {
+    return str.starts_with(op, "+")
+}
+
+// ── Hunks ────────────────────────────────────────────────────────────────
+
+// Index of every change line in `ops`.
+func collect_changes(ops: List<string>, changes: List<int>) {
+    let count = collections.list_len(ops)
+    let index = 0
+    while index < count {
+        let op = option.option_unwrap_or(collections.list_get(ops, index), " ")
+        if not is_context(op) {
+            collections.list_push(changes, index)
+        }
+        index = index + 1
+    }
+}
+
+// Per-position counts of the lines consumed so far from each side, so a hunk
+// header needs no second walk over its body.
+func prefix_counts(ops: List<string>) returns (List<int>, List<int>) {
+    let left_prefix: List<int> = collections.list_new()
+    let right_prefix: List<int> = collections.list_new()
+    collections.list_push(left_prefix, 0)
+    collections.list_push(right_prefix, 0)
+
+    let count = collections.list_len(ops)
+    let index = 0
+    while index < count {
+        let op = option.option_unwrap_or(collections.list_get(ops, index), " ")
+        let left_total = option.option_unwrap_or(collections.list_get(left_prefix, index), 0)
+        let right_total = option.option_unwrap_or(collections.list_get(right_prefix, index), 0)
+        if is_addition(op) {
+            collections.list_push(left_prefix, left_total)
+        } else {
+            collections.list_push(left_prefix, left_total + 1)
+        }
+        if is_removal(op) {
+            collections.list_push(right_prefix, right_total)
+        } else {
+            collections.list_push(right_prefix, right_total + 1)
+        }
+        index = index + 1
+    }
+    return (left_prefix, right_prefix)
+}
+
+func is_removal(op: string) returns bool {
+    return str.starts_with(op, "-")
+}
+
+// First line of the hunk that covers a change at `change`: three context lines
+// back, clamped to the start of the file.
+func hunk_start(change: int) returns int {
+    if change < 3 {
+        return 0
+    }
+    return change - 3
+}
+
+// Last line of that hunk: three context lines forward, clamped to `count - 1`.
+func hunk_end(change: int, count: int) returns int {
+    let last = change + 3
+    if last > count - 1 {
+        return count - 1
+    }
+    return last
+}
+
+// Appends the hunk header and body for `ops[start..=end]` to `result`.
+func append_hunk(result: List<string>, ops: List<string>, left_prefix: List<int>, right_prefix: List<int>, start: int, end: int) {
+    let left_before = option.option_unwrap_or(collections.list_get(left_prefix, start), 0)
+    let right_before = option.option_unwrap_or(collections.list_get(right_prefix, start), 0)
+    let left_after = option.option_unwrap_or(collections.list_get(left_prefix, end + 1), 0)
+    let right_after = option.option_unwrap_or(collections.list_get(right_prefix, end + 1), 0)
+
+    let header = "@@ -" + convert.int_to_string(left_before + 1) + "," + convert.int_to_string(left_after - left_before) + " +" + convert.int_to_string(right_before + 1) + "," + convert.int_to_string(right_after - right_before) + " @@"
+    collections.list_push(result, header)
+
+    let index = start
+    while index <= end {
+        collections.list_push(result, option.option_unwrap_or(collections.list_get(ops, index), ""))
+        index = index + 1
+    }
+}

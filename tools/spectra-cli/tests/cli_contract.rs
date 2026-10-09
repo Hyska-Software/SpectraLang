@@ -211,3 +211,24 @@ fn emit_flag_combinations_are_rejected_with_exit_64() {
         stderr(&both)
     );
 }
+
+/// The `std.error.panic` exit path through `spectralang package test`: the
+/// invalid project runs a failing `std.testing` assertion, so the package test
+/// must terminate with the documented status 70 and print the assertion
+/// message produced by the shared assertion helper.
+#[test]
+fn package_test_reports_std_testing_failure_with_exit_70() {
+    let project = fixture("../../tests/projects/invalid/stdlib_testing_assertion_failure");
+    let output = run_spectralang(&[
+        "package",
+        "test",
+        "--root",
+        utf8(&project),
+    ]);
+    let stderr = stderr(&output);
+    assert_eq!(output.status.code(), Some(70), "stderr: {stderr}");
+    assert!(
+        stderr.contains("expected 4, found 3") && stderr.contains("counter must match"),
+        "stderr must carry the assertion message, got: {stderr}"
+    );
+}

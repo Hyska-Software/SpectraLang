@@ -157,3 +157,161 @@ func option_value(entry: Option<int>) returns int {
     }
     return 0
 }
+
+
+// Pairs of `left` and `right` up to the shorter length.
+public func zip_int(left: List<int>, right: List<int>) returns List<(int, int)> {
+    let pairs: List<(int, int)> = collections.list_new()
+    let length = collections.list_len(left)
+    if collections.list_len(right) < length {
+        length = collections.list_len(right)
+    }
+
+    let index = 0
+    while index < length {
+        collections.list_push(
+            pairs,
+            (option_value(collections.list_get(left, index)), option_value(collections.list_get(right, index))),
+        )
+        index = index + 1
+    }
+
+    return pairs
+}
+
+// `(index, value)` pairs in order.
+public func enumerate_int(values: List<int>) returns List<(int, int)> {
+    let pairs: List<(int, int)> = collections.list_new()
+    let length = collections.list_len(values)
+    let index = 0
+
+    while index < length {
+        collections.list_push(pairs, (index, option_value(collections.list_get(values, index))))
+        index = index + 1
+    }
+
+    return pairs
+}
+
+// Items accepted by `predicate` first, the rest second; both keep their
+// relative order.
+public func partition_int(values: List<int>, predicate: func(int) returns bool) returns (List<int>, List<int>) {
+    let matching: List<int> = collections.list_new()
+    let rest: List<int> = collections.list_new()
+    let length = collections.list_len(values)
+    let index = 0
+
+    while index < length {
+        let value = option_value(collections.list_get(values, index))
+        if predicate(value) {
+            collections.list_push(matching, value)
+        } else {
+            collections.list_push(rest, value)
+        }
+        index = index + 1
+    }
+
+    return (matching, rest)
+}
+
+// Concatenation of nested lists, in order.
+public func flatten_int(nested: List<List<int>>) returns List<int> {
+    let flat: List<int> = collections.list_new()
+    let outer = collections.list_len(nested)
+    let index = 0
+
+    while index < outer {
+        let inner = option_value_list(collections.list_get(nested, index))
+        let count = collections.list_len(inner)
+        let position = 0
+        while position < count {
+            collections.list_push(flat, option_value(collections.list_get(inner, position)))
+            position = position + 1
+        }
+        index = index + 1
+    }
+
+    return flat
+}
+
+// Item with the smallest `key(value)`, or None for an empty list. Ties keep
+// the first occurrence.
+public func min_by_int(values: List<int>, key: func(int) returns int) returns Option<int> {
+    return extreme_by_int(values, key, true)
+}
+
+// Item with the largest `key(value)`, or None for an empty list.
+public func max_by_int(values: List<int>, key: func(int) returns int) returns Option<int> {
+    return extreme_by_int(values, key, false)
+}
+
+// Distinct values in first-occurrence order.
+public func unique_int(values: List<int>) returns List<int> {
+    let unique: List<int> = collections.list_new()
+    let length = collections.list_len(values)
+    let index = 0
+
+    while index < length {
+        let value = option_value(collections.list_get(values, index))
+        if not collections.list_contains(unique, value) {
+            collections.list_push(unique, value)
+        }
+        index = index + 1
+    }
+
+    return unique
+}
+
+// Removes consecutive duplicates, keeping the first of each run.
+public func dedup_adjacent_int(values: List<int>) returns List<int> {
+    let result: List<int> = collections.list_new()
+    let length = collections.list_len(values)
+    let index = 0
+
+    while index < length {
+        let value = option_value(collections.list_get(values, index))
+        if index == 0 or not last_equals(result, value) {
+            collections.list_push(result, value)
+        }
+        index = index + 1
+    }
+
+    return result
+}
+
+func extreme_by_int(values: List<int>, key: func(int) returns int, smallest: bool) returns Option<int> {
+    let length = collections.list_len(values)
+    if length == 0 {
+        return Option::None
+    }
+
+    let best = option_value(collections.list_get(values, 0))
+    let best_key = key(best)
+    let index = 1
+    while index < length {
+        let candidate = option_value(collections.list_get(values, index))
+        let candidate_key = key(candidate)
+        if (smallest and candidate_key < best_key) or (not smallest and candidate_key > best_key) {
+            best = candidate
+            best_key = candidate_key
+        }
+        index = index + 1
+    }
+
+    return Option::Some(best)
+}
+
+func last_equals(values: List<int>, value: int) returns bool {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return false
+    }
+    return option_value(collections.list_get(values, count - 1)) == value
+}
+
+func option_value_list(entry: Option<List<int>>) returns List<int> {
+    if let Option::Some(value) = entry {
+        return value
+    }
+    return collections.list_new()
+}

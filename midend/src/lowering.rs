@@ -48,7 +48,13 @@ fn operator_overload_method(op: &BinaryOperator) -> Option<&'static str> {
         BinaryOperator::LessEqual => Some("le"),
         BinaryOperator::Greater => Some("gt"),
         BinaryOperator::GreaterEqual => Some("ge"),
-        BinaryOperator::And | BinaryOperator::Or => None,
+        BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::BitAnd
+        | BinaryOperator::BitOr
+        | BinaryOperator::BitXor
+        | BinaryOperator::Shl
+        | BinaryOperator::Shr => None,
     }
 }
 

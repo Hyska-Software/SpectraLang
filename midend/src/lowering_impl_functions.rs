@@ -577,6 +577,7 @@ impl ASTLowering {
             ExpressionKind::Grouping(inner) => self.infer_expr_ir_type(inner),
             ExpressionKind::Unary { operator, operand } => match operator {
                 UnaryOperator::Negate => self.infer_expr_ir_type(operand),
+                UnaryOperator::BitNot => self.infer_expr_ir_type(operand),
                 UnaryOperator::Not => IRType::Bool,
             },
             ExpressionKind::Binary {
@@ -620,6 +621,13 @@ impl ASTLowering {
                             IRType::Int
                         }
                     }
+                    // Bitwise/shift operations preserve the (identical)
+                    // operand type, including exact widths.
+                    BinaryOperator::BitAnd
+                    | BinaryOperator::BitOr
+                    | BinaryOperator::BitXor
+                    | BinaryOperator::Shl
+                    | BinaryOperator::Shr => left_type.clone(),
                     BinaryOperator::Equal
                     | BinaryOperator::NotEqual
                     | BinaryOperator::Less

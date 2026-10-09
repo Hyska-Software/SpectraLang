@@ -408,9 +408,12 @@ def load_roadmap_ids(root: Path) -> set[str]:
 
 
 def ir_return_is_valid(value: str) -> bool:
-    """Accept the module-level IR type grammar: `Name` or `Name<arg[,arg]*>`.
+    """Accept the module-level IR type grammar: `Name`, `Name<arg[,arg]*>` or a
+    tuple `(type[,type]*)`.
 
     Arguments are nested types or `key=number` entries (``Tensor<float,rank=1>``).
+    Tuple returns mirror `IRType::Tuple`, e.g. ``List<(int,int)>`` or
+    ``(List<int>,List<int>)``.
     """
     text = value.strip()
     if not text:
@@ -453,6 +456,22 @@ def ir_return_is_valid(value: str) -> bool:
     def parse_type() -> bool:
         nonlocal pos
         skip_whitespace()
+        if pos < length and text[pos] == "(":
+            pos += 1
+            while True:
+                skip_whitespace()
+                if not parse_type():
+                    return False
+                skip_whitespace()
+                if pos < length and text[pos] == ",":
+                    pos += 1
+                    continue
+                break
+            skip_whitespace()
+            if pos >= length or text[pos] != ")":
+                return False
+            pos += 1
+            return True
         if not parse_name():
             return False
         skip_whitespace()
@@ -733,7 +752,8 @@ def run_probe(
     except subprocess.TimeoutExpired as exc:
         output = exc.stdout if isinstance(exc.stdout, str) else ""
         return {"id": probe["id"], "kind": probe.get("kind", "spectra"), "path": probe.get("path"), "status": "timeout", "exit_code": None, "command": command, "output_tail": "\n".join(output.splitlines()[-20:])}
-    return {"id": probe["id"], "kind": probe.get("kind", "spectra"), "path": probe.get("path"), "status": "passed" if completed.returncode == 0 else "failed", "exit_code": completed.returncode, "command": command, "output_tail": "\n".join((completed.stdout or "").splitlines()[-20:])}
+    expected = int(probe.get("expect_exit_code", 0))
+    return {"id": probe["id"], "kind": probe.get("kind", "spectra"), "path": probe.get("path"), "status": "passed" if completed.returncode == expected else "failed", "exit_code": completed.returncode, "expect_exit_code": expected, "command": command, "output_tail": "\n".join((completed.stdout or "").splitlines()[-20:])}
 
 
 def build_report(root: Path, manifest: dict[str, Any], inventory: SourceInventory, probe_results: list[dict[str, Any]]) -> dict[str, Any]:

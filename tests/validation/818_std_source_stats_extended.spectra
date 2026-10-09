@@ -1,0 +1,213 @@
+// Consumer for the extended `std.stats` surface: mode, z-score, histogram,
+// moving average, linear regression and Shannon entropy, including the empty
+// and degenerate inputs.
+module std_source_stats_extended
+
+import std.collections as collections
+import std.math as math
+import std.option as option
+import std.stats as stats
+
+func close(actual: float, expected: float) returns bool {
+    return math.abs_f(actual - expected) < 0.000001
+}
+
+func series(values: [float], count: int) returns List<float> {
+    let list: List<float> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func ints(values: [int], count: int) returns List<int> {
+    let list: List<int> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func floats_equal(actual: List<float>, expected: List<float>) returns bool {
+    let count = collections.list_len(actual)
+    if count != collections.list_len(expected) {
+        return false
+    }
+    let index = 0
+    while index < count {
+        if not close(option.option_unwrap_or(collections.list_get(actual, index), 0.0), option.option_unwrap_or(collections.list_get(expected, index), 0.0)) {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func ints_equal(actual: List<int>, expected: List<int>) returns bool {
+    let count = collections.list_len(actual)
+    if count != collections.list_len(expected) {
+        return false
+    }
+    let index = 0
+    while index < count {
+        if option.option_unwrap_or(collections.list_get(actual, index), -1) != option.option_unwrap_or(collections.list_get(expected, index), -2) {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+public func main() returns int {
+    let empty: List<float> = collections.list_new()
+    let spread = series([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0], 8)
+
+    // ── mode ─────────────────────────────────────────────────────────────
+    if option.is_some(stats.mode_f(empty)) {
+        return 1
+    }
+    if not close(option.option_unwrap_or(stats.mode_f(series([1.0, 1.0, 2.0, 3.0], 4)), 0.0), 1.0) {
+        return 2
+    }
+    // A tie between 1 and 3 resolves to the smallest value.
+    if not close(option.option_unwrap_or(stats.mode_f(series([3.0, 3.0, 1.0, 1.0, 2.0], 5)), 0.0), 1.0) {
+        return 3
+    }
+    // A tie between 2 and 5 resolves to the smallest value.
+    if not close(option.option_unwrap_or(stats.mode_f(series([5.0, 2.0, 5.0, 2.0], 4)), 0.0), 2.0) {
+        return 4
+    }
+
+    // ── z-score ──────────────────────────────────────────────────────────
+    // mean = 5, population stddev = 2, so z(4) = -0.5, z(5) = 0, z(9) = 2.
+    if not close(option.option_unwrap_or(stats.zscore_f(spread, 4.0), 99.0), -0.5) {
+        return 5
+    }
+    if not close(option.option_unwrap_or(stats.zscore_f(spread, 5.0), 99.0), 0.0) {
+        return 6
+    }
+    if not close(option.option_unwrap_or(stats.zscore_f(spread, 9.0), 99.0), 2.0) {
+        return 7
+    }
+    if option.is_some(stats.zscore_f(series([3.0, 3.0, 3.0], 3), 4.0)) {
+        return 8
+    }
+    if option.is_some(stats.zscore_f(empty, 1.0)) {
+        return 9
+    }
+
+    // ── histogram ────────────────────────────────────────────────────────
+    let quad = series([1.0, 2.0, 3.0, 4.0], 4)
+    let empty_ints: List<int> = collections.list_new()
+    let h2 = stats.histogram_f(quad, 2)
+    if not option.is_some(h2) {
+        return 10
+    }
+    if not ints_equal(option.option_unwrap_or(h2, empty_ints), ints([2, 2], 2)) {
+        return 11
+    }
+    let h4 = stats.histogram_f(quad, 4)
+    if not option.is_some(h4) {
+        return 12
+    }
+    if not ints_equal(option.option_unwrap_or(h4, empty_ints), ints([1, 1, 1, 1], 4)) {
+        return 13
+    }
+    let h1 = stats.histogram_f(quad, 1)
+    if not option.is_some(h1) {
+        return 14
+    }
+    if not ints_equal(option.option_unwrap_or(h1, empty_ints), ints([4], 1)) {
+        return 15
+    }
+    // All values equal: the range is zero, so everything lands in bin 0.
+    let flat = stats.histogram_f(series([5.0, 5.0, 5.0], 3), 3)
+    if not option.is_some(flat) {
+        return 16
+    }
+    if not ints_equal(option.option_unwrap_or(flat, empty_ints), ints([3, 0, 0], 3)) {
+        return 17
+    }
+    if option.is_some(stats.histogram_f(empty, 3)) {
+        return 18
+    }
+    if option.is_some(stats.histogram_f(quad, 0)) {
+        return 19
+    }
+
+    // ── moving average ───────────────────────────────────────────────────
+    let ma2 = stats.moving_average_f(quad, 2)
+    if not option.is_some(ma2) {
+        return 20
+    }
+    if not floats_equal(option.option_unwrap_or(ma2, empty), series([1.5, 2.5, 3.5], 3)) {
+        return 21
+    }
+    let ma4 = stats.moving_average_f(quad, 4)
+    if not option.is_some(ma4) {
+        return 22
+    }
+    if not floats_equal(option.option_unwrap_or(ma4, empty), series([2.5], 1)) {
+        return 23
+    }
+    // A window larger than the list yields an empty result.
+    let ma5 = stats.moving_average_f(quad, 5)
+    if not option.is_some(ma5) {
+        return 24
+    }
+    if collections.list_len(option.option_unwrap_or(ma5, empty)) != 0 {
+        return 25
+    }
+    if option.is_some(stats.moving_average_f(quad, 0)) {
+        return 26
+    }
+
+    // ── linear regression ────────────────────────────────────────────────
+    let fit = stats.linear_regression_f(series([1.0, 2.0, 3.0], 3), series([2.0, 4.0, 6.0], 3))
+    if not option.is_some(fit) {
+        return 27
+    }
+    let (slope, intercept) = option.option_unwrap_or(fit, (0.0, 0.0))
+    if not close(slope, 2.0) {
+        return 28
+    }
+    if not close(intercept, 0.0) {
+        return 29
+    }
+    // Constant xs has zero variance, so the fit is undefined.
+    if option.is_some(stats.linear_regression_f(series([2.0, 2.0, 2.0], 3), series([1.0, 2.0, 3.0], 3))) {
+        return 30
+    }
+    if option.is_some(stats.linear_regression_f(series([1.0, 2.0, 3.0], 3), series([1.0], 1))) {
+        return 31
+    }
+    if option.is_some(stats.linear_regression_f(series([1.0], 1), series([2.0], 1))) {
+        return 32
+    }
+
+    // ── entropy ──────────────────────────────────────────────────────────
+    if not close(option.option_unwrap_or(stats.entropy_f(series([1.0, 1.0], 2)), 99.0), 0.0) {
+        return 33
+    }
+    if not close(option.option_unwrap_or(stats.entropy_f(series([1.0, 2.0, 3.0, 4.0], 4)), 99.0), 2.0) {
+        return 34
+    }
+    if not close(option.option_unwrap_or(stats.entropy_f(series([1.0, 1.0, 2.0, 2.0], 4)), 99.0), 1.0) {
+        return 35
+    }
+    if option.is_some(stats.entropy_f(series([1.0, -1.0], 2))) {
+        return 36
+    }
+    if option.is_some(stats.entropy_f(empty)) {
+        return 37
+    }
+    if option.is_some(stats.entropy_f(series([0.0, 0.0], 2))) {
+        return 38
+    }
+
+    return 0
+}

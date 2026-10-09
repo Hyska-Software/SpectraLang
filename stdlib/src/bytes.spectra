@@ -1,0 +1,80 @@
+module std.bytes
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+import std.unicode as unicode
+
+// Byte-level bridge between UTF-8 text and `List<int>`. Every element of a byte
+// list is one byte in `0..=255`. Text cannot carry an embedded NUL (the packed
+// representation is NUL-terminated), so `from_bytes` rejects it explicitly
+// instead of truncating a payload; see docs/architecture/stdlib-bytes-contract.md.
+
+// Bytes of the UTF-8 encoding of `text`, in order.
+public func to_bytes(text: string) returns List<int> {
+    let bytes: List<int> = collections.list_new()
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        collections.list_push(bytes, str.char_at(text, index))
+        index = index + 1
+    }
+
+    return bytes
+}
+
+// Text built from a byte list, or `None` when the list is not valid UTF-8, when
+// a value falls outside `0..=255`, or when it contains an embedded NUL.
+public func from_bytes(bytes: List<int>) returns Option<string> {
+    // NUL is valid UTF-8 but cannot be represented in text.
+    if contains_nul(bytes) {
+        return Option::None
+    }
+
+    let codes = unicode.codepoints_from_bytes(bytes)
+    if not option.is_some(codes) {
+        return Option::None
+    }
+    // `codepoints_from_bytes` already rejected NUL-free invalid sequences; the
+    // code-point list re-encodes to the exact same UTF-8 bytes.
+    return unicode.from_codepoints(option.option_unwrap_or(codes, collections.list_new()))
+}
+
+// True when any entry of the byte list is NUL.
+func contains_nul(bytes: List<int>) returns bool {
+    let count = collections.list_len(bytes)
+    let index = 0
+
+    while index < count {
+        if option.option_unwrap_or(collections.list_get(bytes, index), -1) == 0 {
+            return true
+        }
+        index = index + 1
+    }
+
+    return false
+}
+
+// Byte at `index` (a byte offset), or `None` when out of range.
+public func byte_at(text: string, index: int) returns Option<int> {
+    if index < 0 or index >= str.len(text) {
+        return Option::None
+    }
+    return Option::Some(str.char_at(text, index))
+}
+
+// True when every byte is ASCII (`< 0x80`).
+public func is_ascii(text: string) returns bool {
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        if str.char_at(text, index) >= 128 {
+            return false
+        }
+        index = index + 1
+    }
+
+    return true
+}

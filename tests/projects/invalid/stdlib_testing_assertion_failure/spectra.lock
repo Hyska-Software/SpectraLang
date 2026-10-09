@@ -1,0 +1,13 @@
+version = 2
+root = "stdlib_testing_assertion_failure"
+
+[[packages]]
+name = "stdlib_testing_assertion_failure"
+version = "0.1.0"
+channel = "nightly"
+compatibility = "spectralang-0.1"
+source = "path+"
+source_kind = "path"
+checksum = "7c71e60ced9c6fd0646f0097cec451a35a60a7cb71cfdab6fb449425a637e360"
+manifest_hash = "7c71e60ced9c6fd0646f0097cec451a35a60a7cb71cfdab6fb449425a637e360"
+dependencies = []

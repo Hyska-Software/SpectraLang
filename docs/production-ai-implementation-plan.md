@@ -2806,16 +2806,27 @@ existing `std` operation.
 
 The first Phase 34 increment is complete: R-3401 through R-3406 cover the
 architecture, embedded source resolver, normal semantic/codegen path, tooling,
-`std.algorithms`, and the per-module migration/conformance gate. This does not
-imply that the remaining native or hybrid modules have moved to `.spectra`;
-their current state and remaining public functions are recorded in the migration
-ledger. Status and validation evidence are mirrored in the human backlog and
+`std.algorithms`, and the per-module migration/conformance gate.
+
+Wave 2 (`R-3407`, `R-3408`) applies that gate to the rest of the pure surface.
+`R-3407` closes the language gaps that blocked whole module families: integer
+bitwise/shift operators with a documented operand contract, the terminating
+`std.error.panic` primitive used by assertions, a nesting budget shared by
+parser/semantic/lint and derived from the real stack, and the recorded
+string/bytes contract. `R-3408` grows the source-authored surface to 18 modules
+and 178 public functions: ten wave-1 modules gained functions and eight modules
+(`std.unicode`, `std.bytes`, `std.csv`, `std.diff`, `std.vector`, `std.uuid`,
+`std.testing`, `std.hash`) are new, each with a generated catalog entry,
+documentation, a probe, and JIT+AOT execution evidence. This does not imply that
+the remaining native or hybrid modules have moved to `.spectra`; their current
+state and remaining public functions are recorded in the migration ledger.
+Status and validation evidence are mirrored in the human backlog and
 `roadmap/roadmap.toml`.
 
 ### Cross-reference
 
 - Executable backlog: `docs/roadmap-backlog.md`, Phase 34.
 - Machine-readable tracker: `roadmap/roadmap.toml`, items `R-3401` to
-  `R-3406` in `phase_34`.
+  `R-3408` in `phase_34`.
 - Existing stdlib contracts and host-call inventory remain governed by
   `R-3007`, `R-3206`, `R-3207`, and `R-3208`.

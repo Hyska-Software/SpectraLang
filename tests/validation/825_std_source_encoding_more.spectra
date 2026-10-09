@@ -1,0 +1,167 @@
+// Consumer for `std.encoding` base32, base58 and base85, plus regression
+// coverage for the bitwise base64 encoder/decoder over UTF-8 text.
+module std_source_encoding_more
+
+import std.encoding as encoding
+import std.option as option
+
+public func main() returns int {
+    // ── base32 (RFC 4648) ────────────────────────────────────────────────
+    if encoding.base32_encode("") != "" {
+        return 1
+    }
+    if encoding.base32_encode("f") != "MY======" {
+        return 2
+    }
+    if encoding.base32_encode("fo") != "MZXQ====" {
+        return 3
+    }
+    if encoding.base32_encode("foo") != "MZXW6===" {
+        return 4
+    }
+    if encoding.base32_encode("foob") != "MZXW6YQ=" {
+        return 5
+    }
+    if encoding.base32_encode("fooba") != "MZXW6YTB" {
+        return 6
+    }
+    if encoding.base32_encode("foobar") != "MZXW6YTBOI======" {
+        return 7
+    }
+
+    if option.option_unwrap_or(encoding.base32_decode(""), "x") != "" {
+        return 8
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MY======"), "x") != "f" {
+        return 9
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MZXQ===="), "x") != "fo" {
+        return 10
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MZXW6==="), "x") != "foo" {
+        return 11
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MZXW6YQ="), "x") != "foob" {
+        return 12
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MZXW6YTB"), "x") != "fooba" {
+        return 13
+    }
+    if option.option_unwrap_or(encoding.base32_decode("MZXW6YTBOI======"), "x") != "foobar" {
+        return 14
+    }
+
+    // Length nine is not a multiple of eight.
+    if option.is_some(encoding.base32_decode("MZXW6YTB1")) {
+        return 15
+    }
+    // Lowercase is outside the uppercase RFC 4648 alphabet.
+    if option.is_some(encoding.base32_decode("MZXW6YtB")) {
+        return 16
+    }
+    // `=` in the middle / wrong pad count (two pads is never valid).
+    if option.is_some(encoding.base32_decode("MZ=XW6==")) {
+        return 17
+    }
+    // 0xFF is not a valid UTF-8 lead byte.
+    if option.is_some(encoding.base32_decode("74======")) {
+        return 18
+    }
+    if option.option_unwrap_or(encoding.base32_decode(encoding.base32_encode("café 😀")), "x") != "café 😀" {
+        return 19
+    }
+
+    // ── base58 (Bitcoin alphabet) ────────────────────────────────────────
+    if encoding.base58_encode("") != "" {
+        return 20
+    }
+    if encoding.base58_encode("Hello World") != "JxF12TrwUP45BMd" {
+        return 21
+    }
+    if option.option_unwrap_or(encoding.base58_decode(""), "x") != "" {
+        return 22
+    }
+    if option.option_unwrap_or(encoding.base58_decode("JxF12TrwUP45BMd"), "x") != "Hello World" {
+        return 23
+    }
+    if option.option_unwrap_or(encoding.base58_decode(encoding.base58_encode("café 😀")), "x") != "café 😀" {
+        return 24
+    }
+    // `0`, `O`, `I` and `l` are not part of the alphabet.
+    if option.is_some(encoding.base58_decode("0OIl")) {
+        return 25
+    }
+
+    // ── base85 (Ascii85) ─────────────────────────────────────────────────
+    if encoding.base85_encode("") != "" {
+        return 26
+    }
+    if encoding.base85_encode("Man ") != "9jqo^" {
+        return 27
+    }
+    if encoding.base85_encode("sure") != "F*2M7" {
+        return 28
+    }
+    if encoding.base85_encode("sure.") != "F*2M7/c" {
+        return 29
+    }
+    if option.option_unwrap_or(encoding.base85_decode(""), "x") != "" {
+        return 30
+    }
+    if option.option_unwrap_or(encoding.base85_decode("9jqo^"), "x") != "Man " {
+        return 31
+    }
+    if option.option_unwrap_or(encoding.base85_decode("F*2M7"), "x") != "sure" {
+        return 32
+    }
+    if option.option_unwrap_or(encoding.base85_decode("F*2M7/c"), "x") != "sure." {
+        return 33
+    }
+    if option.option_unwrap_or(encoding.base85_decode(encoding.base85_encode("café")), "x") != "café" {
+        return 34
+    }
+    // `v` is above the `!`..`u` range.
+    if option.is_some(encoding.base85_decode("v")) {
+        return 35
+    }
+
+    // ── base64 regression (bitwise refactor) ─────────────────────────────
+    if encoding.base64_encode("") != "" {
+        return 36
+    }
+    if encoding.base64_encode("Hi") != "SGk=" {
+        return 37
+    }
+    if encoding.base64_encode("abc") != "YWJj" {
+        return 38
+    }
+    if encoding.base64_encode("é") != "w6k=" {
+        return 39
+    }
+    if encoding.base64_encode("foobar") != "Zm9vYmFy" {
+        return 40
+    }
+    if option.option_unwrap_or(encoding.base64_decode("SGk="), "x") != "Hi" {
+        return 41
+    }
+    if option.option_unwrap_or(encoding.base64_decode("YWJj"), "x") != "abc" {
+        return 42
+    }
+    if option.option_unwrap_or(encoding.base64_decode("w6k="), "x") != "é" {
+        return 43
+    }
+    if option.option_unwrap_or(encoding.base64_decode("Zm9vYmFy"), "x") != "foobar" {
+        return 44
+    }
+    if option.is_some(encoding.base64_decode("SGk")) {
+        return 45
+    }
+    if option.is_some(encoding.base64_decode("////")) {
+        return 46
+    }
+    if option.option_unwrap_or(encoding.base64_decode(encoding.base64_encode("Olá, mundo!")), "x") != "Olá, mundo!" {
+        return 47
+    }
+
+    return 0
+}

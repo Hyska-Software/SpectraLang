@@ -106,6 +106,79 @@ public func parse_iso_date(text: string) returns Option<int> {
     return Option::Some(days_from_civil(year, month, day) * 86400)
 }
 
+// Parses an ISO-8601 UTC date-time into a Unix timestamp. Accepted shapes:
+// `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, plus optional `:SS`
+// and a trailing `Z` on the time forms. Wrong shape, bad digits, or
+// out-of-range fields return None.
+public func parse_iso_datetime(text: string) returns Option<int> {
+    let length = str.len(text)
+    if length < 10 {
+        return Option::None
+    }
+
+    let base = str.substring(text, 0, 10)
+    let date = parse_iso_date(base)
+    if not option.is_some(date) {
+        return Option::None
+    }
+
+    let midnight = option.option_unwrap_or(date, 0)
+    if length == 10 {
+        return Option::Some(midnight)
+    }
+
+    let separator = str.char_at(text, 10)
+    if separator != 84 and separator != 32 {
+        return Option::None
+    }
+
+    let clock = read_time_part(text, 11, length - 11)
+    if not option.is_some(clock) {
+        return Option::None
+    }
+
+    return Option::Some(midnight + option.option_unwrap_or(clock, 0))
+}
+
+// Shifts `unix_secs` by `months` calendar months, keeping the time of day.
+// None when the target month has no such day (e.g. Jan 31 + 1 month).
+public func add_months(unix_secs: int, months: int) returns Option<int> {
+    let days = floor_div(unix_secs, 86400)
+    let time_of_day = unix_secs - days * 86400
+    let stamp = time.unix_to_utc(unix_secs)
+    let total = time.utc_year(stamp) * 12 + (time.utc_month(stamp) - 1) + months
+    let target_year = floor_div(total, 12)
+    let target_month = total - target_year * 12 + 1
+    let day = time.utc_day(stamp)
+    let limit = option.option_unwrap_or(days_in_month(target_year, target_month), 0)
+    if day < 1 or day > limit {
+        return Option::None
+    }
+    return Option::Some(days_from_civil(target_year, target_month, day) * 86400 + time_of_day)
+}
+
+// Midnight UTC on the first day of the month containing `unix_secs`.
+public func start_of_month(unix_secs: int) returns int {
+    let stamp = time.unix_to_utc(unix_secs)
+    return days_from_civil(time.utc_year(stamp), time.utc_month(stamp), 1) * 86400
+}
+
+// Midnight UTC on the Monday of the ISO week containing `unix_secs`.
+public func start_of_week(unix_secs: int) returns int {
+    let days = floor_div(unix_secs, 86400)
+    let offset = (day_of_week(unix_secs) + 6) % 7
+    return (days - offset) * 86400
+}
+
+// Whole calendar days from `earlier` to `later` (later - earlier). None when
+// `later < earlier`.
+public func days_between(later: int, earlier: int) returns Option<int> {
+    if later < earlier {
+        return Option::None
+    }
+    return Option::Some(floor_div(later, 86400) - floor_div(earlier, 86400))
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 // Day count of the Thursday of the ISO week containing `unix_secs`.
@@ -173,4 +246,55 @@ func read_digits(text: string, offset: int, count: int) returns int {
         index = index + 1
     }
     return value
+}
+
+// Parses the time-of-day field at `offset` with `length` characters
+// (`HH:MM`, `HH:MMZ`, `HH:MM:SS`, or `HH:MM:SSZ`), returning seconds within
+// the day.
+func read_time_part(text: string, offset: int, length: int) returns Option<int> {
+    if length == 5 {
+        return read_clock(text, offset, false)
+    }
+    if length == 6 {
+        if str.char_at(text, offset + 5) != 90 {
+            return Option::None
+        }
+        return read_clock(text, offset, false)
+    }
+    if length == 8 {
+        return read_clock(text, offset, true)
+    }
+    if length == 9 {
+        if str.char_at(text, offset + 8) != 90 {
+            return Option::None
+        }
+        return read_clock(text, offset, true)
+    }
+    return Option::None
+}
+
+// Reads `HH:MM` (plus `:SS` when `with_seconds`) at `offset`. The caller
+// guarantees the surrounding length, so every index accessed is in range.
+func read_clock(text: string, offset: int, with_seconds: bool) returns Option<int> {
+    if str.char_at(text, offset + 2) != 58 {
+        return Option::None
+    }
+    let hour = read_digits(text, offset, 2)
+    let minute = read_digits(text, offset + 3, 2)
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59 {
+        return Option::None
+    }
+
+    let second = 0
+    if with_seconds {
+        if str.char_at(text, offset + 5) != 58 {
+            return Option::None
+        }
+        second = read_digits(text, offset + 6, 2)
+        if second < 0 or second > 59 {
+            return Option::None
+        }
+    }
+
+    return Option::Some(hour * 3600 + minute * 60 + second)
 }

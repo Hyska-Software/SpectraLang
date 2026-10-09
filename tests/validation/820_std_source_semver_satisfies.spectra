@@ -1,0 +1,216 @@
+// Consumer for `std.semver`: range satisfaction (`satisfies`).
+module std_source_semver_satisfies
+
+import std.option as option
+import std.semver as semver
+
+func is_true(value: Option<bool>) returns bool {
+    if let Option::Some(flag) = value {
+        return flag
+    }
+    return false
+}
+
+func is_false(value: Option<bool>) returns bool {
+    if let Option::Some(flag) = value {
+        return not flag
+    }
+    return false
+}
+
+func is_none(value: Option<bool>) returns bool {
+    return not option.is_some(value)
+}
+
+public func main() returns int {
+    // ── exact / caret / tilde ────────────────────────────────────────────
+    if not is_true(semver.satisfies("1.2.3", "1.2.3")) {
+        return 1
+    }
+    if not is_true(semver.satisfies("1.2.4", "^1.2.3")) {
+        return 2
+    }
+    if not is_false(semver.satisfies("2.0.0", "^1.2.3")) {
+        return 3
+    }
+    if not is_false(semver.satisfies("1.2.2", "^1.2.3")) {
+        return 4
+    }
+    // npm tilde excludes the next minor base.
+    if not is_false(semver.satisfies("1.3.0", "~1.2.3")) {
+        return 5
+    }
+    if not is_true(semver.satisfies("1.2.9", "~1.2.3")) {
+        return 6
+    }
+    if not is_false(semver.satisfies("1.4.0", "~1.2.3")) {
+        return 7
+    }
+
+    // ── comparator sets ──────────────────────────────────────────────────
+    if not is_true(semver.satisfies("1.5.0", ">=1.2.3 <2.0.0")) {
+        return 8
+    }
+    if not is_false(semver.satisfies("2.0.0", ">=1.2.3 <2.0.0")) {
+        return 9
+    }
+    if not is_true(semver.satisfies("1.2.3", "<=1.2.3")) {
+        return 10
+    }
+
+    // ── partial versions and wildcards ───────────────────────────────────
+    if not is_true(semver.satisfies("1.9.0", "1.x")) {
+        return 11
+    }
+    if not is_false(semver.satisfies("2.0.0", "1.x")) {
+        return 12
+    }
+    if not is_true(semver.satisfies("1.2.9", "1.2.x")) {
+        return 13
+    }
+    if not is_true(semver.satisfies("9.9.9", "*")) {
+        return 14
+    }
+
+    // ── hyphen ranges ────────────────────────────────────────────────────
+    if not is_true(semver.satisfies("1.5.0", "1.2.3 - 2.0.0")) {
+        return 15
+    }
+    if not is_false(semver.satisfies("2.0.1", "1.2.3 - 2.0.0")) {
+        return 16
+    }
+
+    // ── unions ───────────────────────────────────────────────────────────
+    if not is_true(semver.satisfies("1.2.3", "1.2.3 || 2.0.0")) {
+        return 17
+    }
+    if not is_true(semver.satisfies("2.0.0", "1.2.3 || 2.0.0")) {
+        return 18
+    }
+    if not is_false(semver.satisfies("3.0.0", "1.2.3 || 2.0.0")) {
+        return 19
+    }
+
+    // ── pre-release policy ───────────────────────────────────────────────
+    if not is_false(semver.satisfies("1.2.3-alpha", "1.2.3")) {
+        return 20
+    }
+    if not is_true(semver.satisfies("1.2.3-alpha", ">=1.2.3-alpha")) {
+        return 21
+    }
+    if not is_false(semver.satisfies("1.2.4-alpha", ">=1.2.3-alpha")) {
+        return 22
+    }
+
+    // ── invalid inputs ───────────────────────────────────────────────────
+    if not is_none(semver.satisfies("nope", "^1.0.0")) {
+        return 23
+    }
+    if not is_none(semver.satisfies("1.0.0", "nonsense>>")) {
+        return 24
+    }
+
+    // ── further documented edges ─────────────────────────────────────────
+    if not is_true(semver.satisfies("1.2.3", "^1.2.3")) {
+        return 25
+    }
+    if not is_false(semver.satisfies("1.2.3", ">1.2.3")) {
+        return 26
+    }
+    if not is_true(semver.satisfies("1.2.4", ">1.2.3")) {
+        return 27
+    }
+    if not is_true(semver.satisfies("1.2.3", "<1.2.4")) {
+        return 28
+    }
+    if not is_true(semver.satisfies("1.2.3", "=1.2.3")) {
+        return 29
+    }
+    // A partial without an operator is a prefix match.
+    if not is_true(semver.satisfies("1.2.5", "1.2")) {
+        return 30
+    }
+    if not is_false(semver.satisfies("1.3.0", "1.2")) {
+        return 31
+    }
+    if not is_true(semver.satisfies("1.2.0", "1")) {
+        return 32
+    }
+    if not is_false(semver.satisfies("2.0.0", "1")) {
+        return 33
+    }
+    // The hyphen upper bound is inclusive.
+    if not is_true(semver.satisfies("2.0.0", "1.2.3 - 2.0.0")) {
+        return 34
+    }
+    // `x` alone is the any-version wildcard.
+    if not is_true(semver.satisfies("1.2.3", "x")) {
+        return 35
+    }
+    // A matching pre-release comparator opens the set for that core version.
+    if not is_true(semver.satisfies("1.2.3-alpha.1", "^1.2.3-alpha")) {
+        return 36
+    }
+    if not is_false(semver.satisfies("1.2.3-alpha.1", "^1.2.3")) {
+        return 37
+    }
+    // Any set may satisfy.
+    if not is_true(semver.satisfies("1.5.0", ">=1.2.3 || 2.0.0")) {
+        return 38
+    }
+    if not is_true(semver.satisfies("2.0.0", "~1.2.3 || 2.0.0")) {
+        return 39
+    }
+    // Caret stays inside the next major.
+    if not is_true(semver.satisfies("0.3.0", "^0.2.3")) {
+        return 40
+    }
+    // A partial hyphen upper bound is bumped to its successor.
+    if not is_true(semver.satisfies("2.0.5", "1.2.3 - 2.0")) {
+        return 41
+    }
+    // Union sets are trimmed and empty tokens ignored.
+    if not is_true(semver.satisfies("2.0.0", " 1.2.3  ||  2.0.0 ")) {
+        return 42
+    }
+    // `*` carries no pre-release, so a pre-release version cannot satisfy it.
+    if not is_false(semver.satisfies("1.2.3-alpha", "*")) {
+        return 43
+    }
+    if not is_true(semver.satisfies("1.5.0", "1.X")) {
+        return 44
+    }
+    if not is_true(semver.satisfies("1.0.0", ">=1.0.0 <2.0.0")) {
+        return 45
+    }
+
+    // ── malformed ranges ─────────────────────────────────────────────────
+    if not is_none(semver.satisfies("1.2.3", "1.2.3 -")) {
+        return 46
+    }
+    if not is_none(semver.satisfies("1.0.0", "1.0.0 - 2.0.0 - 3.0.0")) {
+        return 47
+    }
+    if not is_none(semver.satisfies("1.0.0", ">>1.0.0")) {
+        return 48
+    }
+
+    // ── every union branch is validated, and build metadata must be valid ─
+    if not is_none(semver.satisfies("1.2.3", "1.2.3 || nope")) {
+        return 49
+    }
+    if not is_none(semver.satisfies("1.2.3", "nope || 1.2.3")) {
+        return 50
+    }
+    if not is_none(semver.satisfies("1.2.3", "1.2.3+")) {
+        return 51
+    }
+    if not is_none(semver.satisfies("1.2.3", "1.2.3+bad!")) {
+        return 52
+    }
+    if not is_true(semver.satisfies("1.2.3", "1.2.3+build.1")) {
+        return 53
+    }
+
+    return 0
+}

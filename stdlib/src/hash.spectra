@@ -1,0 +1,75 @@
+module std.hash
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// Non-cryptographic string hashes computed over the UTF-8 bytes of the text.
+// These are stable checksums for hash tables, fingerprints and cache keys; they
+// are **not** collision-resistant and must never back a security decision.
+//
+// The 64-bit results are returned as the signed `int` carrying the same bit
+// pattern, so a result with the top bit set compares against a negative
+// constant. `crc32` always returns a value in `0..=0xFFFFFFFF`.
+
+// 64-bit FNV-1a offset basis (`0xcbf29ce484222325`) as a signed `int`.
+const FNV_OFFSET_BASIS: int = -3750763034362895579
+// 64-bit FNV prime (`0x100000001b3`).
+const FNV_PRIME: int = 1099511628211
+// Reflected CRC-32 polynomial (`0xEDB88320`).
+const CRC32_POLYNOMIAL: int = 0xEDB88320
+
+// FNV-1a, 64-bit, over the UTF-8 bytes of `text`, wrapping modulo 2^64. The
+// empty string returns the offset basis.
+public func fnv1a64_str(text: string) returns int {
+    let state = FNV_OFFSET_BASIS
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        state = state ^ str.char_at(text, index)
+        state = state * FNV_PRIME
+        index = index + 1
+    }
+
+    return state
+}
+
+// DJB2 (`hash * 33 + byte`, starting at 5381) over the UTF-8 bytes of `text`,
+// wrapping modulo 2^64.
+public func djb2_str(text: string) returns int {
+    let state = 5381
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        state = state * 33 + str.char_at(text, index)
+        index = index + 1
+    }
+
+    return state
+}
+
+// CRC-32 (reflected polynomial `0xEDB88320`, init `0xFFFFFFFF`, final XOR) over
+// the UTF-8 bytes of `text`. The result is always in `0..=0xFFFFFFFF`.
+public func crc32(text: string) returns int {
+    let crc = 4294967295
+    let length = str.len(text)
+    let index = 0
+
+    while index < length {
+        crc = crc ^ str.char_at(text, index)
+        let bit = 0
+        while bit < 8 {
+            if (crc & 1) == 1 {
+                crc = (crc >> 1) ^ CRC32_POLYNOMIAL
+            } else {
+                crc = crc >> 1
+            }
+            bit = bit + 1
+        }
+        index = index + 1
+    }
+
+    return crc ^ 4294967295
+}

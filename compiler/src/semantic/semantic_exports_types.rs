@@ -45,10 +45,13 @@ impl SemanticAnalyzer {
                     // Exporting `Unknown` makes importers declare an external
                     // with an unresolved IR type (midend verification error).
                     // Trait methods already normalize this way below.
+                    // Any function without a `returns` annotation exports
+                    // `unit`: the analyzer keeps `Unknown` in that slot, and
+                    // exporting it makes importers declare an external with an
+                    // unresolved IR type (midend verification error). The body
+                    // being empty is not what makes a function void.
                     let return_type = match analyzed_signature {
-                        Some(_)
-                            if func.return_type.is_none() && func.body.statements.is_empty() =>
-                        {
+                        Some(_) if func.return_type.is_none() => {
                             Self::async_task_type(func.is_async, Type::Unit)
                         }
                         Some(signature) => signature.return_type.clone(),

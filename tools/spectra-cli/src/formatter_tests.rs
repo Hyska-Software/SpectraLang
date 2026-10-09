@@ -315,23 +315,38 @@ mod tests {
             .collect();
         files.sort();
 
-        let mut checked = 0usize;
-        let mut failures = Vec::new();
-        for path in &files {
-            let Ok(original) = std::fs::read_to_string(path) else {
-                continue;
-            };
-            let once = format_source(&original, &FormatterConfig::default()).expect("valid source formats");
-            let twice = format_source(&once, &FormatterConfig::default()).expect("valid source formats");
-            checked += 1;
-            if once != twice {
-                failures.push(
-                    path.file_name()
-                        .map(|name| name.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.display().to_string()),
-                );
-            }
-        }
+        // The corpus contains stack-probing fixtures (for example
+        // `810_core_deep_nesting_parse.spectra`), and the formatter runs the
+        // frontend nesting guard, which is relative to the thread's real stack.
+        // Format on a thread with room so this test measures idempotency rather
+        // than the harness thread's default stack size.
+        let (checked, failures) = std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || {
+                let mut checked = 0usize;
+                let mut failures = Vec::new();
+                for path in &files {
+                    let Ok(original) = std::fs::read_to_string(path) else {
+                        continue;
+                    };
+                    let once = format_source(&original, &FormatterConfig::default())
+                        .expect("valid source formats");
+                    let twice = format_source(&once, &FormatterConfig::default())
+                        .expect("valid source formats");
+                    checked += 1;
+                    if once != twice {
+                        failures.push(
+                            path.file_name()
+                                .map(|name| name.to_string_lossy().to_string())
+                                .unwrap_or_else(|| path.display().to_string()),
+                        );
+                    }
+                }
+                (checked, failures)
+            })
+            .expect("spawn formatter corpus thread")
+            .join()
+            .expect("formatter corpus thread must not panic");
 
         eprintln!("idempotency validated over {checked} validation files");
         assert!(!failures.is_empty() || checked > 0);

@@ -114,6 +114,7 @@ The following codes cover module resolution, duplicate declarations,
 | `E045` | semantic | field visibility violation: `private` field read outside its declaring module, or `internal` field read outside its package | access the field from its declaring scope, or change its visibility to `public` |
 | `E046` | semantic | trait impl method declares a different `self` receiver than the trait | match the trait's receiver (`&self`, `&mut self`, or `self`) exactly |
 | `E047` | semantic | trait impl method declares a different `async` marker than the trait | mirror the trait's `async` marker on the implementation |
+| `E049` | semantic | operand of a bitwise operation (`&`, `|`, `^`, `<<`, `>>`) is not an integer | use `int` or an exact-width integer type; cast floats/bools explicitly |
 | `E048` | semantic | integer literal is out of range for `int` (i64) | use a value within `i64` range, or write a float literal (fraction/exponent) |
 
 ## Resource Lifecycle Diagnostics (E034)

@@ -24,14 +24,71 @@ use std::fmt;
 /// walks, so every frontend phase fails identically on pathological input.
 pub(crate) const MAX_PARSE_DEPTH: usize = 1000;
 
-/// Approximate stack bytes the parser may consume before bailing out with
-/// `P013`. Depth counting alone cannot know the thread's real stack size, so
-/// this byte budget (measured from a probe captured in [`Parser::new`])
-/// guarantees the guard fires on small-stack threads (test harness, spawned
-/// tasks) as well as on the main thread. Debug-build recursion frames are fat
-/// enough that ~512 KiB corresponds to several hundred nesting levels — far
-/// above any legitimate program.
-pub(crate) const MAX_STACK_USE_BYTES: usize = 512 * 1024;
+/// Conservative stack budget used when the platform cannot report the
+/// thread's real stack limits. Depth counting alone cannot know the thread's
+/// stack size, so the guard also measures bytes consumed since the probe
+/// captured in [`Parser::new`]; this fallback keeps the old guarantee on
+/// exotic targets.
+pub(crate) const FALLBACK_STACK_USE_BYTES: usize = 512 * 1024;
+
+/// Fraction of the thread's stack the frontend may consume before bailing out
+/// with `P013`; the remainder is left for diagnostics, dropping deep values and
+/// thread teardown.
+const STACK_BUDGET_PERCENT: usize = 60;
+
+/// Byte budget for frontend recursion on the current thread.
+///
+/// Debug-build recursion frames are fat (≈17 KiB per descent level), so a fixed
+/// 512 KiB budget used to trip `P013` on legitimate modules nested ~30 levels
+/// deep when the parse ran on a test thread (F-09). The budget is derived from
+/// the thread's own stack limits when the platform exposes them (Windows
+/// `GetCurrentThreadStackLimits`); otherwise the fixed fallback applies. The
+/// value is cached per thread because a thread's stack limits never change.
+pub(crate) fn stack_budget_bytes() -> usize {
+    thread_local! {
+        static BUDGET: std::cell::OnceCell<usize> = const { std::cell::OnceCell::new() };
+    }
+
+    BUDGET.with(|cell| *cell.get_or_init(compute_stack_budget))
+}
+
+fn compute_stack_budget() -> usize {
+    match thread_stack_bytes() {
+        Some(total) => {
+            // A floor keeps absurdly small budgets from rejecting ordinary
+            // modules before the depth cap is reached.
+            (total / 100 * STACK_BUDGET_PERCENT).max(128 * 1024)
+        }
+        None => FALLBACK_STACK_USE_BYTES,
+    }
+}
+
+/// Total stack size of the calling thread, when the platform can report it.
+#[cfg(windows)]
+fn thread_stack_bytes() -> Option<usize> {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentThreadStackLimits(low_limit: *mut usize, high_limit: *mut usize);
+    }
+
+    let mut low = 0usize;
+    let mut high = 0usize;
+    // SAFETY: both pointers are valid for writes for the duration of the call,
+    // and the API only fills them with the current thread's stack bounds.
+    unsafe { GetCurrentThreadStackLimits(&mut low, &mut high) };
+    if high > low {
+        Some(high - low)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(windows))]
+fn thread_stack_bytes() -> Option<usize> {
+    // Unix stack limits need `pthread_getattr_np`; the compiler crate keeps a
+    // dependency-free contract, so non-Windows targets use the fallback.
+    None
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -196,6 +253,28 @@ impl Parser {
 
     fn check_symbol(&self, symbol: char) -> bool {
         matches!(&self.current().kind, TokenKind::Symbol(s) if *s == symbol)
+    }
+
+    /// True when the current and next tokens are the same symbol.
+    ///
+    /// The two-character shift operators (`<<`, `>>`) stay split in the token
+    /// stream on purpose: the lexer is context-free, and merging `>>` would
+    /// break nested generic closings such as `List<List<int>>`, which the type
+    /// parser resolves one `>` at a time.
+    fn check_double_symbol(&self, symbol: char) -> bool {
+        if !self.check_symbol(symbol) {
+            return false;
+        }
+        matches!(
+            self.tokens.get(self.position + 1).map(|token| &token.kind),
+            Some(TokenKind::Symbol(next)) if *next == symbol
+        )
+    }
+
+    /// Consumes the two symbols matched by [`Self::check_double_symbol`].
+    fn consume_double_symbol(&mut self) {
+        self.advance();
+        self.advance();
     }
 
     fn check_identifier(&self) -> bool {
@@ -705,12 +784,12 @@ impl Parser {
     /// Enters one level of parser recursion. Returns `Err(())` — after
     /// emitting a single `P013` diagnostic at the crossing point — when the
     /// nesting exceeds [`MAX_PARSE_DEPTH`] or the parser has consumed more
-    /// than [`MAX_STACK_USE_BYTES`] of stack, so deeply nested but otherwise
+    /// than [`stack_budget_bytes`] of stack, so deeply nested but otherwise
     /// well-formed input fails cleanly instead of exhausting the stack.
     pub(super) fn enter_parse_depth(&mut self) -> Result<(), ()> {
         self.depth += 1;
         let over_depth = self.depth > MAX_PARSE_DEPTH;
-        let over_stack = Self::stack_used_bytes(self.stack_probe) > MAX_STACK_USE_BYTES;
+        let over_stack = Self::stack_used_bytes(self.stack_probe) > stack_budget_bytes();
         if over_depth || over_stack {
             if !self.depth_limit_reported {
                 self.depth_limit_reported = true;
@@ -761,6 +840,58 @@ mod tests {
             .tokenize()
             .expect("lexer should not fail in parser tests");
         Parser::new(tokens).parse()
+    }
+
+    /// Builds `if` blocks nested `depth` levels deep inside `main`.
+    fn nested_conditionals(depth: usize) -> String {
+        let mut source = String::from("module deep_nesting\npublic func main() returns int {\n");
+        for level in 0..depth {
+            source.push_str(&"    ".repeat(level + 1));
+            source.push_str(&format!("if {level} >= 0 {{\n"));
+        }
+        source.push_str(&"    ".repeat(depth + 1));
+        source.push_str("return 0\n");
+        for level in (0..depth).rev() {
+            source.push_str(&"    ".repeat(level + 1));
+            source.push_str("}\n");
+        }
+        source.push_str("}\n");
+        source
+    }
+
+    /// F-09 regression: a legitimate module nested ~130 parser levels deep must
+    /// parse when the thread has room for it. Each nested `if` costs ~13 depth
+    /// levels, so ten of them need ~2.3 MiB of debug-build frames — far beyond
+    /// the former fixed 512 KiB budget, which aborted with `P013` here. The
+    /// per-thread budget (`stack_budget_bytes`) keeps the guard relative to the
+    /// thread's real stack; the semantic and lint guards share the same helper.
+    #[test]
+    fn deeply_nested_module_parses_on_a_thread_with_room() {
+        let source = nested_conditionals(10);
+        let result = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || parse_source(&source).map(|_| ()))
+            .expect("spawn parser thread")
+            .join()
+            .expect("parser thread must not panic");
+        assert!(
+            result.is_ok(),
+            "deeply nested module must parse when the thread has stack: {:?}",
+            result.err()
+        );
+    }
+
+    /// The depth guard still fires on pathological input.
+    #[test]
+    fn pathological_nesting_still_reports_p013() {
+        let source = nested_conditionals(MAX_PARSE_DEPTH + 20);
+        let result = parse_source(&source);
+        if let Err(errors) = result {
+            assert!(
+                errors.iter().any(|error| error.code.as_deref() == Some("P013")),
+                "expected a P013 nesting diagnostic, got {errors:?}"
+            );
+        }
     }
 
     #[test]

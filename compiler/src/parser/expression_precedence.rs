@@ -3,8 +3,9 @@ use super::*;
 // Newline rule for expressions (single deterministic rule):
 //
 // A source line break ends the current expression. An infix binary operator
-// (`+ - * / % < > <= >= == != && || and or .. ..=`) whose token starts on a
-// new line therefore never joins the expression. The only exception is an
+// (`+ - * / % < > <= >= == != && || and or .. ..=`, plus the bitwise set
+// `& | ^ << >>`) whose token starts on a new line therefore never joins the
+// expression. The only exception is an
 // EXPLICIT continuation: the previous token must be another operator, an
 // assignment `=`, a comma, or an open delimiter `(` / `[`. In other words,
 // continuation operators go at the END of the line they continue
@@ -103,13 +104,42 @@ impl Parser {
             ) {
                 self.reject_line_broken_infix()?;
                 self.advance();
-                let right = self.parse_equality()?;
+                let right = self.parse_bit_or()?;
                 let span = crate::span::span_union(left.span, right.span);
                 left = Expression {
                     span,
                     kind: ExpressionKind::Binary {
                         left: Box::new(left),
                         operator: BinaryOperator::And,
+                        right: Box::new(right),
+                    },
+                };
+                continue;
+            }
+
+            // Bitwise level (`& ^ |`) mirrors the main ladder: the right
+            // operand is parsed one rung tighter so `a | b ^ c` and
+            // `a ^ b & c` keep their precedence.
+            let bitwise_operator = match &self.current().kind {
+                TokenKind::Symbol('|') => Some(BinaryOperator::BitOr),
+                TokenKind::Symbol('^') => Some(BinaryOperator::BitXor),
+                TokenKind::Symbol('&') => Some(BinaryOperator::BitAnd),
+                _ => None,
+            };
+            if let Some(operator) = bitwise_operator {
+                self.reject_line_broken_infix()?;
+                self.advance();
+                let right = match operator {
+                    BinaryOperator::BitOr => self.parse_bit_xor()?,
+                    BinaryOperator::BitXor => self.parse_bit_and()?,
+                    _ => self.parse_equality()?,
+                };
+                let span = crate::span::span_union(left.span, right.span);
+                left = Expression {
+                    span,
+                    kind: ExpressionKind::Binary {
+                        left: Box::new(left),
+                        operator,
                         right: Box::new(right),
                     },
                 };
@@ -149,7 +179,7 @@ impl Parser {
                 self.reject_line_broken_infix()?;
                 previous_relational = is_relational;
                 self.advance();
-                let right = self.parse_addition()?;
+                let right = self.parse_shift()?;
                 let span = crate::span::span_union(left.span, right.span);
                 left = Expression {
                     span,
@@ -246,8 +276,105 @@ impl Parser {
                 },
             })
         } else {
-            self.parse_equality()
+            self.parse_bit_or()
         }
+    }
+
+    // Bitwise OR (binds tighter than `&&`, looser than `^`)
+    fn parse_bit_or(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_bit_xor()?;
+
+        while self.check_symbol('|') {
+            self.reject_line_broken_infix()?;
+            self.advance();
+            let right = self.parse_bit_xor()?;
+            let span = crate::span::span_union(left.span, right.span);
+            left = Expression {
+                span,
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator: BinaryOperator::BitOr,
+                    right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(left)
+    }
+
+    // Bitwise XOR
+    fn parse_bit_xor(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_bit_and()?;
+
+        while self.check_symbol('^') {
+            self.reject_line_broken_infix()?;
+            self.advance();
+            let right = self.parse_bit_and()?;
+            let span = crate::span::span_union(left.span, right.span);
+            left = Expression {
+                span,
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator: BinaryOperator::BitXor,
+                    right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(left)
+    }
+
+    // Bitwise AND
+    fn parse_bit_and(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_equality()?;
+
+        while self.check_symbol('&') {
+            self.reject_line_broken_infix()?;
+            self.advance();
+            let right = self.parse_equality()?;
+            let span = crate::span::span_union(left.span, right.span);
+            left = Expression {
+                span,
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator: BinaryOperator::BitAnd,
+                    right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(left)
+    }
+
+    // Shifts (`<<`, `>>`): bind tighter than comparison and looser than
+    // addition.
+    fn parse_shift(&mut self) -> Result<Expression, ()> {
+        let mut left = self.parse_addition()?;
+
+        loop {
+            let operator = if self.check_double_symbol('<') {
+                BinaryOperator::Shl
+            } else if self.check_double_symbol('>') {
+                BinaryOperator::Shr
+            } else {
+                break;
+            };
+
+            self.reject_line_broken_infix()?;
+            self.consume_double_symbol();
+            let right = self.parse_addition()?;
+            let span = crate::span::span_union(left.span, right.span);
+            left = Expression {
+                span,
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                },
+            };
+        }
+
+        Ok(left)
     }
 
     // Equality (==, !=)
@@ -280,7 +407,7 @@ impl Parser {
 
     // Comparison (<, >, <=, >=)
     fn parse_comparison(&mut self) -> Result<Expression, ()> {
-        let mut left = self.parse_addition()?;
+        let mut left = self.parse_shift()?;
 
         // A single unparenthesized comparison chain may contain at most one
         // relational operator: `a < b < c` would otherwise silently evaluate
@@ -317,7 +444,7 @@ impl Parser {
             self.reject_line_broken_infix()?;
             chain_active = true;
             self.advance();
-            let right = self.parse_addition()?;
+            let right = self.parse_shift()?;
             let span = crate::span::span_union(left.span, right.span);
             left = Expression {
                 span,
@@ -428,6 +555,7 @@ impl Parser {
         let operator = match &self.current().kind {
             TokenKind::Symbol('-') => Some(UnaryOperator::Negate),
             TokenKind::Symbol('!') => Some(UnaryOperator::Not),
+            TokenKind::Symbol('~') => Some(UnaryOperator::BitNot),
             _ => None,
         };
 

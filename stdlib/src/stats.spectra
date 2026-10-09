@@ -183,3 +183,218 @@ func sorted_copy(values: List<float>) returns List<float> {
     collections.list_sort(copy)
     return copy
 }
+
+// Smallest value in a non-empty list.
+func min_value(values: List<float>) returns float {
+    let best = option.option_unwrap_or(collections.list_get(values, 0), 0.0)
+    let count = collections.list_len(values)
+    let index = 1
+    while index < count {
+        let current = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        if current < best {
+            best = current
+        }
+        index = index + 1
+    }
+    return best
+}
+
+// Largest value in a non-empty list.
+func max_value(values: List<float>) returns float {
+    let best = option.option_unwrap_or(collections.list_get(values, 0), 0.0)
+    let count = collections.list_len(values)
+    let index = 1
+    while index < count {
+        let current = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        if current > best {
+            best = current
+        }
+        index = index + 1
+    }
+    return best
+}
+
+// ── Extended aggregates ──────────────────────────────────────────────────
+
+// Most frequent value; ties resolve to the smallest value. None when empty.
+public func mode_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return Option::None
+    }
+
+    let sorted = sorted_copy(values)
+    let best_value = option.option_unwrap_or(collections.list_get(sorted, 0), 0.0)
+    let best_count = 0
+    let index = 0
+    while index < count {
+        let current = option.option_unwrap_or(collections.list_get(sorted, index), 0.0)
+        let run = 0
+        while (index < count) and (option.option_unwrap_or(collections.list_get(sorted, index), 0.0) == current) {
+            run = run + 1
+            index = index + 1
+        }
+        if (run > best_count) or ((run == best_count) and (current < best_value)) {
+            best_count = run
+            best_value = current
+        }
+    }
+
+    return Option::Some(best_value)
+}
+
+// Standard score of `value` against the population of `values`: (value - mean)
+// / population stddev. None for an empty input or a constant series.
+public func zscore_f(values: List<float>, value: float) returns Option<float> {
+    let deviation = stddev_f(values)
+    if not option.is_some(deviation) {
+        return Option::None
+    }
+
+    let spread = option.option_unwrap_or(deviation, 0.0)
+    if spread == 0.0 {
+        return Option::None
+    }
+
+    let center = option.option_unwrap_or(mean_f(values), 0.0)
+    return Option::Some((value - center) / spread)
+}
+
+// Counts values into `bins` equal-width buckets over [min, max]. The maximum
+// lands in the last bin; a zero-width range puts every value in bin 0.
+public func histogram_f(values: List<float>, bins: int) returns Option<List<int>> {
+    let count = collections.list_len(values)
+    if count == 0 or bins < 1 {
+        return Option::None
+    }
+
+    let counts: List<int> = collections.list_new()
+    let prepare = 0
+    while prepare < bins {
+        collections.list_push(counts, 0)
+        prepare = prepare + 1
+    }
+
+    let minimum = min_value(values)
+    let maximum = max_value(values)
+    let range = maximum - minimum
+    if range == 0.0 {
+        collections.list_set(counts, 0, count)
+        return Option::Some(counts)
+    }
+
+    let width = range / (bins as float)
+    let index = 0
+    while index < count {
+        let value = option.option_unwrap_or(collections.list_get(values, index), 0.0)
+        let slot = ((value - minimum) / width) as int
+        let clamped = slot
+        if clamped < 0 {
+            clamped = 0
+        }
+        if clamped >= bins {
+            clamped = bins - 1
+        }
+        collections.list_set(counts, clamped, option.option_unwrap_or(collections.list_get(counts, clamped), 0) + 1)
+        index = index + 1
+    }
+
+    return Option::Some(counts)
+}
+
+// Averages every complete window of `window` values. None when window < 1; an
+// empty list of averages when the window exceeds the input.
+public func moving_average_f(values: List<float>, window: int) returns Option<List<float>> {
+    if window < 1 {
+        return Option::None
+    }
+
+    let result: List<float> = collections.list_new()
+    let count = collections.list_len(values)
+    if window > count {
+        return Option::Some(result)
+    }
+
+    let start = 0
+    while start + window <= count {
+        let total = 0.0
+        let offset = 0
+        while offset < window {
+            total = total + option.option_unwrap_or(collections.list_get(values, start + offset), 0.0)
+            offset = offset + 1
+        }
+        collections.list_push(result, total / (window as float))
+        start = start + 1
+    }
+
+    return Option::Some(result)
+}
+
+// Least-squares (slope, intercept) fitting ys against xs. None for fewer than
+// two points, mismatched lengths, or a constant xs (zero variance).
+public func linear_regression_f(xs: List<float>, ys: List<float>) returns Option<(float, float)> {
+    let count = collections.list_len(xs)
+    if count < 2 or count != collections.list_len(ys) {
+        return Option::None
+    }
+
+    let xs_mean = option.option_unwrap_or(mean_f(xs), 0.0)
+    let ys_mean = option.option_unwrap_or(mean_f(ys), 0.0)
+    let numerator = 0.0
+    let denominator = 0.0
+    let index = 0
+    while index < count {
+        let x_delta = option.option_unwrap_or(collections.list_get(xs, index), 0.0) - xs_mean
+        let y_delta = option.option_unwrap_or(collections.list_get(ys, index), 0.0) - ys_mean
+        numerator = numerator + x_delta * y_delta
+        denominator = denominator + x_delta * x_delta
+        index = index + 1
+    }
+
+    if denominator == 0.0 {
+        return Option::None
+    }
+
+    let slope = numerator / denominator
+    let intercept = ys_mean - slope * xs_mean
+    return Option::Some((slope, intercept))
+}
+
+// Shannon entropy in bits over the distinct-value distribution of the sample.
+// None for an empty list, a negative value, or a zero total.
+public func entropy_f(values: List<float>) returns Option<float> {
+    let count = collections.list_len(values)
+    if count == 0 {
+        return Option::None
+    }
+
+    let total = 0.0
+    let scan = 0
+    while scan < count {
+        let candidate = option.option_unwrap_or(collections.list_get(values, scan), 0.0)
+        if candidate < 0.0 {
+            return Option::None
+        }
+        total = total + candidate
+        scan = scan + 1
+    }
+    if total == 0.0 {
+        return Option::None
+    }
+
+    let sorted = sorted_copy(values)
+    let entropy = 0.0
+    let index = 0
+    while index < count {
+        let current = option.option_unwrap_or(collections.list_get(sorted, index), 0.0)
+        let run = 0
+        while (index < count) and (option.option_unwrap_or(collections.list_get(sorted, index), 0.0) == current) {
+            run = run + 1
+            index = index + 1
+        }
+        let probability = (run as float) / (count as float)
+        entropy = entropy - probability * math.log2_f(probability)
+    }
+
+    return Option::Some(entropy)
+}

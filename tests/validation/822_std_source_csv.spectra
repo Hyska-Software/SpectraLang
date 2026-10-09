@@ -1,0 +1,266 @@
+// Consumer for `std.csv`: RFC 4180 parsing, single-record parsing, canonical
+// writing and round trips.
+module std_source_csv
+
+import std.collections as collections
+import std.csv as csv
+import std.option as option
+
+func fields(values: [string], count: int) returns List<string> {
+    let list: List<string> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func table(first: List<string>, second: List<string>) returns List<List<string>> {
+    let rows: List<List<string>> = collections.list_new()
+    collections.list_push(rows, first)
+    collections.list_push(rows, second)
+    return rows
+}
+
+func table3(first: List<string>, second: List<string>, third: List<string>) returns List<List<string>> {
+    let rows: List<List<string>> = collections.list_new()
+    collections.list_push(rows, first)
+    collections.list_push(rows, second)
+    collections.list_push(rows, third)
+    return rows
+}
+
+func one(first: List<string>) returns List<List<string>> {
+    let rows: List<List<string>> = collections.list_new()
+    collections.list_push(rows, first)
+    return rows
+}
+
+func empty_table() returns List<List<string>> {
+    return collections.list_new()
+}
+
+func cell(row: List<string>, index: int) returns string {
+    return option.option_unwrap_or(collections.list_get(row, index), "missing")
+}
+
+func record_at(rows: List<List<string>>, index: int) returns List<string> {
+    let missing: List<string> = collections.list_new()
+    return option.option_unwrap_or(collections.list_get(rows, index), missing)
+}
+
+func fields_equal(left: List<string>, right: List<string>) returns bool {
+    if collections.list_len(left) != collections.list_len(right) {
+        return false
+    }
+
+    let index = 0
+    while index < collections.list_len(left) {
+        if cell(left, index) != cell(right, index) {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func rows_equal(left: List<List<string>>, right: List<List<string>>) returns bool {
+    if collections.list_len(left) != collections.list_len(right) {
+        return false
+    }
+
+    let index = 0
+    while index < collections.list_len(left) {
+        if not fields_equal(record_at(left, index), record_at(right, index)) {
+            return false
+        }
+        index = index + 1
+    }
+    return true
+}
+
+func parsed(text: string) returns List<List<string>> {
+    let empty: List<List<string>> = collections.list_new()
+    return option.option_unwrap_or(csv.parse(text), empty)
+}
+
+func parsed_row(text: string) returns List<string> {
+    let empty: List<string> = collections.list_new()
+    return option.option_unwrap_or(csv.parse_row(text), empty)
+}
+
+public func main() returns int {
+    // ── separators and the final record ─────────────────────────────────
+    let basic = parsed("a,b\nc\n")
+    if collections.list_len(basic) != 2 {
+        return 1
+    }
+    if not fields_equal(record_at(basic, 0), fields(["a", "b"], 2)) {
+        return 2
+    }
+    if not fields_equal(record_at(basic, 1), fields(["c"], 1)) {
+        return 3
+    }
+    // The last record may omit its separator.
+    if not rows_equal(parsed("a,b"), one(fields(["a", "b"], 2))) {
+        return 4
+    }
+    if not rows_equal(parsed(""), empty_table()) {
+        return 5
+    }
+    // A separator with nothing before it yields an empty record.
+    if not rows_equal(parsed("\n"), one(fields([""], 1))) {
+        return 6
+    }
+    if not rows_equal(parsed("a\n\n"), table(fields(["a"], 1), fields([""], 1))) {
+        return 7
+    }
+    // A trailing field separator yields a final empty field.
+    if not rows_equal(parsed("a,"), one(fields(["a", ""], 2))) {
+        return 8
+    }
+    if not rows_equal(parsed(","), one(fields(["", ""], 2))) {
+        return 9
+    }
+    // CRLF, lone CR and mixed separators.
+    if not rows_equal(parsed("a\r\nb"), table(fields(["a"], 1), fields(["b"], 1))) {
+        return 10
+    }
+    if not rows_equal(parsed("a\rb"), table(fields(["a"], 1), fields(["b"], 1))) {
+        return 11
+    }
+    if not rows_equal(parsed("a\r\n\rb"), table3(fields(["a"], 1), fields([""], 1), fields(["b"], 1))) {
+        return 12
+    }
+    if not rows_equal(parsed("a,b\r\nc,d\r\n"), table(fields(["a", "b"], 2), fields(["c", "d"], 2))) {
+        return 13
+    }
+
+    // ── quoting ─────────────────────────────────────────────────────────
+    if not rows_equal(parsed("\"a,b\",c"), one(fields(["a,b", "c"], 2))) {
+        return 14
+    }
+    if not rows_equal(parsed("\"a\"\"b\""), one(fields(["a\"b"], 1))) {
+        return 15
+    }
+    if not rows_equal(parsed("\"\""), one(fields([""], 1))) {
+        return 16
+    }
+    if not rows_equal(parsed("\"\"\"\""), one(fields(["\""], 1))) {
+        return 17
+    }
+    // CR and LF inside quotes are field content.
+    if not rows_equal(parsed("\"a\nb\",c"), one(fields(["a\nb", "c"], 2))) {
+        return 18
+    }
+    if not rows_equal(parsed("\"a\r\nb\"\r\nc"), table(fields(["a\r\nb"], 1), fields(["c"], 1))) {
+        return 19
+    }
+    if not rows_equal(parsed("x,\"y\"\n"), one(fields(["x", "y"], 2))) {
+        return 20
+    }
+    // An unterminated quote fails the whole call.
+    if option.is_some(csv.parse("\"unterminated")) {
+        return 21
+    }
+    if option.is_some(csv.parse("a,\"b")) {
+        return 22
+    }
+    if option.is_some(csv.parse("\"a\"\"b")) {
+        return 23
+    }
+    if option.is_some(csv.parse("a\n\"b")) {
+        return 24
+    }
+    // Non-ASCII fields survive byte-wise scanning.
+    if not rows_equal(parsed("café,日本"), one(fields(["café", "日本"], 2))) {
+        return 25
+    }
+    if not rows_equal(parsed("\"café\n日本\",x"), one(fields(["café\n日本", "x"], 2))) {
+        return 26
+    }
+
+    // ── parse_row ───────────────────────────────────────────────────────
+    if not fields_equal(parsed_row("a,b\nc,d"), fields(["a", "b"], 2)) {
+        return 27
+    }
+    if not fields_equal(parsed_row("a,b"), fields(["a", "b"], 2)) {
+        return 28
+    }
+    if not fields_equal(parsed_row(""), fields([""], 1)) {
+        return 29
+    }
+    if not fields_equal(parsed_row("\"a\nb\""), fields(["a\nb"], 1)) {
+        return 30
+    }
+    if not fields_equal(parsed_row("a\r\nb"), fields(["a"], 1)) {
+        return 31
+    }
+    if not fields_equal(parsed_row("\"a,b\""), fields(["a,b"], 1)) {
+        return 32
+    }
+    if option.is_some(csv.parse_row("\"open")) {
+        return 33
+    }
+
+    // ── write ───────────────────────────────────────────────────────────
+    if csv.write(table(fields(["a", "b"], 2), fields(["c"], 1))) != "a,b\nc\n" {
+        return 34
+    }
+    if csv.write(one(fields(["a,b"], 1))) != "\"a,b\"\n" {
+        return 35
+    }
+    if csv.write(one(fields(["a\"b"], 1))) != "\"a\"\"b\"\n" {
+        return 36
+    }
+    if csv.write(one(fields(["a\nb"], 1))) != "\"a\nb\"\n" {
+        return 37
+    }
+    if csv.write(one(fields(["a\rb"], 1))) != "\"a\rb\"\n" {
+        return 38
+    }
+    if csv.write(one(fields([""], 1))) != "\n" {
+        return 39
+    }
+    if csv.write(empty_table()) != "" {
+        return 40
+    }
+    if csv.write(one(fields([], 0))) != "\n" {
+        return 41
+    }
+    if csv.write(one(fields(["x", ""], 2))) != "x,\n" {
+        return 42
+    }
+    if csv.write(one(fields(["café"], 1))) != "café\n" {
+        return 43
+    }
+
+    // ── round trips ─────────────────────────────────────────────────────
+    let tricky = table(fields(["a,b", "line\none", "q\"q"], 3), fields(["", "x\r\ny"], 2))
+    if not rows_equal(parsed(csv.write(tricky)), tricky) {
+        return 44
+    }
+    if csv.write(parsed("a,b\nc\n")) != "a,b\nc\n" {
+        return 45
+    }
+    if csv.write(parsed("a\r\nb\r\n")) != "a\nb\n" {
+        return 46
+    }
+    if csv.write(parsed("a,b")) != "a,b\n" {
+        return 47
+    }
+    if not rows_equal(parsed(csv.write(one(fields(["a,b"], 1)))), one(fields(["a,b"], 1))) {
+        return 48
+    }
+    // A quoted run inside an unquoted field is spliced in without its quotes.
+    if not rows_equal(parsed("a\"b\"c"), one(fields(["abc"], 1))) {
+        return 49
+    }
+    // An unterminated quote with pending field content still fails cleanly.
+    if option.is_some(csv.parse("a,\"b,c\nd")) {
+        return 50
+    }
+
+    return 0
+}

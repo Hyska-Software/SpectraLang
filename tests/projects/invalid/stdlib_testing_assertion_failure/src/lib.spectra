@@ -1,0 +1,8 @@
+module lib
+
+// Trivial library surface for the package: the intentionally failing
+// assertions live in `tests/`, so this module only proves the project still
+// compiles a `src` module alongside them.
+public func decrement(value: int) returns int {
+    return value - 1
+}

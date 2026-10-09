@@ -4,6 +4,7 @@ import std.convert as convert
 import std.math as math
 import std.option as option
 import std.string as str
+import std.unicode as unicode
 
 // Text formatting helpers on top of the native conversions. Values that cannot
 // be represented (negative width, too many decimals, i64 overflow) return
@@ -171,4 +172,118 @@ func zero_padded(value: int, width: int) returns string {
         return text
     }
     return str.repeat_str("0", width - str.len(text)) + text
+}
+
+
+// ── Scientific notation and alignment ────────────────────────────────────
+
+// Scientific notation with `decimals` digits (0..=12) after the point, e.g.
+// `1.5e3` or `-2.50e-4`. None for NaN/infinite values and out-of-range digits.
+public func float_scientific(value: float, decimals: int) returns Option<string> {
+    if decimals < 0 or decimals > 12 {
+        return Option::None
+    }
+    if math.is_nan_f(value) or math.is_infinite_f(value) {
+        return Option::None
+    }
+
+    let magnitude = value
+    let negative = magnitude < 0.0
+    if negative {
+        magnitude = 0.0 - magnitude
+    }
+
+    let exponent = 0
+    if magnitude != 0.0 {
+        while magnitude >= 10.0 {
+            magnitude = magnitude / 10.0
+            exponent = exponent + 1
+        }
+        while magnitude < 1.0 {
+            magnitude = magnitude * 10.0
+            exponent = exponent - 1
+        }
+    }
+
+    let mantissa = float_fixed(magnitude, decimals)
+    if not option.is_some(mantissa) {
+        return Option::None
+    }
+
+    let sign = ""
+    if negative {
+        sign = "-"
+    }
+    return Option::Some(sign + option.option_unwrap_or(mantissa, "0") + "e" + convert.int_to_string(exponent))
+}
+
+// Centers `value` in `width` characters with `pad` (space or `0`); the extra
+// character goes to the right. None for negative widths or unsupported pads.
+public func pad_center(value: string, width: int, pad: char) returns Option<string> {
+    if width < 0 {
+        return Option::None
+    }
+
+    let pad_code = pad as int
+    if pad_code != 32 and pad_code != 48 {
+        return Option::None
+    }
+
+    // `width` is measured in characters, so compare rune counts, not bytes.
+    let length = unicode.rune_count(value)
+    if length >= width {
+        return Option::Some(value)
+    }
+
+    let total_padding = width - length
+    let left = total_padding / 2
+    let right = total_padding - left
+    let pad_text = str.repeat_str(option.option_unwrap_or(str.from_scalar(pad_code), ""), left)
+    let tail = str.repeat_str(option.option_unwrap_or(str.from_scalar(pad_code), ""), right)
+    return Option::Some(pad_text + value + tail)
+}
+
+// Human-readable duration: below a second `123ms`, below a minute `1.500s`,
+// below an hour `2m 05s`, otherwise `1h 02m 03s`. Negative values keep the
+// sign in front.
+public func human_duration(millis: int) returns string {
+    let negative = millis < 0
+    let sign = ""
+    if negative {
+        sign = "-"
+    }
+
+    // Split `millis` before taking its absolute value: negating `i64::MIN`
+    // would overflow. Each reduced component fits in `int` even for the
+    // minimum, so negating them is safe and the result keeps a single sign.
+    let hours = millis / 3600000
+    let minutes = (millis % 3600000) / 60000
+    let seconds = (millis % 60000) / 1000
+    let millis_part = millis % 1000
+    if negative {
+        hours = 0 - hours
+        minutes = 0 - minutes
+        seconds = 0 - seconds
+        millis_part = 0 - millis_part
+    }
+
+    if hours != 0 {
+        return sign + convert.int_to_string(hours) + "h " + zero_padded(minutes, 2) + "m " + zero_padded(seconds, 2) + "s"
+    }
+    if minutes != 0 {
+        return sign + convert.int_to_string(minutes) + "m " + zero_padded(seconds, 2) + "s"
+    }
+    if seconds != 0 {
+        return sign + convert.int_to_string(seconds) + "." + zero_padded(millis_part, 3) + "s"
+    }
+    return sign + convert.int_to_string(millis_part) + "ms"
+}
+
+// `value` as a percentage with `decimals` digits, e.g. `0.256` -> `25.6%`.
+public func percent(value: float, decimals: int) returns Option<string> {
+    let scaled = float_fixed(value * 100.0, decimals)
+    if not option.is_some(scaled) {
+        return Option::None
+    }
+    return Option::Some(option.option_unwrap_or(scaled, "0") + "%")
 }

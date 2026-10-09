@@ -331,9 +331,10 @@ def _is_ir_type_expression(value: str) -> bool:
     Async host returns such as `Task<Result<Tensor<float, rank=1>, Error>>`
     need arbitrary nesting; the previous single-level regex rejected them.
     """
-    if not value or not re.match(r"[A-Za-z_]", value):
+    # Tuple types start with `(`; everything else starts with an identifier.
+    if not value or not re.match(r"[A-Za-z_(]", value):
         return False
-    if not re.fullmatch(r"[A-Za-z0-9_\.<>,= ]+", value):
+    if not re.fullmatch(r"[A-Za-z0-9_\.<>,=() ]+", value):
         return False
     depth = 0
     for char in value:

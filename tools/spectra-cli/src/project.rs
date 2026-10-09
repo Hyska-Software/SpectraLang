@@ -922,15 +922,18 @@ mod tests {
             .iter()
             .map(|module| module.name.as_str())
             .collect();
-        assert_eq!(names, vec!["std.algorithms", "app.main"]);
+        // `std.algorithms` imports `std.unicode`, so the transitive source
+        // dependency is loaded before its importer.
+        assert_eq!(names, vec!["std.unicode", "std.algorithms", "app.main"]);
 
-        let source_module = &plan.modules()[0];
-        assert!(source_module.embedded_source.is_some());
-        assert_eq!(
-            source_module.path,
-            PathBuf::from("stdlib/src/algorithms.spectra")
-        );
-        assert!(source_module
+        let algorithms = plan
+            .modules()
+            .iter()
+            .find(|module| module.name == "std.algorithms")
+            .expect("std.algorithms is planned");
+        assert!(algorithms.embedded_source.is_some());
+        assert_eq!(algorithms.path, PathBuf::from("stdlib/src/algorithms.spectra"));
+        assert!(algorithms
             .read_source()
             .expect("embedded source is readable")
             .contains("module std.algorithms"));

@@ -1,0 +1,157 @@
+// Consumer for `std.uuid`: canonical validation, byte parsing, canonical
+// formatting, version detection and the RFC 4122 variant-4 generator.
+module std_source_uuid
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+import std.uuid as uuid
+
+func byte_at(values: List<int>, index: int) returns int {
+    return option.option_unwrap_or(collections.list_get(values, index), -1)
+}
+
+public func main() returns int {
+    let canonical = "550e8400-e29b-41d4-a716-446655440000"
+    let upper = "550E8400-E29B-41D4-A716-446655440000"
+
+    // ── is_valid ─────────────────────────────────────────────────────────
+    if not uuid.is_valid(canonical) {
+        return 1
+    }
+    if not uuid.is_valid(upper) {
+        return 2
+    }
+    // Missing hyphens.
+    if uuid.is_valid("550e8400e29b41d4a716446655440000") {
+        return 3
+    }
+    // Non-hexadecimal digit.
+    if uuid.is_valid("550e8400-e29b-41d4-a716-44665544000g") {
+        return 4
+    }
+    // Trailing space: 37 characters.
+    if uuid.is_valid("550e8400-e29b-41d4-a716-446655440000 ") {
+        return 5
+    }
+    if uuid.is_valid("") {
+        return 6
+    }
+    // 35 characters.
+    if uuid.is_valid("550e8400-e29b-41d4-a716-44665544000") {
+        return 7
+    }
+    // Hyphens in the wrong slots.
+    if uuid.is_valid("550e840-0e29b-41d4-a716-446655440000") {
+        return 8
+    }
+
+    // ── parse ────────────────────────────────────────────────────────────
+    let bytes = uuid.parse(canonical)
+    if not option.is_some(bytes) {
+        return 9
+    }
+    let parsed = option.option_unwrap_or(bytes, collections.list_new())
+    if collections.list_len(parsed) != 16 {
+        return 10
+    }
+    if byte_at(parsed, 0) != 0x55 or byte_at(parsed, 1) != 0x0E or byte_at(parsed, 6) != 0x41 {
+        return 11
+    }
+    if byte_at(parsed, 8) != 0xA7 or byte_at(parsed, 15) != 0x00 {
+        return 12
+    }
+    if option.is_some(uuid.parse("not-a-uuid")) {
+        return 13
+    }
+    // Uppercase input parses to the same bytes.
+    let upper_bytes = option.option_unwrap_or(uuid.parse(upper), collections.list_new())
+    if byte_at(upper_bytes, 0) != byte_at(parsed, 0) or byte_at(upper_bytes, 8) != byte_at(parsed, 8) {
+        return 14
+    }
+
+    // ── format ───────────────────────────────────────────────────────────
+    if option.option_unwrap_or(uuid.format(parsed), "") != canonical {
+        return 15
+    }
+    if option.option_unwrap_or(uuid.format(parsed), "") != option.option_unwrap_or(uuid.format(upper_bytes), "") {
+        return 16
+    }
+    if option.is_some(uuid.format(collections.list_new())) {
+        return 17
+    }
+    let short: List<int> = collections.list_new()
+    let fill = 0
+    while fill < 15 {
+        collections.list_push(short, 0)
+        fill = fill + 1
+    }
+    if option.is_some(uuid.format(short)) {
+        return 18
+    }
+    let bad: List<int> = collections.list_new()
+    let fill_bad = 0
+    while fill_bad < 16 {
+        collections.list_push(bad, 0)
+        fill_bad = fill_bad + 1
+    }
+    collections.list_set(bad, 5, 256)
+    if option.is_some(uuid.format(bad)) {
+        return 19
+    }
+    collections.list_set(bad, 5, -1)
+    if option.is_some(uuid.format(bad)) {
+        return 20
+    }
+    collections.list_set(bad, 5, 0)
+    if option.option_unwrap_or(uuid.format(bad), "x") != "00000000-0000-0000-0000-000000000000" {
+        return 21
+    }
+
+    // ── version ──────────────────────────────────────────────────────────
+    if option.option_unwrap_or(uuid.version(canonical), -1) != 4 {
+        return 22
+    }
+    if option.option_unwrap_or(uuid.version("2c5ea4c0-4067-11e9-8bad-9b1deb4d3b7d"), -1) != 1 {
+        return 23
+    }
+    if option.option_unwrap_or(uuid.version("550e8400-e29b-51d4-a716-446655440000"), -1) != 5 {
+        return 24
+    }
+    if option.is_some(uuid.version("550e8400-e29b-01d4-a716-446655440000")) {
+        return 25
+    }
+    if option.is_some(uuid.version("550e8400-e29b-61d4-a716-446655440000")) {
+        return 26
+    }
+    if option.is_some(uuid.version("nope")) {
+        return 27
+    }
+
+    // ── v4 ───────────────────────────────────────────────────────────────
+    let generated = uuid.v4()
+    if not uuid.is_valid(generated) {
+        return 28
+    }
+    if str.len(generated) != 36 {
+        return 29
+    }
+    if option.option_unwrap_or(uuid.version(generated), -1) != 4 {
+        return 30
+    }
+    let generated_bytes = option.option_unwrap_or(uuid.parse(generated), collections.list_new())
+    if collections.list_len(generated_bytes) != 16 {
+        return 31
+    }
+    // RFC 4122 variant: the high two bits of byte 8 are `10`.
+    if (byte_at(generated_bytes, 8) & 192) != 128 {
+        return 32
+    }
+    let first = uuid.v4()
+    let second = uuid.v4()
+    if not uuid.is_valid(first) or not uuid.is_valid(second) {
+        return 33
+    }
+
+    return 0
+}

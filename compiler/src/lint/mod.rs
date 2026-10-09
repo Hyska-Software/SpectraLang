@@ -196,7 +196,7 @@ impl<'a> LintRunner<'a> {
         let over_depth = self.depth > crate::parser::MAX_PARSE_DEPTH;
         let over_stack =
             crate::parser::Parser::stack_used_bytes(self.stack_probe)
-                > crate::parser::MAX_STACK_USE_BYTES;
+                > crate::parser::stack_budget_bytes();
         if over_depth || over_stack {
             if !self.depth_limit_reported {
                 self.depth_limit_reported = true;
@@ -898,6 +898,59 @@ mod tests {
                 .map(|diagnostic| diagnostic.rule)
                 .collect()
         })
+    }
+
+    fn nested_conditionals(levels: usize) -> String {
+        let mut source =
+            String::from("module deep_nesting\n\npublic func main() returns int {\n    let marker = 0\n");
+        for level in 0..levels {
+            source.push_str(&"    ".repeat(level + 1));
+            source.push_str(&format!("if {level} >= 0 {{\n"));
+        }
+        source.push_str(&"    ".repeat(levels + 1));
+        source.push_str("marker = marker + 1\n");
+        for level in (1..=levels).rev() {
+            source.push_str(&"    ".repeat(level));
+            source.push_str("}\n");
+        }
+        source.push_str("    if marker != 1 {\n        return 1\n    }\n    return 0\n}\n");
+        source
+    }
+
+    /// T-03 regression: the parser, semantic analysis, and lint share one
+    /// nesting budget derived from the thread's real stack, so a legitimate
+    /// module nested ~26 frontend depth levels (two nested `if` statements at
+    /// roughly 13 depth levels each) must pass all three consumers on a thread
+    /// with only 1 MiB instead of tripping `P013`.
+    #[test]
+    fn nested_module_passes_parser_semantic_and_lint_on_a_one_mib_thread() {
+        let source = nested_conditionals(2);
+        let outcome = std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || -> Result<(), String> {
+                let tokens = Lexer::new(&source)
+                    .tokenize()
+                    .map_err(|errors| format!("lexer: {errors:?}"))?;
+                let mut module = Parser::new(tokens)
+                    .parse()
+                    .map_err(|errors| format!("parser: {errors:?}"))?;
+                {
+                    let mut modules = [&mut module];
+                    crate::semantic::analyze_modules(&mut modules)
+                        .map_err(|errors| format!("semantic: {errors:?}"))?;
+                }
+                lint_module(&module, &LintOptions::all())
+                    .map_err(|error| format!("lint: {error:?}"))?;
+                Ok(())
+            })
+            .expect("spawn 1 MiB thread")
+            .join()
+            .expect("1 MiB thread must not panic");
+        assert!(
+            outcome.is_ok(),
+            "legitimate nesting must pass parser, semantic, and lint on a 1 MiB thread: {:?}",
+            outcome.err()
+        );
     }
 
     #[test]

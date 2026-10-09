@@ -1,0 +1,132 @@
+// Consumer for the extended `std.validate` surface: GTIN, card brands, E.164,
+// PIS/PASEP, CNH, título de eleitor and alphanumeric CNPJ.
+module std_source_validate_extended
+
+import std.validate as validate
+
+public func main() returns int {
+    // ── GTIN / EAN ───────────────────────────────────────────────────────
+    if not validate.gtin_valid("9780306406157") {
+        return 1
+    }
+    if not validate.gtin_valid("4006381333931") {
+        return 2
+    }
+    if not validate.gtin_valid("96385074") {
+        return 3
+    }
+    if validate.gtin_valid("9780306406158") {
+        return 4
+    }
+    if validate.gtin_valid("978030640615") or validate.gtin_valid("123456781234569") {
+        return 5
+    }
+
+    // ── Card brands ──────────────────────────────────────────────────────
+    if validate.card_brand("4539148803436467") != "visa" {
+        return 6
+    }
+    if validate.card_brand("5123456789012346") != "mastercard" {
+        return 7
+    }
+    if validate.card_brand("378282246310005") != "amex" {
+        return 8
+    }
+    if validate.card_brand("30569309025904") != "diners" {
+        return 9
+    }
+    if validate.card_brand("6011111111111117") != "discover" {
+        return 10
+    }
+    if validate.card_brand("4011780000000000") != "elo" {
+        return 11
+    }
+    if validate.card_brand("9999999999999999") != "" {
+        return 12
+    }
+    if validate.card_brand("4") != "" {
+        return 13
+    }
+
+    // ── E.164 ────────────────────────────────────────────────────────────
+    if not validate.e164_valid("+5511987654321") {
+        return 14
+    }
+    if not validate.e164_valid("+12345678") {
+        return 15
+    }
+    if validate.e164_valid("5511987654321") {
+        return 16
+    }
+    if validate.e164_valid("+0511987654") {
+        return 17
+    }
+    if validate.e164_valid("+123456") {
+        return 18
+    }
+    if validate.e164_valid("+1234567890123456") {
+        return 19
+    }
+    // Non-digit characters after `+` are rejected instead of stripped.
+    if validate.e164_valid("+12025550123x") {
+        return 34
+    }
+    if validate.e164_valid("+12 025550123") {
+        return 35
+    }
+    if not validate.e164_valid("+12025550123") {
+        return 36
+    }
+
+    // ── PIS/PASEP ────────────────────────────────────────────────────────
+    if not validate.pis_valid("12345678900") {
+        return 20
+    }
+    if validate.pis_valid("12345678901") {
+        return 21
+    }
+    if validate.pis_valid("00000000000") {
+        return 22
+    }
+    if validate.pis_valid("1234567890") {
+        return 23
+    }
+
+    // ── CNH ──────────────────────────────────────────────────────────────
+    if not validate.cnh_valid("98765432100") {
+        return 24
+    }
+    if validate.cnh_valid("98765432101") {
+        return 25
+    }
+    if validate.cnh_valid("11111111111") {
+        return 26
+    }
+
+    // ── Título de eleitor ────────────────────────────────────────────────
+    if not validate.titulo_eleitor_valid("123456780191") {
+        return 27
+    }
+    if validate.titulo_eleitor_valid("123456780192") {
+        return 28
+    }
+    if validate.titulo_eleitor_valid("123456780091") {
+        return 29
+    }
+    if validate.titulo_eleitor_valid("111111111111") {
+        return 30
+    }
+
+    // ── CNPJ alfanumérico ────────────────────────────────────────────────
+    if not validate.cnpj_alpha_valid("ABCDEFGHIJKL80") {
+        return 31
+    }
+    if validate.cnpj_alpha_valid("ABCDEFGHIJKL81") {
+        return 32
+    }
+    if validate.cnpj_alpha_valid("ABCDEFGHIJK80") {
+        return 33
+    }
+
+    return 0
+}

@@ -4,6 +4,7 @@ import std.algorithms as algorithms
 import std.collections as collections
 import std.option as option
 import std.string as str
+import std.unicode as unicode
 
 // Text preparation helpers over UTF-8 strings. Byte-level operations only run
 // on ASCII boundaries or on complete UTF-8 runes; no rune is ever split.
@@ -58,16 +59,16 @@ public func normalize_whitespace(value: string) returns string {
             if str.builder_len(builder) > 0 {
                 pending_space = true
             }
+            index = index + 1
         } else {
             if pending_space {
                 push_code(builder, 32)
                 pending_space = false
             }
             // Copy the whole rune so multi-byte text keeps its exact bytes.
-            index = index + push_rune(builder, value, index)
-        }
-        if is_whitespace(code) {
-            index = index + 1
+            let step = rune_step(code)
+            str.builder_push(builder, str.substring(value, index, index + step))
+            index = index + step
         }
     }
 
@@ -92,12 +93,12 @@ public func truncate(value: string, max_bytes: int) returns string {
     let offset = 0
     let end = 0
     while offset < length {
-        let rune_length = rune_length_at(value, offset)
-        if offset + rune_length > max_bytes {
+        let next = offset + rune_step(str.char_at(value, offset))
+        if next > max_bytes {
             break
         }
-        offset = offset + rune_length
-        end = offset
+        offset = next
+        end = next
     }
 
     return str.substring(value, 0, end)
@@ -197,7 +198,8 @@ public func escape_json(value: string) returns string {
             push_code(builder, code)
         } else {
             // Non-ASCII text is preserved byte for byte.
-            step = push_rune(builder, value, index)
+            step = rune_step(code)
+            str.builder_push(builder, str.substring(value, index, index + step))
         }
         index = index + step
     }
@@ -221,7 +223,9 @@ public func unescape_json(value: string) returns Option<string> {
             }
             index = next
         } else {
-            index = index + push_rune(builder, value, index)
+            let step = rune_step(str.char_at(value, index))
+            str.builder_push(builder, str.substring(value, index, index + step))
+            index = index + step
         }
     }
 
@@ -318,8 +322,8 @@ func push_scalar(builder: int, scalar: int, next: int) returns int {
 
 // Levenshtein-based similarity in `0.0..=1.0` over Unicode scalar values.
 public func similarity_ratio(left: string, right: string) returns float {
-    let left_runes = rune_count(left)
-    let right_runes = rune_count(right)
+    let left_runes = unicode.rune_count(left)
+    let right_runes = unicode.rune_count(right)
     let longest = left_runes
     if right_runes > longest {
         longest = right_runes
@@ -334,28 +338,24 @@ public func similarity_ratio(left: string, right: string) returns float {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-func is_whitespace(code: int) returns bool {
-    return code == 32 or code == 9 or code == 10 or code == 13
-}
-
-// True for ASCII bytes and UTF-8 lead bytes (never for a continuation byte).
-func is_rune_start(code: int) returns bool {
-    return code < 128 or code >= 192
-}
-
-// UTF-8 byte length of the rune starting at `offset` (a char boundary).
-func rune_length_at(value: string, offset: int) returns int {
-    let first = str.char_at(value, offset)
-    if first < 128 {
+// Byte length of the UTF-8 rune whose lead byte is `code` (`1`/`2`/`3`/`4`).
+// Callers advance the byte cursor by this step, so a single forward pass never
+// re-scans the prefix the way repeated `byte_offset` lookups would.
+func rune_step(code: int) returns int {
+    if code < 128 {
         return 1
     }
-    if first < 224 {
+    if code < 224 {
         return 2
     }
-    if first < 240 {
+    if code < 240 {
         return 3
     }
     return 4
+}
+
+func is_whitespace(code: int) returns bool {
+    return code == 32 or code == 9 or code == 10 or code == 13
 }
 
 func push_code(builder: int, code: int) {
@@ -363,36 +363,6 @@ func push_code(builder: int, code: int) {
     if str.len(piece) > 0 {
         str.builder_push(builder, piece)
     }
-}
-
-// Copies the rune at `offset` byte for byte and returns its byte length.
-func push_rune(builder: int, value: string, offset: int) returns int {
-    let first = str.char_at(value, offset)
-    if first < 128 {
-        push_code(builder, first)
-        return 1
-    }
-    if first < 224 {
-        push_code(builder, (first - 192) * 64 + (str.char_at(value, offset + 1) - 128))
-        return 2
-    }
-    if first < 240 {
-        push_code(
-            builder,
-            (first - 224) * 4096 +
-            (str.char_at(value, offset + 1) - 128) * 64 +
-            (str.char_at(value, offset + 2) - 128),
-        )
-        return 3
-    }
-    push_code(
-        builder,
-        (first - 240) * 262144 +
-        (str.char_at(value, offset + 1) - 128) * 4096 +
-        (str.char_at(value, offset + 2) - 128) * 64 +
-        (str.char_at(value, offset + 3) - 128),
-    )
-    return 4
 }
 
 func push_literal(builder: int, text: string) {
@@ -438,16 +408,422 @@ func hex_value(code: int) returns int {
     return -1
 }
 
-// Counts UTF-8 runes by lead bytes.
-func rune_count(value: string) returns int {
+// ── Case, words and layout ───────────────────────────────────────────────
+
+// ASCII title case: the first letter of each whitespace-separated word becomes
+// uppercase and the remaining letters lowercase; other bytes are copied.
+public func title_case(value: string) returns string {
+    let builder = str.builder_new(0)
     let length = str.len(value)
-    let count = 0
+    let offset = 0
+    let at_word_start = true
+
+    while offset < length {
+        let code = str.char_at(value, offset)
+        if code < 128 {
+            if is_word_separator(code) {
+                at_word_start = true
+                push_code(builder, code)
+            } else if at_word_start and code >= 97 and code <= 122 {
+                push_code(builder, code - 32)
+                at_word_start = false
+            } else if at_word_start and code >= 65 and code <= 90 {
+                push_code(builder, code)
+                at_word_start = false
+            } else if code >= 65 and code <= 90 {
+                push_code(builder, code + 32)
+            } else {
+                push_code(builder, code)
+            }
+            offset = offset + 1
+        } else {
+            let step = rune_step(code)
+            str.builder_push(builder, str.substring(value, offset, offset + step))
+            offset = offset + step
+            at_word_start = false
+        }
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Whitespace-separated words (ASCII space, tab, CR, LF); empty input yields an
+// empty list.
+public func split_words(value: string) returns List<string> {
+    let words: List<string> = collections.list_new()
+    let length = str.len(value)
+    let offset = 0
+
+    while offset < length {
+        while offset < length and is_word_separator(str.char_at(value, offset)) {
+            offset = offset + 1
+        }
+        let start = offset
+        while offset < length and not is_word_separator(str.char_at(value, offset)) {
+            offset = offset + 1
+        }
+        if offset > start {
+            collections.list_push(words, str.substring(value, start, offset))
+        }
+    }
+
+    return words
+}
+
+// Removes the common leading-space indentation shared by all non-empty lines.
+public func dedent(value: string) returns string {
+    let lines = str.split_by(value, "\n")
+    let count = collections.list_len(lines)
+    let common = common_indentation(lines)
+
+    let builder = str.builder_new(0)
     let index = 0
-    while index < length {
-        if is_rune_start(str.char_at(value, index)) {
-            count = count + 1
+    while index < count {
+        if index > 0 {
+            push_code(builder, 10)
+        }
+        let line = option.option_unwrap_or(collections.list_get(lines, index), "")
+        str.builder_push(builder, drop_indentation(line, common))
+        index = index + 1
+    }
+
+    return str.builder_finish(builder)
+}
+
+// Centers `value` in `width` characters with `pad`, putting the extra character
+// on the right. Values at or above `width` are returned unchanged.
+public func center(value: string, width: int, pad: char) returns string {
+    // `width` is measured in characters, so compare rune counts, not bytes.
+    let length = unicode.rune_count(value)
+    if width <= length {
+        return value
+    }
+
+    let pad_text = option.option_unwrap_or(str.from_scalar(pad as int), "")
+    let total = width - length
+    let left = total / 2
+    let right = total - left
+    return str.repeat_str(pad_text, left) + value + str.repeat_str(pad_text, right)
+}
+
+// ── Similarity ───────────────────────────────────────────────────────────
+
+// Jaro-Winkler similarity in `0.0..=1.0` over Unicode scalar values, with a
+// prefix bonus of up to four matching characters (`p = 0.1`).
+public func jaro_winkler(left: string, right: string) returns float {
+    let left_codes = unicode.to_codepoints(left)
+    let right_codes = unicode.to_codepoints(right)
+    let left_length = collections.list_len(left_codes)
+    let right_length = collections.list_len(right_codes)
+
+    if left_length == 0 and right_length == 0 {
+        return 1.0
+    }
+    if left_length == 0 or right_length == 0 {
+        return 0.0
+    }
+
+    // One-rune inputs give `longest / 2 - 1 == -1`; an empty window would make
+    // identical strings score 0.0, so clamp it to zero.
+    let window = longest(left_length, right_length) / 2 - 1
+    if window < 0 {
+        window = 0
+    }
+    let left_taken: List<bool> = collections.list_new()
+    let right_taken: List<bool> = collections.list_new()
+    fill_flags(left_taken, left_length, false)
+    fill_flags(right_taken, right_length, false)
+
+    let matches = 0
+    let index = 0
+    while index < left_length {
+        let code = option.option_unwrap_or(collections.list_get(left_codes, index), -1)
+        let window_start = start_of_window(index, window)
+        let window_end = end_of_window(index, window, right_length)
+        let candidate = window_start
+        let matched = false
+        while candidate < window_end and not matched {
+            let taken = option.option_unwrap_or(collections.list_get(right_taken, candidate), true)
+            let other = option.option_unwrap_or(collections.list_get(right_codes, candidate), -2)
+            if not taken and other == code {
+                set_flag(right_taken, candidate, true)
+                matched = true
+            }
+            candidate = candidate + 1
+        }
+        if matched {
+            set_flag(left_taken, index, true)
+            matches = matches + 1
         }
         index = index + 1
     }
-    return count
+
+    if matches == 0 {
+        return 0.0
+    }
+
+    let transpositions = count_transpositions(left_codes, left_taken, right_codes, right_taken)
+    let match_count = matches as float
+    let jaro = (match_count / (left_length as float) + match_count / (right_length as float) + (match_count - transpositions as float) / match_count) / 3.0
+    return jaro + (prefix_length(left_codes, right_codes) as float) * 0.1 * (1.0 - jaro)
+}
+
+// ── Truncation ───────────────────────────────────────────────────────────
+
+// Keeps the head and the tail of `value` within `max_bytes`, inserting a
+// single `…` between them. Non-positive limits yield ""; values that already
+// fit are returned unchanged. Rune boundaries are respected on both ends.
+public func truncate_middle(value: string, max_bytes: int) returns string {
+    if max_bytes <= 0 {
+        return ""
+    }
+
+    let length = str.len(value)
+    if length <= max_bytes {
+        return value
+    }
+
+    let ellipsis = option.option_unwrap_or(str.from_scalar(8230), "")
+    let ellipsis_bytes = str.len(ellipsis)
+    if max_bytes <= ellipsis_bytes {
+        return str.substring(value, 0, align_down(value, max_bytes))
+    }
+
+    let budget = max_bytes - ellipsis_bytes
+    let head_bytes = align_down(value, budget / 2)
+    let tail_start = align_up(value, length - (budget - head_bytes))
+    let head = str.substring(value, 0, head_bytes)
+    let tail = str.substring(value, tail_start, length)
+    return head + ellipsis + tail
+}
+
+// Greedy hard wrap at `width` bytes, breaking inside words and never splitting
+// a rune. A non-positive width yields an empty list.
+public func hard_wrap(value: string, width: int) returns List<string> {
+    let lines: List<string> = collections.list_new()
+    if width <= 0 {
+        return lines
+    }
+
+    let length = str.len(value)
+    let offset = 0
+    while offset < length {
+        // Largest rune boundary at or below `offset + width`, advanced forward
+        // from `offset`. Keeping the cursor incremental means every byte is
+        // visited once across all chunks instead of `align_down` re-scanning
+        // from byte zero per chunk (O(n) instead of O(n^2)).
+        let target = offset + width
+        let cursor = offset
+        while cursor < length {
+            let step = rune_step(str.char_at(value, cursor))
+            if cursor + step > target {
+                break
+            }
+            cursor = cursor + step
+        }
+        if cursor <= offset {
+            // A single rune is wider than `width`: emit it alone to progress.
+            // Advancing by its own byte length always moves past `offset`.
+            let rune = offset + rune_step(str.char_at(value, offset))
+            collections.list_push(lines, str.substring(value, offset, rune))
+            offset = rune
+        } else {
+            collections.list_push(lines, str.substring(value, offset, cursor))
+            offset = cursor
+        }
+    }
+
+    return lines
+}
+
+// CRLF and lone CR become LF.
+public func normalize_newlines(value: string) returns string {
+    let builder = str.builder_new(0)
+    let length = str.len(value)
+    let index = 0
+
+    while index < length {
+        if str.char_at(value, index) == 13 {
+            // CRLF and lone CR become one LF.
+            push_code(builder, 10)
+            if index + 1 < length and str.char_at(value, index + 1) == 10 {
+                index = index + 2
+            } else {
+                index = index + 1
+            }
+        } else {
+            // Copy the whole run up to the next CR so multi-byte text keeps its
+            // exact bytes instead of being re-encoded byte by byte.
+            let start = index
+            while index < length and str.char_at(value, index) != 13 {
+                index = index + 1
+            }
+            str.builder_push(builder, str.substring(value, start, index))
+        }
+    }
+
+    return str.builder_finish(builder)
+}
+
+// ── Layout helpers ───────────────────────────────────────────────────────
+
+func is_word_separator(code: int) returns bool {
+    return code == 32 or code == 9 or code == 10 or code == 13
+}
+
+func common_indentation(lines: List<string>) returns int {
+    let count = collections.list_len(lines)
+    let common = -1
+    let index = 0
+
+    while index < count {
+        let line = option.option_unwrap_or(collections.list_get(lines, index), "")
+        if str.len(line) > 0 {
+            let indentation = leading_spaces(line)
+            if common < 0 or indentation < common {
+                common = indentation
+            }
+        }
+        index = index + 1
+    }
+
+    if common < 0 {
+        return 0
+    }
+    return common
+}
+
+func leading_spaces(line: string) returns int {
+    let length = str.len(line)
+    let index = 0
+    while index < length and str.char_at(line, index) == 32 {
+        index = index + 1
+    }
+    return index
+}
+
+func drop_indentation(line: string, count: int) returns string {
+    let length = str.len(line)
+    let index = 0
+    while index < length and index < count and str.char_at(line, index) == 32 {
+        index = index + 1
+    }
+    return str.substring(line, index, length)
+}
+
+func longest(left: int, right: int) returns int {
+    if left > right {
+        return left
+    }
+    return right
+}
+
+func fill_flags(flags: List<bool>, count: int, value: bool) {
+    let index = 0
+    while index < count {
+        collections.list_push(flags, value)
+        index = index + 1
+    }
+}
+
+func set_flag(flags: List<bool>, index: int, value: bool) {
+    collections.list_set(flags, index, value)
+}
+
+func start_of_window(index: int, window: int) returns int {
+    let start = index - window
+    if start < 0 {
+        return 0
+    }
+    return start
+}
+
+func end_of_window(index: int, window: int, length: int) returns int {
+    let end = index + window + 1
+    if end > length {
+        return length
+    }
+    return end
+}
+
+func count_transpositions(left: List<int>, left_taken: List<bool>, right: List<int>, right_taken: List<bool>) returns int {
+    let left_length = collections.list_len(left)
+    let right_index = 0
+    let transpositions = 0
+    let index = 0
+
+    while index < left_length {
+        if option.option_unwrap_or(collections.list_get(left_taken, index), false) {
+            while right_index < collections.list_len(right) and not option.option_unwrap_or(collections.list_get(right_taken, right_index), false) {
+                right_index = right_index + 1
+            }
+            if right_index < collections.list_len(right) {
+                let left_code = option.option_unwrap_or(collections.list_get(left, index), -1)
+                let right_code = option.option_unwrap_or(collections.list_get(right, right_index), -2)
+                if left_code != right_code {
+                    transpositions = transpositions + 1
+                }
+                right_index = right_index + 1
+            }
+        }
+        index = index + 1
+    }
+
+    return transpositions / 2
+}
+
+func prefix_length(left: List<int>, right: List<int>) returns int {
+    let limit = 4
+    if collections.list_len(left) < limit {
+        limit = collections.list_len(left)
+    }
+    if collections.list_len(right) < limit {
+        limit = collections.list_len(right)
+    }
+
+    let index = 0
+    while index < limit {
+        let left_code = option.option_unwrap_or(collections.list_get(left, index), -1)
+        let right_code = option.option_unwrap_or(collections.list_get(right, index), -2)
+        if left_code != right_code {
+            return index
+        }
+        index = index + 1
+    }
+    return limit
+}
+
+// Largest rune boundary at or below `offset`.
+func align_down(value: string, offset: int) returns int {
+    let length = str.len(value)
+    if offset >= length {
+        return length
+    }
+
+    let position = 0
+    while position < length {
+        let step = rune_step(str.char_at(value, position))
+        if position + step > offset {
+            return position
+        }
+        position = position + step
+    }
+    return length
+}
+
+// Smallest rune boundary at or above `offset`.
+func align_up(value: string, offset: int) returns int {
+    let length = str.len(value)
+    if offset >= length {
+        return length
+    }
+
+    let position = 0
+    while position < length {
+        if position >= offset {
+            return position
+        }
+        position = position + rune_step(str.char_at(value, position))
+    }
+    return length
 }

@@ -1,0 +1,137 @@
+// Consumer for the extended `std.iter` surface: zip, enumerate, partition,
+// flatten, extremes, unique and adjacent dedup.
+module std_source_iter_extended
+
+import std.collections as collections
+import std.iter as iter
+import std.option as option
+
+func series(values: [int], count: int) returns List<int> {
+    let list: List<int> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func is_even(value: int) returns bool {
+    return value % 2 == 0
+}
+
+func negate(value: int) returns int {
+    return 0 - value
+}
+
+public func main() returns int {
+    let left = series([1, 2, 3], 3)
+    let right = series([10, 20], 2)
+    let empty: List<int> = collections.list_new()
+
+    // ── zip ──────────────────────────────────────────────────────────────
+    let pairs = iter.zip_int(left, right)
+    if collections.list_len(pairs) != 2 {
+        return 1
+    }
+    let (first_left, first_right) = option.option_unwrap_or(collections.list_get(pairs, 0), (0, 0))
+    if first_left != 1 or first_right != 10 {
+        return 2
+    }
+    let (second_left, second_right) = option.option_unwrap_or(collections.list_get(pairs, 1), (0, 0))
+    if second_left != 2 or second_right != 20 {
+        return 3
+    }
+    if collections.list_len(iter.zip_int(left, empty)) != 0 {
+        return 4
+    }
+
+    // ── enumerate ────────────────────────────────────────────────────────
+    let indexed = iter.enumerate_int(series([5, 6, 7], 3))
+    if collections.list_len(indexed) != 3 {
+        return 5
+    }
+    let (position_two, value_two) = option.option_unwrap_or(collections.list_get(indexed, 2), (0, 0))
+    if position_two != 2 or value_two != 7 {
+        return 6
+    }
+
+    // ── partition ────────────────────────────────────────────────────────
+    let (evens, odds) = iter.partition_int(series([1, 2, 3, 4, 5], 5), is_even)
+    if collections.list_len(evens) != 2 or collections.list_len(odds) != 3 {
+        return 7
+    }
+    if option.option_unwrap_or(collections.list_get(evens, 1), 0) != 4 {
+        return 8
+    }
+    if option.option_unwrap_or(collections.list_get(odds, 0), 0) != 1 {
+        return 9
+    }
+    let (none_evens, all_odds) = iter.partition_int(empty, is_even)
+    if collections.list_len(none_evens) != 0 or collections.list_len(all_odds) != 0 {
+        return 10
+    }
+
+    // ── flatten ──────────────────────────────────────────────────────────
+    let nested: List<List<int>> = collections.list_new()
+    collections.list_push(nested, series([1, 2], 2))
+    collections.list_push(nested, collections.list_new())
+    collections.list_push(nested, series([3], 1))
+    let flat = iter.flatten_int(nested)
+    if collections.list_len(flat) != 3 {
+        return 11
+    }
+    if option.option_unwrap_or(collections.list_get(flat, 2), 0) != 3 {
+        return 12
+    }
+    if collections.list_len(iter.flatten_int(collections.list_new())) != 0 {
+        return 13
+    }
+
+    // ── extremes ─────────────────────────────────────────────────────────
+    if option.is_some(iter.min_by_int(empty, negate)) {
+        return 14
+    }
+    let smallest = iter.min_by_int(series([4, -2, 7], 3), negate)
+    let largest = iter.max_by_int(series([4, -2, 7], 3), negate)
+    // negate keys: -4, 2, -7 -> min is 7, max is -2.
+    if option.option_unwrap_or(smallest, 0) != 7 {
+        return 15
+    }
+    if option.option_unwrap_or(largest, 0) != -2 {
+        return 16
+    }
+    // Ties keep the first occurrence.
+    if option.option_unwrap_or(iter.min_by_int(series([5, 5, 5], 3), negate), 0) != 5 {
+        return 17
+    }
+
+    // ── unique / dedup_adjacent ──────────────────────────────────────────
+    let unique = iter.unique_int(series([1, 2, 1, 3, 2, 1], 6))
+    if collections.list_len(unique) != 3 {
+        return 18
+    }
+    if option.option_unwrap_or(collections.list_get(unique, 0), 0) != 1 {
+        return 19
+    }
+    if option.option_unwrap_or(collections.list_get(unique, 2), 0) != 3 {
+        return 20
+    }
+    if collections.list_len(iter.unique_int(empty)) != 0 {
+        return 21
+    }
+
+    let deduped = iter.dedup_adjacent_int(series([1, 1, 2, 2, 2, 3, 1], 7))
+    if collections.list_len(deduped) != 4 {
+        return 22
+    }
+    if option.option_unwrap_or(collections.list_get(deduped, 3), 0) != 1 {
+        return 23
+    }
+    // The source list is untouched.
+    if option.option_unwrap_or(collections.list_get(series([1, 1], 2), 0), 0) != 1 {
+        return 24
+    }
+
+    return 0
+}

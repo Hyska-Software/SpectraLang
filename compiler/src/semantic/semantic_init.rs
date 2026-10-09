@@ -121,7 +121,7 @@ impl SemanticAnalyzer {
         self.analysis_depth += 1;
         let over_depth = self.analysis_depth > crate::parser::MAX_PARSE_DEPTH;
         let over_stack = crate::parser::Parser::stack_used_bytes(self.stack_probe)
-            > crate::parser::MAX_STACK_USE_BYTES;
+            > crate::parser::stack_budget_bytes();
         if over_depth || over_stack {
             if !self.depth_limit_reported {
                 self.depth_limit_reported = true;

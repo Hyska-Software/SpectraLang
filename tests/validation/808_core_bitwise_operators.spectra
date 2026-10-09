@@ -1,0 +1,172 @@
+// Regression for the bitwise operator surface (`& | ^ << >>`) and unary `~`:
+// const and runtime evaluation, exact-width operands, masked shift counts and
+// precedence, with nested generics still parsing next to the `>>` operator.
+module core_bitwise_operators
+
+import std.collections as collections
+
+const MASK: int = 0xF0 | 0x0F
+const SHIFTED: int = 0xFF00 >> 8
+const XORTED: int = 0xFF ^ 0x0F
+const ANDED: int = 0xFF & 0x0F
+const LEFT_SHIFT: int = 3 << 4
+const NEGATED_BITS: int = ~0
+// `~` folds in the operand's exact width, matching runtime lowering.
+const COMPLEMENT_U8: u8 = ~(0 as u8)
+const COMPLEMENT_I8: i8 = ~(0 as i8)
+
+public func main() returns int {
+    // ── const evaluation ─────────────────────────────────────────────────
+    if MASK != 255 {
+        return 1
+    }
+    if SHIFTED != 255 {
+        return 2
+    }
+    if XORTED != 240 {
+        return 3
+    }
+    if ANDED != 15 {
+        return 4
+    }
+    if LEFT_SHIFT != 48 {
+        return 5
+    }
+    if NEGATED_BITS != -1 {
+        return 6
+    }
+
+    // ── runtime int evaluation ───────────────────────────────────────────
+    let a = 0xDEAD
+    let b = a & 0x00FF
+    if b != 0xAD {
+        return 7
+    }
+    if (a | 0x100) != (0xDEAD | 0x100) {
+        return 8
+    }
+    if (0xF0 ^ 0x0F) != 255 {
+        return 9
+    }
+    if (1 << 10) != 1024 {
+        return 10
+    }
+    if (1024 >> 3) != 128 {
+        return 11
+    }
+    // `>>` is arithmetic for signed values.
+    if (-8 >> 1) != -4 {
+        return 12
+    }
+    if ~5 != -6 {
+        return 13
+    }
+
+    // ── shift counts are masked to the operand width ─────────────────────
+    if (1 << 64) != 1 {
+        return 14
+    }
+    if (1 << 65) != 2 {
+        return 15
+    }
+    if (256 >> 8) != 1 {
+        return 16
+    }
+    if (256 >> 64) != 256 {
+        return 17
+    }
+
+    // ── precedence ───────────────────────────────────────────────────────
+    // `&` binds tighter than `|`, `^` between them, shifts above comparison.
+    if (1 | 2 & 0) != 1 {
+        return 18
+    }
+    if (2 ^ 3 & 1) != 3 {
+        return 19
+    }
+    if (1 << 2 + 1) != 8 {
+        return 20
+    }
+    if not ((4 >> 1) == 2) {
+        return 21
+    }
+    // Equality binds tighter than `&`, so mixing them without parentheses
+    // would make the `&` operands a boolean (rejected with E049).
+    if ((1 & 1) == 1) != true {
+        return 22
+    }
+
+    // ── exact widths ─────────────────────────────────────────────────────
+    let small: u8 = 0xF0
+    let low: u8 = 0x0F
+    if (small & low) != 0 as u8 {
+        return 23
+    }
+    if (small | low) != 255 as u8 {
+        return 24
+    }
+    if (small ^ 0xFF as u8) != 15 as u8 {
+        return 25
+    }
+    if (1 as u8) << 7 as u8 != 128 as u8 {
+        return 26
+    }
+
+    let signed_byte: i8 = -4
+    if signed_byte >> 1 as i8 != -2 as i8 {
+        return 27
+    }
+
+    let wide: u64 = (1 as u64) << 63 as u64
+    if wide >> 63 as u64 != 1 as u64 {
+        return 28
+    }
+    if (1 as u64) << 63 as u64 != wide {
+        return 29
+    }
+    let narrow: u16 = 0x8000
+    if narrow >> 15 as u16 != 1 as u16 {
+        return 30
+    }
+
+    // ── `char` participates through an explicit cast ─────────────────────
+    let letter = 65 as char
+    if ((letter as int) & 0x20) != 0 {
+        return 31
+    }
+
+    // ── nested generics still parse next to `>>` ─────────────────────────
+    let nested: List<List<int>> = collections.list_new()
+    let inner: List<int> = collections.list_new()
+    collections.list_push(inner, 1 << 1)
+    collections.list_push(nested, inner)
+    if collections.list_len(nested) != 1 {
+        return 32
+    }
+    if (1 as u64) >> 1 as u64 != 0 as u64 {
+        return 33
+    }
+
+    // ── `~` complements in the operand's exact width ─────────────────────
+    if COMPLEMENT_U8 != 255 as u8 {
+        return 34
+    }
+    if COMPLEMENT_I8 != -1 as i8 {
+        return 35
+    }
+    if ~(0 as u8) != 255 as u8 {
+        return 36
+    }
+    if ~(0 as i8) != -1 as i8 {
+        return 37
+    }
+    if ~0 != -1 {
+        return 38
+    }
+    let wide_not: u16 = ~(0 as u16)
+    if wide_not != 65535 as u16 {
+        return 39
+    }
+
+    return 0
+}

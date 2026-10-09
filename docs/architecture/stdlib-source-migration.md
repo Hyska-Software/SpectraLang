@@ -48,37 +48,60 @@ and emitted as `implementation = "spectra-source"` in the generated contract.
 Every remaining function in an existing module remains on its current
 compiler/runtime implementation until that module is migrated explicitly.
 
+Phase 34 progress (2026-10-08): the source surface covers **18 modules and 178
+public functions** with `implementation = "spectra-source"`. Wave 1 delivered
+`std.algorithms`, `std.encoding`, `std.stats`, `std.validate`, `std.path`,
+`std.text`, `std.calendar`, `std.iter`, `std.fmt`, and `std.semver` plus the
+`std.string.from_scalar` native primitive; wave 2 added `std.unicode`,
+`std.bytes`, `std.csv`, `std.diff`, `std.vector`, `std.uuid`, `std.testing`,
+and `std.hash`, extended the wave-1 modules, and deleted the duplicated private
+UTF-8 decoding/validation helpers in favour of the shared
+`std.unicode`/`std.bytes` layer (byte-width steppers used by incremental scans
+stay local to their module). Every
+module is proven by an import-only consumer fixture executed in JIT and AOT,
+recorded in `tests/execution-baseline.json` and audited by
+`scripts/validate_r3007_stdlib_contract.py --require-catalog`. The native and
+hybrid rows above keep their current implementation and remaining counts.
+
 | Module | Current form | Public functions | Migrated in Phase 34 | Remaining functions / dependency reason |
 |---|---|---:|---:|---|
-| `std.algorithms` | Source | 13 | 13 | 0; search, radix, number theory, Roman numerals and edit distance over the native string/collection primitives |
-| `std.calendar` | Source | 10 | 10 | 0; Gregorian rules, ISO weeks, UTC formatting and ISO date parsing |
+| `std.algorithms` | Source | 20 | 20 | 0; search, radix, number theory, Roman numerals, edit distance, string search and LCS |
+| `std.bytes` | Source | 4 | 4 | 0; text/byte bridge over `List<int>` (NUL and invalid UTF-8 rejected) |
+| `std.calendar` | Source | 15 | 15 | 0; Gregorian rules, ISO weeks, UTC formatting/parsing, month and week arithmetic |
 | `std.char` | Native | 8 | 0 | 8; Unicode scalar/runtime helpers |
 | `std.collections` | Hybrid | 150 | 0 | 150; runtime-managed handles plus compiler lowering |
 | `std.concurrent` | Native | 17 | 0 | 17; task, thread, and reactor services |
 | `std.convert` | Native | 11 | 0 | 11; conversion and formatting runtime surface |
-| `std.encoding` | Source | 7 | 7 | 0; hex, base64, percent encoding and ROT13 over UTF-8 text (uses the native string primitives) |
+| `std.csv` | Source | 3 | 3 | 0; RFC 4180 parsing and canonical writing over text |
+| `std.diff` | Source | 2 | 2 | 0; line diff with unified hunks and three context lines |
+| `std.encoding` | Source | 13 | 13 | 0; hex, base32/58/64/85, percent encoding and ROT13 over UTF-8 text |
 | `std.env` | Native | 6 | 0 | 6; process environment and arguments |
-| `std.error` | Hybrid | 7 | 0 | 7; typed error surface plus runtime status/handles |
+| `std.error` | Native | 8 | 0 | 8; typed error surface plus the `panic` termination primitive |
+| `std.fmt` | Source | 8 | 8 | 0; padding, separators, fixed-point/scientific floats, SI sizes, durations and percentages |
 | `std.fs` | Native | 10 | 0 | 10; operating-system filesystem access |
-| `std.fmt` | Source | 4 | 4 | 0; padding, separators, fixed-point floats and SI byte sizes |
+| `std.hash` | Source | 3 | 3 | 0; FNV-1a, DJB2 and CRC-32 over UTF-8 bytes |
 | `std.io` | Native | 7 | 0 | 7; process input/output streams |
-| `std.iter` | Source | 8 | 8 | 0; List<T> adaptors and integer predicate queries |
+| `std.iter` | Source | 16 | 16 | 0; List<T> adaptors, integer aggregates and predicate queries |
 | `std.math` | Native | 24 | 0 | 24; existing runtime math implementation |
 | `std.ml` | Hybrid | 112 | 0 | 112; tensors, model/runtime state, and compiler-native paths |
 | `std.numeric` | Hybrid | 65 | 0 | 65; exact-width compiler semantics and runtime adapters |
 | `std.option` | Hybrid | 5 | 0 | 5; language type semantics plus tagged runtime values |
-| `std.path` | Source | 7 | 7 | 0; join/normalize/component helpers over `/` and `\` inputs |
+| `std.path` | Source | 13 | 13 | 0; join/normalize/component helpers, glob matching and sanitizing |
 | `std.random` | Native | 4 | 0 | 4; runtime random-number state |
 | `std.range` | Hybrid | 8 | 0 | 8; language range lowering and iterator adapters |
 | `std.result` | Hybrid | 7 | 0 | 7; language result semantics plus runtime error propagation |
-| `std.semver` | Source | 6 | 6 | 0; SemVer 2.0.0 validation, components and precedence |
+| `std.semver` | Source | 7 | 7 | 0; SemVer 2.0.0 parsing, precedence, components and range satisfaction |
 | `std.serve` | Native | 31 | 0 | 31; local serving and request state |
-| `std.stats` | Source | 10 | 10 | 0; aggregates, spread, percentiles and correlation over float lists |
+| `std.stats` | Source | 16 | 16 | 0; aggregates, spread, percentiles, correlation, regression, histogram and entropy |
 | `std.string` | Native | 28 | 0 | 28; string allocation, text runtime helpers and the `from_scalar` materialization primitive |
 | `std.tensor` | Hybrid | 111 | 0 | 111; storage, CPU/GPU kernels, autodiff, and compiler lowering |
-| `std.text` | Source | 8 | 8 | 0; slug/whitespace/truncate/wrap/word-count/JSON escapes/similarity |
+| `std.testing` | Source | 7 | 7 | 0; assertion helpers that terminate through `std.error.panic` |
+| `std.text` | Source | 16 | 16 | 0; slug/whitespace/wrap/word helpers, JSON escapes, similarity and truncation |
 | `std.time` | Native | 23 | 0 | 23; clocks and platform time services |
-| `std.validate` | Source | 8 | 8 | 0; checksum/document/IBAN checks plus documented e-mail and URL heuristics |
+| `std.unicode` | Source | 9 | 9 | 0; rune geometry, code-point conversion and strict UTF-8 validation |
+| `std.uuid` | Source | 5 | 5 | 0; UUID parsing, formatting, version detection and v4 generation |
+| `std.validate` | Source | 15 | 15 | 0; checksums, documents, cards, phones and heuristic address checks |
+| `std.vector` | Source | 6 | 6 | 0; small float-vector algebra over `List<float>` (not a tensor replacement) |
 
 `std.algorithms` is the first source module. Its public logic is pure Spectra
 over the native `std.string`, `std.collections` and `std.option` primitives and

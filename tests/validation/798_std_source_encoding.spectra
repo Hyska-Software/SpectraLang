@@ -78,6 +78,12 @@ public func main() returns int {
     if option.option_unwrap_or(encoding.base64_decode(encoding.base64_encode("Olá, mundo!")), "x") != "Olá, mundo!" {
         return 22
     }
+    // `AA==` decodes to a single 0x00 byte, which text cannot represent, so the
+    // result is None rather than a dropped NUL
+    // (docs/architecture/stdlib-bytes-contract.md).
+    if option.is_some(encoding.base64_decode("AA==")) {
+        return 37
+    }
 
     // ── percent encoding ─────────────────────────────────────────────────
     if encoding.percent_encode("a b") != "a%20b" {

@@ -646,6 +646,13 @@ pub enum BinaryOperator {
     Divide,   // /
     Modulo,   // %
 
+    // Bitwise / shifts
+    BitAnd, // &
+    BitOr,  // |
+    BitXor, // ^
+    Shl,    // <<
+    Shr,    // >>
+
     // Comparison
     Equal,        // ==
     NotEqual,     // !=
@@ -663,6 +670,7 @@ pub enum BinaryOperator {
 pub enum UnaryOperator {
     Negate, // -
     Not,    // !
+    BitNot, // ~
 }
 
 // Loop infinito: loop { ... }

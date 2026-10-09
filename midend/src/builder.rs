@@ -148,6 +148,34 @@ impl IRBuilder {
         })
     }
 
+    pub fn build_bit_and(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
+        self.try_emit(func, |result| InstructionKind::BitAnd { result, lhs, rhs })
+    }
+
+    pub fn build_bit_or(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
+        self.try_emit(func, |result| InstructionKind::BitOr { result, lhs, rhs })
+    }
+
+    pub fn build_bit_xor(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
+        self.try_emit(func, |result| InstructionKind::BitXor { result, lhs, rhs })
+    }
+
+    pub fn build_shl(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
+        self.try_emit(func, |result| InstructionKind::Shl { result, lhs, rhs })
+    }
+
+    pub fn build_shr(&self, func: &mut Function, lhs: Value, rhs: Value, unsigned: bool) -> Value {
+        self.try_emit(
+            func,
+            |result| InstructionKind::Shr {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            },
+        )
+    }
+
     pub fn build_eq(&self, func: &mut Function, lhs: Value, rhs: Value) -> Value {
         self.try_emit(func, |result| InstructionKind::Eq { result, lhs, rhs })
     }

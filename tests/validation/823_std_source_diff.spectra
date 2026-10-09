@@ -1,0 +1,159 @@
+// Consumer for `std.diff`: identical inputs, insertions, deletions,
+// replacements, empty sides, three-line context and the hunk merge threshold.
+module std_source_diff
+
+import std.collections as collections
+import std.convert as convert
+import std.diff as diff
+import std.option as option
+import std.string as str
+
+func lines(values: [string], count: int) returns List<string> {
+    let list: List<string> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, values[index])
+        index = index + 1
+    }
+    return list
+}
+
+func numbered(count: int) returns List<string> {
+    let list: List<string> = collections.list_new()
+    let index = 0
+    while index < count {
+        collections.list_push(list, "l" + convert.int_to_string(index))
+        index = index + 1
+    }
+    return list
+}
+
+func with_change(values: List<string>, changed: int, value: string) returns List<string> {
+    let copy: List<string> = collections.list_new()
+    let index = 0
+    while index < collections.list_len(values) {
+        if index == changed {
+            collections.list_push(copy, value)
+        } else {
+            collections.list_push(copy, option.option_unwrap_or(collections.list_get(values, index), ""))
+        }
+        index = index + 1
+    }
+    return copy
+}
+
+func header_count(items: List<string>) returns int {
+    let count = 0
+    let index = 0
+    while index < collections.list_len(items) {
+        let line = option.option_unwrap_or(collections.list_get(items, index), "")
+        if str.starts_with(line, "@@") {
+            count = count + 1
+        }
+        index = index + 1
+    }
+    return count
+}
+
+public func main() returns int {
+    let abc = lines(["a", "b", "c"], 3)
+    let ab = lines(["a", "b"], 2)
+    let axc = lines(["a", "x", "c"], 3)
+    let bc = lines(["b", "c"], 2)
+    let a = lines(["a"], 1)
+    let empty: List<string> = collections.list_new()
+
+    // ── same_lines ──────────────────────────────────────────────────────
+    if not diff.same_lines(abc, abc) {
+        return 1
+    }
+    if diff.same_lines(abc, ab) {
+        return 2
+    }
+    if diff.same_lines(abc, axc) {
+        return 3
+    }
+    if not diff.same_lines(empty, collections.list_new()) {
+        return 4
+    }
+    // Identical inputs produce no hunks at all.
+    if collections.list_len(diff.diff_lines(abc, abc)) != 0 {
+        return 5
+    }
+
+    // ── insertion and deletion ──────────────────────────────────────────
+    if not diff.same_lines(diff.diff_lines(ab, abc), lines(["@@ -1,2 +1,3 @@", " a", " b", "+c"], 4)) {
+        return 6
+    }
+    if not diff.same_lines(diff.diff_lines(abc, bc), lines(["@@ -1,3 +1,2 @@", "-a", " b", " c"], 4)) {
+        return 7
+    }
+
+    // ── replacement ─────────────────────────────────────────────────────
+    if not diff.same_lines(diff.diff_lines(abc, axc), lines(["@@ -1,3 +1,3 @@", " a", "-b", "+x", " c"], 5)) {
+        return 8
+    }
+    // A multi-line replacement lists every removal before every addition.
+    if not diff.same_lines(diff.diff_lines(abc, lines(["a", "x", "y"], 3)), lines(["@@ -1,3 +1,3 @@", " a", "-b", "-c", "+x", "+y"], 6)) {
+        return 9
+    }
+
+    // ── empty sides ─────────────────────────────────────────────────────
+    if not diff.same_lines(diff.diff_lines(empty, a), lines(["@@ -1,0 +1,1 @@", "+a"], 2)) {
+        return 10
+    }
+    if not diff.same_lines(diff.diff_lines(a, empty), lines(["@@ -1,1 +1,0 @@", "-a"], 2)) {
+        return 11
+    }
+    if collections.list_len(diff.diff_lines(empty, collections.list_new())) != 0 {
+        return 12
+    }
+
+    // ── context clamping at the file edges ──────────────────────────────
+    let top = diff.diff_lines(lines(["a", "b", "c", "d"], 4), lines(["x", "b", "c", "d"], 4))
+    if not diff.same_lines(top, lines(["@@ -1,4 +1,4 @@", "-a", "+x", " b", " c", " d"], 6)) {
+        return 13
+    }
+    let bottom = diff.diff_lines(lines(["a", "b", "c", "d", "e"], 5), lines(["a", "b", "c", "d", "x"], 5))
+    if not diff.same_lines(bottom, lines(["@@ -2,4 +2,4 @@", " b", " c", " d", "-e", "+x"], 6)) {
+        return 14
+    }
+
+    // ── three context lines around a middle change ──────────────────────
+    let middle = diff.diff_lines(numbered(20), with_change(numbered(20), 10, "x"))
+    if not diff.same_lines(middle, lines(["@@ -8,7 +8,7 @@", " l7", " l8", " l9", "-l10", "+x", " l11", " l12", " l13"], 9)) {
+        return 15
+    }
+
+    // ── six unchanged lines keep one hunk ───────────────────────────────
+    let base10 = numbered(10)
+    let near = with_change(with_change(base10, 1, "x"), 8, "y")
+    let merged = diff.diff_lines(base10, near)
+    if header_count(merged) != 1 {
+        return 16
+    }
+    if not diff.same_lines(merged, lines(["@@ -1,10 +1,10 @@", " l0", "-l1", "+x", " l2", " l3", " l4", " l5", " l6", " l7", "-l8", "+y", " l9"], 13)) {
+        return 17
+    }
+
+    // ── seven unchanged lines split the hunks ───────────────────────────
+    let base12 = numbered(12)
+    let far = with_change(with_change(base12, 2, "x"), 10, "y")
+    let split = diff.diff_lines(base12, far)
+    if header_count(split) != 2 {
+        return 18
+    }
+    if not diff.same_lines(split, lines(["@@ -1,6 +1,6 @@", " l0", " l1", "-l2", "+x", " l3", " l4", " l5", "@@ -8,5 +8,5 @@", " l7", " l8", " l9", "-l10", "+y", " l11"], 15)) {
+        return 19
+    }
+
+    // ── empty line bodies ───────────────────────────────────────────────
+    if not diff.same_lines(diff.diff_lines(ab, lines(["a", ""], 2)), lines(["@@ -1,2 +1,2 @@", " a", "-b", "+"], 4)) {
+        return 20
+    }
+    if not diff.same_lines(diff.diff_lines(lines(["a", ""], 2), lines(["a", "b", ""], 3)), lines(["@@ -1,2 +1,3 @@", " a", "+b", " "], 4)) {
+        return 21
+    }
+
+    return 0
+}

@@ -5583,3 +5583,38 @@ acceptance = [
   "The stdlib contract audit detects stale builtin declarations, duplicate source/native definitions, missing module sources, and undocumented native capabilities.",
   "Unmigrated modules remain explicitly classified; source-file presence alone does not complete a module or the phase."
 ]
+[[items]]
+id = "R-3407"
+title = "Language Prerequisites for Further Source-Authored Standard Modules"
+phase = "phase_34"
+owner = "frontend"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3401", "R-3406"]
+summary = "Close the language gaps that block whole families of source-authored standard modules: integer bitwise/shift operators, a documented terminating panic primitive, a parser/semantic/lint nesting budget derived from the real stack, and a recorded bytes contract."
+acceptance = [
+  "`& | ^ << >>` and unary `~` parse, type-check, constant-fold, and lower with documented operand rules and shift masking, and produce identical JIT and AOT results (`tests/validation/808_core_bitwise_operators.spectra`).",
+  "A non-integer operand reports the documented semantic error with exit 65 (`tests/errors/720_core_bitwise_non_integer_operand.spectra`).",
+  "`std.error.panic(message)` writes `error: <message>` to stderr and terminates with status 70 in JIT, in an AOT binary, and through `spectralang package test`, proven by `tests/validation/809_error_panic_exit_code.spectra` and `tests/projects/invalid/stdlib_testing_assertion_failure`.",
+  "The parser, semantic analysis, and lint share one nesting budget derived from the available stack: legitimate deep nesting compiles in a 1 MiB thread while pathological input still reports `P013` (`tests/validation/810_core_deep_nesting_parse.spectra`).",
+  "`docs/architecture/stdlib-bytes-contract.md` records the string/bytes contract and the `std.bytes`/`std.unicode` fixtures pass in JIT and AOT."
+]
+
+[[items]]
+id = "R-3408"
+title = "Standard Library Source Expansion Wave 2"
+phase = "phase_34"
+owner = "runtime"
+priority = "P1"
+status = "complete"
+risk = "medium"
+dependencies = ["R-3406", "R-3407"]
+summary = "Expand the source-authored standard library to 18 modules and 178 public functions, add the shared UTF-8/bytes layer, and route every new symbol through the generated catalog, documentation, probes, and JIT+AOT execution coverage."
+acceptance = [
+  "`stdlib/src/` contains `std.unicode`, `std.bytes`, `std.csv`, `std.diff`, `std.vector`, `std.uuid`, `std.testing`, and `std.hash` in addition to the wave 1 modules, and the generated catalog labels every public function of those modules `spectra-source` with a compiled-Spectra ABI and no host symbol.",
+  "Every module has an import-only consumer fixture executed in JIT and AOT with matching exit codes recorded in `tests/execution-baseline.json`.",
+  "`validate_r3007_stdlib_contract.py --binary target/debug/spectralang.exe --require-catalog` reports `blockers: 0`, with a documentation reference and a probe for every source symbol.",
+  "`docs/reference/05-stdlib.md` and `docs/reference/06-referencia-rapida.md` document every public source function, and the migration ledger classifies each module form and remaining native dependency.",
+  "No duplicated UTF-8 decoding or validation helper remains in `std.algorithms`, `std.encoding`, `std.text`, or `std.path`; the shared behavior lives in `std.unicode` and `std.bytes`."
+]

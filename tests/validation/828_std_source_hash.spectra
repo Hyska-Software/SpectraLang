@@ -1,0 +1,91 @@
+// Consumer for `std.hash`: FNV-1a 64-bit, DJB2 and CRC-32 against published
+// vectors, the empty string, multi-byte UTF-8 input and result ranges.
+module std_source_hash
+
+import std.hash as hash
+
+public func main() returns int {
+    // ── CRC-32 known vectors ─────────────────────────────────────────────
+    if hash.crc32("") != 0 {
+        return 1
+    }
+    if hash.crc32("123456789") != 0xCBF43926 {
+        return 2
+    }
+    if hash.crc32("The quick brown fox jumps over the lazy dog") != 0x414FA339 {
+        return 3
+    }
+    if hash.crc32("a") != 0xE8B7BE43 {
+        return 4
+    }
+    if hash.crc32("abc") != 0x352441C2 {
+        return 5
+    }
+    if hash.crc32("foobar") != 0x9EF61F95 {
+        return 6
+    }
+    // The result is always an unsigned 32-bit value.
+    let sample = hash.crc32("hello")
+    if sample < 0 or sample > 0xFFFFFFFF {
+        return 7
+    }
+    if sample != 907060870 {
+        return 8
+    }
+    // Every UTF-8 byte participates (`é` is the two bytes 0xC3 0xA9).
+    if hash.crc32("é") != 235179326 {
+        return 9
+    }
+
+    // ── FNV-1a 64-bit known vectors ──────────────────────────────────────
+    // The empty string is the offset basis, carried as a signed `int`.
+    if hash.fnv1a64_str("") != -3750763034362895579 {
+        return 10
+    }
+    if hash.fnv1a64_str("a") != -5808556873153909620 {
+        return 11
+    }
+    if hash.fnv1a64_str("foobar") != -8821353812377114648 {
+        return 12
+    }
+    if hash.fnv1a64_str("abc") != -1792535898324117685 {
+        return 13
+    }
+    if hash.fnv1a64_str("Aé😀B") != -994597476262901383 {
+        return 14
+    }
+
+    // ── DJB2 known vectors ───────────────────────────────────────────────
+    if hash.djb2_str("") != 5381 {
+        return 15
+    }
+    if hash.djb2_str("a") != 177670 {
+        return 16
+    }
+    if hash.djb2_str("abc") != 193485963 {
+        return 17
+    }
+    if hash.djb2_str("foobar") != 6953516687550 {
+        return 18
+    }
+    if hash.djb2_str("hello") != 210714636441 {
+        return 19
+    }
+
+    // ── determinism ──────────────────────────────────────────────────────
+    if hash.crc32("hello world") != hash.crc32("hello world") {
+        return 20
+    }
+    if hash.fnv1a64_str("hello world") != hash.fnv1a64_str("hello world") {
+        return 21
+    }
+    if hash.djb2_str("hello world") != hash.djb2_str("hello world") {
+        return 22
+    }
+    // Distinct inputs disagree (a smoke check, not a collision guarantee).
+    if hash.fnv1a64_str("a") == hash.fnv1a64_str("b") {
+        return 23
+    }
+
+    return 0
+}

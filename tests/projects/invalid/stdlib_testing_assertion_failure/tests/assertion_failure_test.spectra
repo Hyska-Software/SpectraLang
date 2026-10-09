@@ -1,0 +1,16 @@
+// `spectralang package test --root <dir>` only executes functions marked
+// `#[spectra_async_test]` (it wraps them in a generated `main`), so this case
+// is the package-test proof of the `std.testing` failure path: it carries the
+// same failing assertion as `failure.spectra` and the run terminates with
+// `expected 4, found 3: counter must match` on stderr and exit code 70.
+module assertion_failure_test
+
+import std.io as io
+import std.testing as testing
+
+#[spectra_async_test]
+async func counter_mismatch_fails() returns int {
+    io.println("checking counter")
+    testing.assert_eq_int(3, 4, "counter must match")
+    return 0
+}

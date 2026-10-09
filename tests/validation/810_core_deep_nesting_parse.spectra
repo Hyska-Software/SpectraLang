@@ -1,0 +1,56 @@
+// Deep but legitimate nesting: the frontend budget must stay relative to
+// the thread's real stack instead of a fixed 512 KiB (F-09).
+module core_deep_nesting_parse
+
+public func main() returns int {
+    let marker = 0
+    if 0 >= 0 {
+        if 1 >= 0 {
+            if 2 >= 0 {
+                if 3 >= 0 {
+                    if 4 >= 0 {
+                        if 5 >= 0 {
+                            if 6 >= 0 {
+                                if 7 >= 0 {
+                                    if 8 >= 0 {
+                                        if 9 >= 0 {
+                                            if 10 >= 0 {
+                                                if 11 >= 0 {
+                                                    if 12 >= 0 {
+                                                        if 13 >= 0 {
+                                                            if 14 >= 0 {
+                                                                if 15 >= 0 {
+                                                                    if 16 >= 0 {
+                                                                        if 17 >= 0 {
+                                                                            if 18 >= 0 {
+                                                                                if 19 >= 0 {
+                                                                                    if 20 >= 0 {
+                                                                                        if 21 >= 0 {
+                                                                                            marker = marker + 1
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if marker != 1 {
+        return 1
+    }
+    return 0
+}

@@ -141,6 +141,13 @@ impl ASTLowering {
                         self.builder
                             .build_rem_signedness(ir_func, lhs, rhs, operands_unsigned)
                     }
+                    BinaryOperator::BitAnd => self.builder.build_bit_and(ir_func, lhs, rhs),
+                    BinaryOperator::BitOr => self.builder.build_bit_or(ir_func, lhs, rhs),
+                    BinaryOperator::BitXor => self.builder.build_bit_xor(ir_func, lhs, rhs),
+                    BinaryOperator::Shl => self.builder.build_shl(ir_func, lhs, rhs),
+                    BinaryOperator::Shr => {
+                        self.builder.build_shr(ir_func, lhs, rhs, operands_unsigned)
+                    }
                     BinaryOperator::Equal => self.lower_value_equality(
                         lhs,
                         rhs,
@@ -231,6 +238,16 @@ impl ASTLowering {
                 let operand_value = self.lower_expression(operand, ir_func);
 
                 match operator {
+                    UnaryOperator::BitNot => {
+                        // `~x` is `x XOR -1` in the operand's own representation,
+                        // so exact-width results stay in that width (`~0u8` is
+                        // 0xFF).
+                        let operand_ir_type = self.infer_expr_ir_type(operand);
+                        let all_ones =
+                            self.builder
+                                .build_const_int_typed(ir_func, -1, operand_ir_type);
+                        self.builder.build_bit_xor(ir_func, operand_value, all_ones)
+                    }
                     UnaryOperator::Negate => {
                         // Negate: 0 - operand, preserving numeric kind. The
                         // zero must be typed exactly like the operand's

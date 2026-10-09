@@ -363,3 +363,292 @@ func iban_step(remainder: int, code: int) returns int {
     let after_tens = (remainder * 10 + value / 10) % 97
     return (after_tens * 10 + value % 10) % 97
 }
+
+
+// ── GTIN / EAN family ────────────────────────────────────────────────────
+
+// GS1 check digit for 8, 12, 13 or 14 digits (EAN-8/EAN-13/GTIN-12/GTIN-14).
+// ISBN-13 keeps its own name for the domain meaning; both accept the same
+// digit string.
+public func gtin_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    let length = str.len(digits)
+    if length != 8 and length != 12 and length != 13 and length != 14 {
+        return false
+    }
+    if digit_at(digits, 0) < 0 {
+        return false
+    }
+
+    let sum = 0
+    let index = 0
+    while index < length - 1 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return false
+        }
+        let from_right = length - 2 - index
+        if from_right % 2 == 0 {
+            sum = sum + value * 3
+        } else {
+            sum = sum + value
+        }
+        index = index + 1
+    }
+
+    let expected = (10 - sum % 10) % 10
+    return expected == digit_at(digits, length - 1)
+}
+
+// ── Card brands ──────────────────────────────────────────────────────────
+
+// Brand inferred from the leading digits: `visa`, `mastercard`, `amex`,
+// `diners`, `discover`, `elo`, or "" when unknown. The Luhn check is separate.
+public func card_brand(text: string) returns string {
+    let digits = digits_only(text)
+    let length = str.len(digits)
+    if length < 2 {
+        return ""
+    }
+
+    let two = prefix_number(digits, 2)
+    let four = prefix_number(digits, 4)
+
+    if four == 4011 or four == 4312 or four == 4389 or four == 4514 or four == 4573 {
+        return "elo"
+    }
+    if four == 5041 or four == 5067 or four == 5090 {
+        return "elo"
+    }
+    if four == 6277 or four == 6362 or four == 6363 or four == 6504 or four == 6505 or four == 6516 or four == 6550 {
+        return "elo"
+    }
+    if digit_at(digits, 0) == 4 {
+        return "visa"
+    }
+    if two >= 51 and two <= 55 {
+        return "mastercard"
+    }
+    if two == 34 or two == 37 {
+        return "amex"
+    }
+    if two == 36 or two == 38 or two == 39 {
+        return "diners"
+    }
+    let three = prefix_number(digits, 3)
+    if three >= 300 and three <= 305 {
+        return "diners"
+    }
+    if four == 6011 or two == 65 {
+        return "discover"
+    }
+    if two >= 22 and two <= 27 {
+        return "mastercard"
+    }
+    return ""
+}
+
+// ── Phone numbers ────────────────────────────────────────────────────────
+
+// E.164 shape: `+`, a non-zero leading digit and 7 to 15 digits in total.
+public func e164_valid(text: string) returns bool {
+    if str.len(text) < 8 or str.char_at(text, 0) != 43 {
+        return false
+    }
+
+    // Every character after the `+` must be a decimal digit; stripping
+    // non-digits first would accept `+12025550123x`.
+    let length = str.len(text)
+    let index = 1
+    while index < length {
+        let code = str.char_at(text, index)
+        if code < 48 or code > 57 {
+            return false
+        }
+        index = index + 1
+    }
+
+    let digits = length - 1
+    if digits < 7 or digits > 15 {
+        return false
+    }
+    return str.char_at(text, 1) != 48
+}
+
+// ── Brazilian documents ──────────────────────────────────────────────────
+
+// PIS/PASEP: 11 digits with the mod-11 check digit (weights 3,2,9..2).
+public func pis_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 11 {
+        return false
+    }
+    if all_digits_equal(digits) {
+        return false
+    }
+
+    let weights: [int] = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    let sum = 0
+    let index = 0
+    while index < 10 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return false
+        }
+        sum = sum + value * weights[index]
+        index = index + 1
+    }
+
+    let expected = 11 - sum % 11
+    if expected >= 10 {
+        expected = 0
+    }
+    return expected == digit_at(digits, 10)
+}
+
+// Carteira Nacional de Habilitação: nine digits plus two check digits.
+public func cnh_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 11 {
+        return false
+    }
+    if all_digits_equal(digits) {
+        return false
+    }
+
+    let first = cnh_check_digit(digits, true)
+    let second = cnh_check_digit(digits, false)
+    return first == digit_at(digits, 9) and second == digit_at(digits, 10)
+}
+
+func cnh_check_digit(digits: string, descending: bool) returns int {
+    let sum = 0
+    let index = 0
+    while index < 9 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return -1
+        }
+        if descending {
+            sum = sum + value * (9 - index)
+        } else {
+            sum = sum + value * (1 + index)
+        }
+        index = index + 1
+    }
+
+    let digit = sum % 11
+    if digit >= 10 {
+        return 0
+    }
+    return digit
+}
+
+// Título de eleitor: eight sequence digits, two UF digits and two check
+// digits. UFs run from 01 to 28.
+public func titulo_eleitor_valid(text: string) returns bool {
+    let digits = digits_only(text)
+    if str.len(digits) != 12 {
+        return false
+    }
+    if all_digits_equal(digits) {
+        return false
+    }
+
+    let state = digit_at(digits, 8) * 10 + digit_at(digits, 9)
+    if state < 1 or state > 28 {
+        return false
+    }
+
+    let first = titulo_check_digit(digits, state)
+    if first != digit_at(digits, 10) {
+        return false
+    }
+    return titulo_second_digit(digits, state, first) == digit_at(digits, 11)
+}
+
+func titulo_check_digit(digits: string, state: int) returns int {
+    let sum = 0
+    let index = 0
+    while index < 8 {
+        let value = digit_at(digits, index)
+        if value < 0 {
+            return -1
+        }
+        sum = sum + value * (2 + index)
+        index = index + 1
+    }
+
+    let digit = sum % 11
+    if digit == 10 {
+        return 0
+    }
+    return digit
+}
+
+func titulo_second_digit(digits: string, state: int, first: int) returns int {
+    let sum = (state / 10) * 7 + (state % 10) * 8 + first * 9
+    let digit = sum % 11
+    if digit == 10 {
+        return 0
+    }
+    return digit
+}
+
+// Alphanumeric CNPJ: twelve characters whose digit value is `code - 48`
+// (letters A-Z count as 17..42) plus two numeric check digits.
+public func cnpj_alpha_valid(text: string) returns bool {
+    let characters = alphanumeric_upper(text)
+    if str.len(characters) != 14 {
+        return false
+    }
+
+    let first = cnpj_alpha_check_digit(characters, 12)
+    let second = cnpj_alpha_check_digit(characters, 13)
+    if first != digit_at(characters, 12) or second != digit_at(characters, 13) {
+        return false
+    }
+    return true
+}
+
+func cnpj_alpha_check_digit(characters: string, count: int) returns int {
+    let weights: [int] = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    let offset = 13 - count
+
+    let sum = 0
+    let index = 0
+    while index < count {
+        let code = str.char_at(characters, index)
+        let value = code - 48
+        if value < 0 or value > 42 {
+            return -1
+        }
+        sum = sum + value * weights[index + offset]
+        index = index + 1
+    }
+
+    let remainder = sum % 11
+    if remainder < 2 {
+        return 0
+    }
+    return 11 - remainder
+}
+
+// Numeric value of the first `count` digits, or -1 when they are not digits.
+func prefix_number(digits: string, count: int) returns int {
+    if str.len(digits) < count {
+        return -1
+    }
+
+    let value = 0
+    let index = 0
+    while index < count {
+        let digit = digit_at(digits, index)
+        if digit < 0 {
+            return -1
+        }
+        value = value * 10 + digit
+        index = index + 1
+    }
+    return value
+}

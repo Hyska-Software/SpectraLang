@@ -979,6 +979,11 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::Mul { result, .. }
         | InstructionKind::Div { result, .. }
         | InstructionKind::Rem { result, .. }
+        | InstructionKind::BitAnd { result, .. }
+        | InstructionKind::BitOr { result, .. }
+        | InstructionKind::BitXor { result, .. }
+        | InstructionKind::Shl { result, .. }
+        | InstructionKind::Shr { result, .. }
         | InstructionKind::Eq { result, .. }
         | InstructionKind::Ne { result, .. }
         | InstructionKind::Lt { result, .. }
@@ -1044,6 +1049,11 @@ pub fn instruction_operands(instruction: &Instruction) -> Vec<Value> {
         | InstructionKind::Mul { lhs, rhs, .. }
         | InstructionKind::Div { lhs, rhs, .. }
         | InstructionKind::Rem { lhs, rhs, .. }
+        | InstructionKind::BitAnd { lhs, rhs, .. }
+        | InstructionKind::BitOr { lhs, rhs, .. }
+        | InstructionKind::BitXor { lhs, rhs, .. }
+        | InstructionKind::Shl { lhs, rhs, .. }
+        | InstructionKind::Shr { lhs, rhs, .. }
         | InstructionKind::Eq { lhs, rhs, .. }
         | InstructionKind::Ne { lhs, rhs, .. }
         | InstructionKind::Lt { lhs, rhs, .. }
@@ -1295,6 +1305,11 @@ fn binary_operand_pair(kind: &InstructionKind) -> Option<(Value, Value)> {
         | InstructionKind::Mul { lhs, rhs, .. }
         | InstructionKind::Div { lhs, rhs, .. }
         | InstructionKind::Rem { lhs, rhs, .. }
+        | InstructionKind::BitAnd { lhs, rhs, .. }
+        | InstructionKind::BitOr { lhs, rhs, .. }
+        | InstructionKind::BitXor { lhs, rhs, .. }
+        | InstructionKind::Shl { lhs, rhs, .. }
+        | InstructionKind::Shr { lhs, rhs, .. }
         | InstructionKind::Eq { lhs, rhs, .. }
         | InstructionKind::Ne { lhs, rhs, .. }
         | InstructionKind::Lt { lhs, rhs, .. }
@@ -1315,6 +1330,11 @@ fn instruction_opcode(kind: &InstructionKind) -> &'static str {
         InstructionKind::Mul { .. } => "Mul",
         InstructionKind::Div { .. } => "Div",
         InstructionKind::Rem { .. } => "Rem",
+        InstructionKind::BitAnd { .. } => "BitAnd",
+        InstructionKind::BitOr { .. } => "BitOr",
+        InstructionKind::BitXor { .. } => "BitXor",
+        InstructionKind::Shl { .. } => "Shl",
+        InstructionKind::Shr { .. } => "Shr",
         InstructionKind::Eq { .. } => "Eq",
         InstructionKind::Ne { .. } => "Ne",
         InstructionKind::Lt { .. } => "Lt",

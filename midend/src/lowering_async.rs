@@ -1149,6 +1149,11 @@ fn instruction_result(instruction: &Instruction) -> Option<Value> {
         | InstructionKind::Mul { result, .. }
         | InstructionKind::Div { result, .. }
         | InstructionKind::Rem { result, .. }
+        | InstructionKind::BitAnd { result, .. }
+        | InstructionKind::BitOr { result, .. }
+        | InstructionKind::BitXor { result, .. }
+        | InstructionKind::Shl { result, .. }
+        | InstructionKind::Shr { result, .. }
         | InstructionKind::Eq { result, .. }
         | InstructionKind::Ne { result, .. }
         | InstructionKind::Lt { result, .. }
@@ -1642,6 +1647,11 @@ fn shift_body_values(function: &mut IRFunction, amount: usize) {
                 | InstructionKind::Mul { result, lhs, rhs }
                 | InstructionKind::Div { result, lhs, rhs, .. }
                 | InstructionKind::Rem { result, lhs, rhs, .. }
+                | InstructionKind::BitAnd { result, lhs, rhs }
+                | InstructionKind::BitOr { result, lhs, rhs }
+                | InstructionKind::BitXor { result, lhs, rhs }
+                | InstructionKind::Shl { result, lhs, rhs }
+                | InstructionKind::Shr { result, lhs, rhs, .. }
                 | InstructionKind::Eq { result, lhs, rhs }
                 | InstructionKind::Ne { result, lhs, rhs }
                 | InstructionKind::Lt { result, lhs, rhs, .. }

@@ -1,0 +1,230 @@
+module std.csv
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// RFC 4180 comma-separated values.
+//
+// Parsing accepts a quoted field (`"..."`) in which `""` is an escaped quote
+// and CR/LF are field content, and treats CRLF, LF and a lone CR as record
+// separators. The last record may omit its separator. A quote left open at the
+// end of a record is an error, so the whole call returns `None`.
+//
+// Record boundaries follow one rule: a separator always closes the record in
+// progress, and whatever follows the final separator is flushed as a record
+// only when it is non-empty. Empty text therefore holds no records
+// (`parse("")` is an empty list), a separator with nothing before it yields an
+// empty record (`parse("\n")` is `[[""]]` and `parse("a\n\n")` is
+// `[["a"], [""]]`), a separator that merely terminates the final record adds no
+// extra record (`parse("a,b\nc\n")` is `[["a","b"], ["c"]]`), and a trailing
+// field separator yields a final empty field (`parse("a,")` is `[["a", ""]]`).
+// Quotes are honoured wherever they appear, so a quoted run inside an unquoted
+// field is spliced into it with its quotes removed (`parse("a\"b\"c")` is
+// `[["abc"]]`); RFC 4180 does not use such fields.
+//
+// `write` is the canonical form: a field is quoted only when it holds `,`, `"`,
+// CR or LF (inner quotes are doubled) and every record ends with LF, so
+// `parse(write(rows))` gives `rows` back for every table without an empty
+// record.
+//
+// Fields are copied in chunks delimited by quote, comma and separator bytes, so
+// non-ASCII UTF-8 text survives parsing unchanged.
+
+// Parses `text` into a record per line, or `None` when a quoted field is left
+// unterminated.
+public func parse(text: string) returns Option<List<List<string>>> {
+    let records: List<List<string>> = collections.list_new()
+    let length = str.len(text)
+    if length == 0 {
+        return Option::Some(records)
+    }
+
+    let index = 0
+    while index < length {
+        let scanned = scan_record(text, index, length)
+        if not option.is_some(scanned) {
+            return Option::None
+        }
+        let fallback: List<string> = collections.list_new()
+        let (fields, next) = option.option_unwrap_or(scanned, (fallback, length))
+        collections.list_push(records, fields)
+        index = next
+    }
+
+    return Option::Some(records)
+}
+
+// Parses the first record of `text`; anything after its separator is ignored.
+// Newlines inside quotes are field content, so `parse_row("\"a\nb\"")` is
+// `["a\nb"]`. Empty text is one record with one empty field, and an unterminated
+// quote returns `None`.
+public func parse_row(text: string) returns Option<List<string>> {
+    let scanned = scan_record(text, 0, str.len(text))
+    if not option.is_some(scanned) {
+        return Option::None
+    }
+    let fallback: List<string> = collections.list_new()
+    let (fields, _rest) = option.option_unwrap_or(scanned, (fallback, 0))
+    return Option::Some(fields)
+}
+
+// Canonical CSV text: every record ends with LF and a field is quoted only when
+// it holds `,`, `"`, CR or LF. An empty record writes just its terminator and a
+// table with no records writes `""`.
+public func write(rows: List<List<string>>) returns string {
+    let builder = str.builder_new(0)
+    let empty: List<string> = collections.list_new()
+    let count = collections.list_len(rows)
+    let index = 0
+    while index < count {
+        let fields = option.option_unwrap_or(collections.list_get(rows, index), empty)
+        append_row(builder, fields)
+        index = index + 1
+    }
+    return str.builder_finish(builder)
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Reads one record from `text[start..length]`, returning its fields and the
+// index just past its terminating separator (`length` at end of input), or
+// `None` when a quoted field is still open there.
+func scan_record(text: string, start: int, length: int) returns Option<(List<string>, int)> {
+    let fields: List<string> = collections.list_new()
+    let builder = str.builder_new(0)
+    let index = start
+    let field_start = start
+    let quoted = false
+
+    while index < length {
+        let byte = str.char_at(text, index)
+        if byte == 34 {
+            // '"': a doubled quote inside a quoted field is one literal quote.
+            append_chunk(builder, text, field_start, index)
+            if quoted and index + 1 < length and str.char_at(text, index + 1) == 34 {
+                str.builder_push(builder, "\"")
+                index = index + 2
+            } else {
+                quoted = not quoted
+                index = index + 1
+            }
+            field_start = index
+        } else if quoted {
+            index = stride(byte, index, length)
+        } else if byte == 44 {
+            // ','
+            append_chunk(builder, text, field_start, index)
+            collections.list_push(fields, str.builder_finish(builder))
+            builder = str.builder_new(0)
+            index = index + 1
+            field_start = index
+        } else if byte == 10 or byte == 13 {
+            append_chunk(builder, text, field_start, index)
+            collections.list_push(fields, str.builder_finish(builder))
+            return Option::Some((fields, after_separator(text, byte, index, length)))
+        } else {
+            index = stride(byte, index, length)
+        }
+    }
+
+    if quoted {
+        // Release the pending field buffer before failing the record.
+        str.builder_free(builder)
+        return Option::None
+    }
+    append_chunk(builder, text, field_start, length)
+    collections.list_push(fields, str.builder_finish(builder))
+    return Option::Some((fields, length))
+}
+
+// Index just past the record separator: LF consumes one byte, CR consumes a
+// following LF as well.
+func after_separator(text: string, byte: int, index: int, length: int) returns int {
+    let next = index + 1
+    if byte == 13 and next < length and str.char_at(text, next) == 10 {
+        return next + 1
+    }
+    return next
+}
+
+// Appends `text[start..end]` to `builder` when the chunk is not empty.
+func append_chunk(builder: int, text: string, start: int, end: int) {
+    if end > start {
+        str.builder_push(builder, str.substring(text, start, end))
+    }
+}
+
+// One record: its fields joined with `,` and terminated with LF.
+func append_row(builder: int, fields: List<string>) {
+    let count = collections.list_len(fields)
+    let index = 0
+    while index < count {
+        if index > 0 {
+            str.builder_push(builder, ",")
+        }
+        str.builder_push(builder, quote_field(option.option_unwrap_or(collections.list_get(fields, index), "")))
+        index = index + 1
+    }
+    str.builder_push(builder, "\n")
+}
+
+// `text` as a CSV field, quoted and with doubled inner quotes only when it needs
+// it.
+func quote_field(text: string) returns string {
+    if not needs_quoting(text) {
+        return text
+    }
+
+    let length = str.len(text)
+    let builder = str.builder_new(0)
+    str.builder_push(builder, "\"")
+    let index = 0
+    while index < length {
+        let byte = str.char_at(text, index)
+        if byte == 34 {
+            str.builder_push(builder, "\"\"")
+            index = index + 1
+        } else {
+            let next = stride(byte, index, length)
+            str.builder_push(builder, str.substring(text, index, next))
+            index = next
+        }
+    }
+    str.builder_push(builder, "\"")
+    return str.builder_finish(builder)
+}
+
+// True when a field holds a byte the format reserves.
+func needs_quoting(text: string) returns bool {
+    if str.contains(text, ",") {
+        return true
+    }
+    if str.contains(text, "\"") {
+        return true
+    }
+    if str.contains(text, "\r") {
+        return true
+    }
+    return str.contains(text, "\n")
+}
+
+// Next byte offset after the UTF-8 sequence starting at `index` with leading
+// byte `byte`, clamped to `length`. Callers only pass offsets that sit on a
+// character boundary, so the delimiter bytes above never split a sequence.
+func stride(byte: int, index: int, length: int) returns int {
+    let step = 1
+    if byte >= 240 {
+        step = 4
+    } else if byte >= 224 {
+        step = 3
+    } else if byte >= 192 {
+        step = 2
+    }
+
+    let next = index + step
+    if next > length {
+        return length
+    }
+    return next
+}

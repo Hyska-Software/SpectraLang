@@ -1,0 +1,316 @@
+module std.unicode
+
+import std.collections as collections
+import std.option as option
+import std.string as str
+
+// Scalar-value (rune) operations over UTF-8 text. Text is addressed by *rune
+// index*; byte offsets never split a rune. Invalid byte sequences are rejected
+// by `valid_utf8_bytes`, which is the shared validator behind the standard
+// library's byte-decoding surface (see docs/architecture/stdlib-bytes-contract.md).
+
+// ── Text-level operations ────────────────────────────────────────────────
+
+// Number of Unicode scalar values in `text`.
+public func rune_count(text: string) returns int {
+    let bytes = str.len(text)
+    let offset = 0
+    let count = 0
+
+    while offset < bytes {
+        offset = offset + rune_length(text, offset)
+        count = count + 1
+    }
+
+    return count
+}
+
+// Code point of the rune at `index`, or `None` when out of range.
+public func rune_at(text: string, index: int) returns Option<int> {
+    if index < 0 {
+        return Option::None
+    }
+
+    let offset = byte_offset(text, index)
+    if not option.is_some(offset) {
+        return Option::None
+    }
+
+    // `byte_offset` accepts `rune_count(text)` to support slicing; there is no
+    // rune *at* the end offset.
+    let start = option.option_unwrap_or(offset, 0)
+    if start >= str.len(text) {
+        return Option::None
+    }
+    return Option::Some(rune_code(text, start))
+}
+
+// Byte offset of the rune at `rune_index`, or `None` when out of range.
+public func byte_offset(text: string, rune_index: int) returns Option<int> {
+    if rune_index < 0 {
+        return Option::None
+    }
+
+    let bytes = str.len(text)
+    let offset = 0
+    let index = 0
+
+    while index < rune_index and offset < bytes {
+        offset = offset + rune_length(text, offset)
+        index = index + 1
+    }
+
+    if index != rune_index or offset > bytes {
+        return Option::None
+    }
+    return Option::Some(offset)
+}
+
+// Text of the runes in `start..end`. `None` for out-of-range or inverted
+// ranges; the slice never splits a rune.
+public func slice_runes(text: string, start: int, end: int) returns Option<string> {
+    if start < 0 or end < start {
+        return Option::None
+    }
+
+    let start_offset = byte_offset(text, start)
+    if not option.is_some(start_offset) {
+        return Option::None
+    }
+
+    let bytes = str.len(text)
+    let until = end
+    if until > rune_count(text) {
+        return Option::None
+    }
+
+    let end_offset = byte_offset(text, until)
+    if not option.is_some(end_offset) {
+        return Option::None
+    }
+
+    let begin = option.option_unwrap_or(start_offset, 0)
+    let finish = option.option_unwrap_or(end_offset, bytes)
+    if begin > finish {
+        return Option::None
+    }
+    return Option::Some(str.substring(text, begin, finish))
+}
+
+// ── Code-point lists ─────────────────────────────────────────────────────
+
+// One code point per rune, in order.
+public func to_codepoints(text: string) returns List<int> {
+    let codes: List<int> = collections.list_new()
+    let bytes = str.len(text)
+    let offset = 0
+
+    while offset < bytes {
+        collections.list_push(codes, rune_code(text, offset))
+        offset = offset + rune_length(text, offset)
+    }
+
+    return codes
+}
+
+// Text built from code points. `None` for any invalid code point (negative,
+// surrogate half, above U+10FFFF) or for NUL, which the packed string
+// representation cannot carry.
+public func from_codepoints(codes: List<int>) returns Option<string> {
+    let builder = str.builder_new(0)
+    let count = collections.list_len(codes)
+    let index = 0
+
+    while index < count {
+        let code = option.option_unwrap_or(collections.list_get(codes, index), -1)
+        if code <= 0 or not is_scalar_value(code) {
+            str.builder_free(builder)
+            return Option::None
+        }
+
+        let piece = str.from_scalar(code)
+        if not option.is_some(piece) {
+            str.builder_free(builder)
+            return Option::None
+        }
+        str.builder_push(builder, option.option_unwrap_or(piece, ""))
+        index = index + 1
+    }
+
+    return Option::Some(str.builder_finish(builder))
+}
+
+// ── Validation ───────────────────────────────────────────────────────────
+
+// Code points decoded from a strict UTF-8 byte list, or `None` when a value is
+// outside `0..=255` or the sequence is invalid (see `valid_utf8_bytes`).
+public func codepoints_from_bytes(bytes: List<int>) returns Option<List<int>> {
+    if not valid_utf8_bytes(bytes) {
+        return Option::None
+    }
+
+    let codes: List<int> = collections.list_new()
+    let count = collections.list_len(bytes)
+    let index = 0
+
+    while index < count {
+        let first = option.option_unwrap_or(collections.list_get(bytes, index), -1)
+        if first < 128 {
+            collections.list_push(codes, first)
+            index = index + 1
+        } else if first < 224 {
+            collections.list_push(
+                codes,
+                (first - 192) * 64 + (option.option_unwrap_or(collections.list_get(bytes, index + 1), 0) - 128),
+            )
+            index = index + 2
+        } else if first < 240 {
+            collections.list_push(
+                codes,
+                (first - 224) * 4096 +
+                (option.option_unwrap_or(collections.list_get(bytes, index + 1), 0) - 128) * 64 +
+                (option.option_unwrap_or(collections.list_get(bytes, index + 2), 0) - 128),
+            )
+            index = index + 3
+        } else {
+            collections.list_push(
+                codes,
+                (first - 240) * 262144 +
+                (option.option_unwrap_or(collections.list_get(bytes, index + 1), 0) - 128) * 4096 +
+                (option.option_unwrap_or(collections.list_get(bytes, index + 2), 0) - 128) * 64 +
+                (option.option_unwrap_or(collections.list_get(bytes, index + 3), 0) - 128),
+            )
+            index = index + 4
+        }
+    }
+
+    return Option::Some(codes)
+}
+
+// Strict UTF-8 validation of a byte list: every entry must be in `0..=255`,
+// sequences must be complete, and overlong, surrogate and above-U+10FFFF
+// encodings are rejected. Embedded NUL is *valid* UTF-8, so it is accepted
+// here; `std.bytes.from_bytes` rejects it because text cannot carry it.
+public func valid_utf8_bytes(bytes: List<int>) returns bool {
+    let count = collections.list_len(bytes)
+    let index = 0
+
+    while index < count {
+        let first = option.option_unwrap_or(collections.list_get(bytes, index), -1)
+        if first < 0 or first > 255 {
+            return false
+        }
+        if first < 128 {
+            index = index + 1
+        } else if first >= 194 and first <= 223 {
+            if not valid_continuation(bytes, index + 1, count) {
+                return false
+            }
+            index = index + 2
+        } else if first >= 224 and first <= 239 {
+            if not valid_three_byte_sequence(bytes, index, count) {
+                return false
+            }
+            index = index + 3
+        } else if first >= 240 and first <= 244 {
+            if not valid_four_byte_sequence(bytes, index, count) {
+                return false
+            }
+            index = index + 4
+        } else {
+            return false
+        }
+    }
+
+    return true
+}
+
+// True when `code` is a Unicode scalar value (`0` and surrogates excluded).
+public func is_scalar_value(code: int) returns bool {
+    if code <= 0 or code > 1114111 {
+        return false
+    }
+    return code < 55296 or code > 57343
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// Byte length of the rune starting at `offset` (a char boundary).
+func rune_length(text: string, offset: int) returns int {
+    let first = str.char_at(text, offset)
+    if first < 128 {
+        return 1
+    }
+    if first < 224 {
+        return 2
+    }
+    if first < 240 {
+        return 3
+    }
+    return 4
+}
+
+// Code point of the rune starting at `offset` (a char boundary).
+func rune_code(text: string, offset: int) returns int {
+    let first = str.char_at(text, offset)
+    if first < 128 {
+        return first
+    }
+    if first < 224 {
+        return (first - 192) * 64 + (str.char_at(text, offset + 1) - 128)
+    }
+    if first < 240 {
+        return (first - 224) * 4096 + (str.char_at(text, offset + 1) - 128) * 64 + (str.char_at(text, offset + 2) - 128)
+    }
+    return (first - 240) * 262144 + (str.char_at(text, offset + 1) - 128) * 4096 + (str.char_at(text, offset + 2) - 128) * 64 + (str.char_at(text, offset + 3) - 128)
+}
+
+func byte_at(bytes: List<int>, index: int, count: int) returns int {
+    if index >= count {
+        return -1
+    }
+    return option.option_unwrap_or(collections.list_get(bytes, index), -1)
+}
+
+func valid_continuation(bytes: List<int>, index: int, count: int) returns bool {
+    let code = byte_at(bytes, index, count)
+    return code >= 128 and code <= 191
+}
+
+func valid_three_byte_sequence(bytes: List<int>, index: int, count: int) returns bool {
+    let first = byte_at(bytes, index, count)
+    let second = byte_at(bytes, index + 1, count)
+    if not valid_continuation(bytes, index + 1, count) or not valid_continuation(bytes, index + 2, count) {
+        return false
+    }
+    // Overlong (`E0 80..9F`) and surrogate (`ED A0..BF`) encodings are invalid.
+    if first == 224 and second < 160 {
+        return false
+    }
+    if first == 237 and second > 159 {
+        return false
+    }
+    return true
+}
+
+func valid_four_byte_sequence(bytes: List<int>, index: int, count: int) returns bool {
+    let first = byte_at(bytes, index, count)
+    let second = byte_at(bytes, index + 1, count)
+    if not valid_continuation(bytes, index + 1, count) {
+        return false
+    }
+    if not valid_continuation(bytes, index + 2, count) {
+        return false
+    }
+    if not valid_continuation(bytes, index + 3, count) {
+        return false
+    }
+    // Overlong (`F0 80..8F`) and above-U+10FFFF (`F4 90..`) encodings are invalid.
+    if first == 240 and second < 144 {
+        return false
+    }
+    if first == 244 and second > 143 {
+        return false
+    }
+    return true
+}

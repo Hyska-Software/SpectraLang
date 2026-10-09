@@ -87,6 +87,11 @@ impl SemanticAnalyzer {
                         }
                         self.numeric_result_type(&left_type, &right_type)
                     }
+                    BinaryOperator::BitAnd
+                    | BinaryOperator::BitOr
+                    | BinaryOperator::BitXor
+                    | BinaryOperator::Shl
+                    | BinaryOperator::Shr => self.numeric_result_type(&left_type, &right_type),
                     BinaryOperator::Equal
                     | BinaryOperator::NotEqual
                     | BinaryOperator::Less

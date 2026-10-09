@@ -623,6 +623,9 @@ impl ASTLowering {
                     (UnaryOperator::Negate, LoweredConstValue::Float(v)) => {
                         Some(LoweredConstValue::Float(-v))
                     }
+                    (UnaryOperator::BitNot, LoweredConstValue::Int(v)) => {
+                        Some(LoweredConstValue::Int(!v))
+                    }
                     (UnaryOperator::Not, LoweredConstValue::Bool(v)) => {
                         Some(LoweredConstValue::Bool(!v))
                     }
@@ -693,6 +696,28 @@ impl ASTLowering {
             BinaryOperator::Modulo => match (left, right) {
                 (Int(_), Int(0)) => None,
                 (Int(a), Int(b)) => Some(Int(a % b)),
+                _ => None,
+            },
+            BinaryOperator::BitAnd => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a & b)),
+                _ => None,
+            },
+            BinaryOperator::BitOr => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a | b)),
+                _ => None,
+            },
+            BinaryOperator::BitXor => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a ^ b)),
+                _ => None,
+            },
+            // Constant shifts use the signed 64-bit interpretation (count
+            // masked to 63, `>>` sign-filling) so every lowering fold agrees.
+            BinaryOperator::Shl => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a.wrapping_shl((b as u32) & 63))),
+                _ => None,
+            },
+            BinaryOperator::Shr => match (left, right) {
+                (Int(a), Int(b)) => Some(Int(a.wrapping_shr((b as u32) & 63))),
                 _ => None,
             },
             BinaryOperator::Equal => Some(Bool(self.const_values_equal(&left, &right))),

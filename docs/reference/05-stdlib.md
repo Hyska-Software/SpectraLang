@@ -53,6 +53,14 @@ explicit modular operations for the supported integer widths.
 23. [std.iter — Adaptadores de sequência / Sequence adaptors](#23-stditer--adaptadores-de-sequência--sequence-adaptors)
 24. [std.fmt — Formatação / Formatting](#24-stdfmt--formatação--formatting)
 25. [std.semver — Versões semânticas / Semantic Versioning](#25-stdsemver--versões-semânticas--semantic-versioning)
+26. [std.unicode — Scalar values / Unicode scalars](#26-stdunicode--scalar-values--unicode-scalars)
+27. [std.bytes — Bytes de texto / Text bytes](#27-stdbytes--bytes-de-texto--text-bytes)
+28. [std.csv — CSV (RFC 4180)](#28-stdcsv--csv-rfc-4180)
+29. [std.diff — Diff de linhas](#29-stddiff--diff-de-linhas)
+30. [std.vector — Álgebra vetorial](#30-stdvector--álgebra-vetorial)
+31. [std.uuid — UUID](#31-stduuid--uuid)
+32. [std.testing — Asserções de teste](#32-stdtesting--asserções-de-teste)
+33. [std.hash — Hashes não criptográficos](#33-stdhash--hashes-não-criptográficos)
 
 ---
 
@@ -2303,6 +2311,16 @@ Distância de edição em valores de scalar Unicode (inserção, remoção e
 substituição custam `1`). O UTF-8 é decodificado por aritmética de faixas, então
 nenhum byte é dividido.
 
+### Extensões: busca e teoria dos números / Search and number theory
+
+- `binary_search_string(sorted: List<string>, target: string) -> int` — Index of `target` in a non-decreasing `sorted` list, or -1 when absent. The list must be sorted under the byte-wise order of `compare_strings`. Duplicate values resolve to on…
+- `chinese_remainder(remainders: List<int>, moduli: List<int>) -> Option<int>` — Smallest nonnegative solution of the congruences `x ≡ remainders[i]` modulo `moduli[i]`, or None when the lists differ in length, are empty, contain a modulus <= 1, are incon…
+- `damerau_levenshtein(left: string, right: string) -> int` — Edit distance over Unicode scalar values where an insertion, a deletion, a substitution and a transposition of two adjacent scalars each cost 1. This is the unrestricted vari…
+- `integer_sqrt(value: int) -> Option<int>` — Floor square root of `value`, or None for negative input. The search is integer-only (no float rounding), so it is exact for the full i64 range.
+- `kmp_find(haystack: string, needle: string) -> int` — First byte index of `needle` in `haystack`, or -1 when it does not occur. An empty `needle` matches at index 0; an empty `haystack` with a non-empty `needle` returns -1. Knut…
+- `lcs(left: string, right: string) -> string` — Longest common subsequence of `left` and `right` over Unicode scalar values. Ties are resolved deterministically: when skipping either side is equally good, the branch that a…
+- `mod_pow(base: int, exponent: int, modulus: int) -> Option<int>` — `base^exponent mod modulus`, or None for a negative exponent or a modulus that is not positive. `modulus == 1` collapses to Some(0). Square-and-multiply with overflow-safe mo…
+
 ---
 
 ## 17. std.encoding — Codificação de texto / Text Encoding
@@ -2357,6 +2375,15 @@ ROT13 apenas em letras ASCII; demais scalar values são preservados byte a byte.
 É involução.
 
 ---
+
+### Extensões: bases adicionais / Further bases
+
+- `base32_decode(text: string) -> Option<string>` — Decodes base32 text. Unknown characters, lowercase letters, misplaced or wrong-count padding, lengths that are not a multiple of eight and decoded bytes that are not valid UT…
+- `base32_encode(value: string) -> string` — Base32 text over the RFC 4648 uppercase alphabet `A-Z2-7` with `=` padding. Unused low bits of a partial group are zero and no line breaks are inserted.
+- `base58_decode(text: string) -> Option<string>` — Decodes base58 text. Characters outside the alphabet (including the ambiguous `0`, `O`, `I` and `l`) and decoded bytes that are not valid UTF-8 return None.
+- `base58_encode(value: string) -> string` — Base58 text over the Bitcoin alphabet `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`, without padding. Each leading zero byte becomes a leading `1`. The customa…
+- `base85_decode(text: string) -> Option<string>` — Decodes Ascii85 text. Characters outside `!`..`u` (including the unused `z` abbreviation), a trailing group of a single character, groups whose value overflows 32 bits and de…
+- `base85_encode(value: string) -> string` — Ascii85 text without `<~ ~>` delimiters. Four source bytes become five characters in `!`..`u`; a trailing partial group emits one character per source byte plus one. The `z`…
 
 ---
 
@@ -2417,6 +2444,15 @@ constante (variância zero).
 
 ---
 
+### Extensões: dispersão e regressão / Spread and regression
+
+- `entropy_f(values: List<float>) -> Option<float>` — Shannon entropy in bits over the distinct-value distribution of the sample. None for an empty list, a negative value, or a zero total.
+- `histogram_f(values: List<float>, bins: int) -> Option<List<int>>` — Counts values into `bins` equal-width buckets over [min, max]. The maximum lands in the last bin; a zero-width range puts every value in bin 0.
+- `linear_regression_f(xs: List<float>, ys: List<float>) -> Option<(float, float)>` — Least-squares (slope, intercept) fitting ys against xs. None for fewer than two points, mismatched lengths, or a constant xs (zero variance).
+- `mode_f(values: List<float>) -> Option<float>` — Most frequent value; ties resolve to the smallest value. None when empty.
+- `moving_average_f(values: List<float>, window: int) -> Option<List<float>>` — Averages every complete window of `window` values. None when window < 1; an empty list of averages when the window exceeds the input.
+- `zscore_f(values: List<float>, value: float) -> Option<float>` — Standard score of `value` against the population of `values`: (value - mean) / population stddev. None for an empty input or a constant series.
+
 ---
 
 ## 19. std.validate — Validação de dados / Data Validation
@@ -2468,6 +2504,16 @@ autoridade.
 
 ---
 
+### Extensões: documentos e telefones / Documents and phones
+
+- `card_brand(text: string) -> string` — Brand inferred from the leading digits: `visa`, `mastercard`, `amex`, `diners`, `discover`, `elo`, or "" when unknown. The Luhn check is separate.
+- `cnh_valid(text: string) -> bool` — Carteira Nacional de Habilitação: nine digits plus two check digits.
+- `cnpj_alpha_valid(text: string) -> bool` — Alphanumeric CNPJ: twelve characters whose digit value is `code - 48` (letters A-Z count as 17..42) plus two numeric check digits.
+- `e164_valid(text: string) -> bool` — E.164 shape: `+`, a non-zero leading digit and 7 to 15 digits in total.
+- `gtin_valid(text: string) -> bool` — GS1 check digit for 8, 12, 13 or 14 digits (EAN-8/EAN-13/GTIN-12/GTIN-14). ISBN-13 keeps its own name for the domain meaning; both accept the same digit string.
+- `pis_valid(text: string) -> bool` — PIS/PASEP: 11 digits with the mod-11 check digit (weights 3,2,9..2).
+- `titulo_eleitor_valid(text: string) -> bool` — Título de eleitor: eight sequence digits, two UF digits and two check digits. UFs run from 01 to 28.
+
 ---
 
 ## 20. std.path — Caminhos / Paths
@@ -2500,7 +2546,7 @@ escapar da raiz, separador final removido (exceto na raiz).
 
 ### `file_name(path: string) -> string`
 
-Último componente; vazio para raiz ou separador final.
+Último componente depois de remover separadores finais; vazio para a raiz. `file_name("a/b/")` retorna `b`.
 
 ### `parent(path: string) -> Option<string>`
 
@@ -2522,6 +2568,15 @@ Verdadeiro para `/x`, `\x`, `C:/x` e `C:\x`; `C:x` (drive relativo) e vazio são
 relativos.
 
 ---
+
+### Extensões: componentes e globs / Components and globs
+
+- `components(path: string) -> List<string>` — Normalized components without `.` or `..` entries.
+- `glob_match(pattern: string, text: string) -> bool` — Matches `text` against a glob pattern with `*` (any run), `?` (one byte), `[abc]` and `[!abc]` classes. Byte-oriented: use ASCII patterns and text.
+- `is_relative(path: string) -> bool` — True when `path` is not absolute (`is_absolute` is the inverse).
+- `relative_to(path: string, base: string) -> Option<string>` — `path` relative to `base`, or None when `base` is not a component prefix.
+- `sanitize(name: string) -> string` — Strips control characters and the characters that are illegal in file names (`< > : " / \ | ? *`), collapses whitespace runs into one space and trims.
+- `with_extension(path: string, ext: string) -> string` — Replaces (or adds) the extension of the final component. An empty `ext` removes the existing extension. Results use the canonical `/` separator.
 
 ---
 
@@ -2578,6 +2633,17 @@ sequências `\uXXXX` truncadas retornam `None`.
 Similaridade em `0.0..=1.0` baseada na distância de Levenshtein em scalar values
 (`1 - distância / maior_comprimento`).
 
+### Extensões: palavras e semelhança / Words and similarity
+
+- `center(value: string, width: int, pad: char) -> string` — Centers `value` in `width` characters with `pad`, putting the extra character on the right. Values at or above `width` are returned unchanged.
+- `dedent(value: string) -> string` — Removes the common leading-space indentation shared by all non-empty lines.
+- `hard_wrap(value: string, width: int) -> List<string>` — Greedy hard wrap at `width` bytes, breaking inside words and never splitting a rune. A non-positive width yields an empty list.
+- `jaro_winkler(left: string, right: string) -> float` — Jaro-Winkler similarity in `0.0..=1.0` over Unicode scalar values, with a prefix bonus of up to four matching characters (`p = 0.1`).
+- `normalize_newlines(value: string) -> string` — CRLF and lone CR become LF.
+- `split_words(value: string) -> List<string>` — Whitespace-separated words (ASCII space, tab, CR, LF); empty input yields an empty list.
+- `title_case(value: string) -> string` — ASCII title case: the first letter of each whitespace-separated word becomes uppercase and the remaining letters lowercase; other bytes are copied.
+- `truncate_middle(value: string, max_bytes: int) -> string` — Keeps the head and the tail of `value` within `max_bytes`, inserting a single `…` between them. Non-positive limits yield ""; values that already fit are returned unchanged.…
+
 ---
 
 ## 22. std.calendar — Calendário / Calendar
@@ -2629,6 +2695,14 @@ inexistente retornam `None`.
 
 ---
 
+### Extensões: datas e semanas ISO / Dates and ISO weeks
+
+- `add_months(unix_secs: int, months: int) -> Option<int>` — Shifts `unix_secs` by `months` calendar months, keeping the time of day. None when the target month has no such day (e.g. Jan 31 + 1 month).
+- `days_between(later: int, earlier: int) -> Option<int>` — Whole calendar days from `earlier` to `later` (later - earlier). None when `later < earlier`.
+- `parse_iso_datetime(text: string) -> Option<int>` — Parses an ISO-8601 UTC date-time into a Unix timestamp. Accepted shapes: `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM`, `YYYY-MM-DD HH:MM`, plus optional `:SS` and a trailing `Z` on the t…
+- `start_of_month(unix_secs: int) -> int` — Midnight UTC on the first day of the month containing `unix_secs`.
+- `start_of_week(unix_secs: int) -> int` — Midnight UTC on the Monday of the ISO week containing `unix_secs`.
+
 ---
 
 ## 23. std.iter — Adaptadores de sequência / Sequence adaptors
@@ -2674,7 +2748,22 @@ Grupos consecutivos de até `size` itens; `size` não positivo produz lista vazi
 Somas de janelas deslizantes de largura `window`; janela maior que a entrada ou
 não positiva produz lista vazia.
 
+### Extensões: adaptadores tipados / Typed adaptors
+
+- `dedup_adjacent_int(values: List<int>) -> List<int>` — Removes consecutive duplicates, keeping the first of each run.
+- `enumerate_int(values: List<int>) -> List<(int, int)>` — `(index, value)` pairs in order.
+- `flatten_int(nested: List<List<int>>) -> List<int>` — Concatenation of nested lists, in order.
+- `max_by_int(values: List<int>, key: func(int) returns int) -> Option<int>` — Item with the largest `key(value)`, or None for an empty list.
+- `min_by_int(values: List<int>, key: func(int) returns int) -> Option<int>` — Item with the smallest `key(value)`, or None for an empty list. Ties keep the first occurrence.
+- `partition_int(values: List<int>, predicate: func(int) returns bool) -> (List<int>, List<int>)` — Items accepted by `predicate` first, the rest second; both keep their relative order.
+- `reverse<T>(items: List<T>) -> List<T>` — Items in reverse order.
+- `skip<T>(items: List<T>, count: int) -> List<T>` — Items after the first `count`.
+- `take<T>(items: List<T>, count: int) -> List<T>` — First `count` items (an empty list when `count <= 0`).
+- `unique_int(values: List<int>) -> List<int>` — Distinct values in first-occurrence order.
+- `zip_int(left: List<int>, right: List<int>) -> List<(int, int)>` — Pairs of `left` and `right` up to the shorter length.
+
 ---
+
 
 ## 24. std.fmt — Formatação / Formatting
 
@@ -2714,7 +2803,15 @@ por `10^decimals`.
 Tamanho em unidades SI (base 1000, `B`/`KB`/`MB`/`GB`/`TB`/`PB`/`EB`) com uma
 casa acima de bytes; `i64::MIN` retorna o texto simples do valor.
 
+### Extensões: números e durações / Numbers and durations
+
+- `float_scientific(value: float, decimals: int) -> Option<string>` — Scientific notation with `decimals` digits (0..=12) after the point, e.g. `1.5e3` or `-2.50e-4`. None for NaN/infinite values and out-of-range digits.
+- `human_duration(millis: int) -> string` — Human-readable duration: below a second `123ms`, below a minute `1.500s`, below an hour `2m 05s`, otherwise `1h 02m 03s`. Negative values keep the sign in front.
+- `pad_center(value: string, width: int, pad: char) -> Option<string>` — Centers `value` in `width` characters with `pad` (space or `0`); the extra character goes to the right. None for negative widths or unsupported pads.
+- `percent(value: float, decimals: int) -> Option<string>` — `value` as a percentage with `decimals` digits, e.g. `0.256` -> `25.6%`.
+
 ---
+
 
 ## 25. std.semver — Versões semânticas / Semantic Versioning
 
@@ -2749,6 +2846,236 @@ Componentes numéricos, ou `None` quando o texto é inválido.
 ### `prerelease(text: string) -> string`
 
 Pré-release sem o `-` inicial; vazio quando ausente ou inválido.
+
+---
+
+### Extensões: componentes e faixas / Components and ranges
+
+- `minor(text: string) -> Option<int>` — Minor component, or None when `text` is invalid.
+- `patch(text: string) -> Option<int>` — Patch component, or None when `text` is invalid.
+- `satisfies(text: string, range: string) -> Option<bool>` — True when `text` lies inside `range`, false when it does not, and None when `text` is not a valid semantic version or `range` is malformed. Range grammar (npm `semver` subset…
+
+---
+
+
+## 26. std.unicode — Scalar values / Unicode scalars
+
+`std.unicode` é implementado em `stdlib/src/unicode.spectra` e concentra a
+aritmética UTF-8 da biblioteca-fonte: nenhum módulo precisa carregar o próprio
+decodificador. Índices de rune nunca dividem um rune; bytes inválidos são
+rejeitados por `valid_utf8_bytes` (overlong, surrogates, acima de `U+10FFFF`,
+truncados e valores fora de `0..=255`). NUL é UTF-8 válido aqui — quem rejeita é
+`std.bytes.from_bytes` (ver `docs/architecture/stdlib-bytes-contract.md`).
+
+```spectra
+import std.unicode as unicode
+
+unicode.rune_count("café")        // 4
+unicode.rune_at("café", 3)        // Some(233)
+unicode.slice_runes("café", 0, 3) // Some("caf")
+unicode.to_codepoints("Aé😀")      // [65, 233, 128512]
+```
+
+### `rune_count(text: string) -> int`
+
+Número de scalar values.
+
+### `rune_at(text: string, index: int) -> Option<int>`
+
+Code point do rune `index`; `None` fora do intervalo (o offset final do texto não
+é um rune).
+
+### `byte_offset(text: string, rune_index: int) -> Option<int>`
+
+Offset de byte do início do rune; aceita `rune_count(text)` para recortes.
+
+### `slice_runes(text: string, start: int, end: int) -> Option<string>`
+
+Recorte por índice de rune; `None` para intervalo invertido ou fora do texto.
+
+### `to_codepoints(text: string) -> List<int>` / `from_codepoints(codes: List<int>) -> Option<string>`
+
+Lista de code points e sua reconstrução. `from_codepoints` retorna `None` para
+code point inválido ou NUL.
+
+### `codepoints_from_bytes(bytes: List<int>) -> Option<List<int>>`
+
+Decodifica uma lista de bytes UTF-8 estrita; `None` para valor fora de `0..=255`
+ou sequência inválida.
+
+### `valid_utf8_bytes(bytes: List<int>) -> bool` / `is_scalar_value(code: int) -> bool`
+
+Validação estrita de bytes e predicado de scalar value (exclui `0` e surrogates).
+
+---
+
+## 27. std.bytes — Bytes de texto / Text bytes
+
+`std.bytes` é implementado em `stdlib/src/bytes.spectra` e é a ponte entre texto
+UTF-8 e `List<int>` (um byte por elemento, `0..=255`). Texto não carrega NUL
+embutido, então `from_bytes` rejeita `0x00` em vez de truncar o payload.
+
+```spectra
+import std.bytes as bytes
+
+bytes.to_bytes("café")                  // [99, 97, 102, 195, 169]
+bytes.from_bytes(bytes.to_bytes("café")) // Some("café")
+bytes.from_bytes([0])                    // None (NUL)
+```
+
+### `to_bytes(text: string) -> List<int>`
+
+Bytes UTF-8 do texto.
+
+### `from_bytes(bytes: List<int>) -> Option<string>`
+
+`None` para NUL, valor fora de `0..=255` ou sequência que não seja UTF-8 válido.
+
+### `byte_at(text: string, index: int) -> Option<int>` / `is_ascii(text: string) -> bool`
+
+Byte no offset indicado (ou `None`) e teste de ASCII puro.
+
+---
+
+## 28. std.csv — CSV (RFC 4180)
+
+Ler e escrever CSV canônico: CRLF/LF, campos entre aspas, aspas dobradas e uma rejeição explícita de campos não terminados.
+
+### `parse(text: string) -> Option<List<List<string>>>`
+
+Parses `text` into a record per line, or `None` when a quoted field is left unterminated.
+
+### `parse_row(text: string) -> Option<List<string>>`
+
+Parses the first record of `text`; anything after its separator is ignored. Newlines inside quotes are field content, so `parse_row("\"a
+b\"")` is `["a
+b"]`. Empty text is one record with one empty field, and an unterminated quote returns `None`.
+
+### `write(rows: List<List<string>>) -> string`
+
+Canonical CSV text: every record ends with LF and a field is quoted only when it holds `,`, `"`, CR or LF. An empty record writes just its terminator and a table with no records writes `""`.
+
+---
+
+## 29. std.diff — Diff de linhas
+
+Diff unificado de listas de linhas com três linhas de contexto por hunk.
+
+### `same_lines(left: List<string>, right: List<string>) -> bool`
+
+True when both lists hold the same lines in the same order.
+
+### `diff_lines(left: List<string>, right: List<string>) -> List<string>`
+
+Unified diff of `left` against `right` with three context lines per hunk; an empty list means the inputs are identical.
+
+---
+
+## 30. std.vector — Álgebra vetorial
+
+Pequenas operações de vetor `List<float>` para código de aplicação. Não é a camada de tensores: para volume alto use `std.tensor`.
+
+### `dot_f(a: List<float>, b: List<float>) -> Option<float>`
+
+Dot product of two equal-length vectors; `None` when the lengths differ.
+
+### `norm_f(values: List<float>) -> float`
+
+Euclidean norm of `values`; the empty vector has norm 0.0.
+
+### `cosine_f(a: List<float>, b: List<float>) -> Option<float>`
+
+Cosine similarity in `[-1.0, 1.0]`. `None` when the lengths differ or either vector has norm 0.0 (the angle is undefined).
+
+### `normalize_f(values: List<float>) -> Option<List<float>>`
+
+Unit vector in the direction of `values`; `None` when the norm is 0.0. The input list is never mutated.
+
+### `add_f(a: List<float>, b: List<float>) -> Option<List<float>>`
+
+Element-wise sum of two equal-length vectors; `None` when the lengths differ. Neither input is mutated.
+
+### `scale_f(values: List<float>, k: float) -> List<float>`
+
+Every element of `values` multiplied by `k`. The input list is not mutated.
+
+---
+
+## 31. std.uuid — UUID
+
+Análise, formatação e geração de UUIDs canônicos (versões RFC 4122 comuns).
+
+### `is_valid(text: string) -> bool`
+
+True for the canonical `8-4-4-4-12` form: exactly 36 characters, hyphens at offsets 8/13/18/23, hexadecimal digits everywhere else. Upper and lower case are both accepted.
+
+### `parse(text: string) -> Option<List<int>>`
+
+The 16 bytes of a canonical UUID, or `None` when `text` is not valid.
+
+### `format(bytes: List<int>) -> Option<string>`
+
+Canonical lowercase text for exactly 16 bytes, or `None` when the list has a different length or any element falls outside `0..=255`.
+
+### `version(text: string) -> Option<int>`
+
+Version digit of a canonical UUID: the 13th hexadecimal character. `None` when `text` is invalid or the digit is outside `1..=5`.
+
+### `v4() -> string`
+
+A random version-4 UUID in canonical lowercase form: 122 random bits with the version nibble forced to 4 and the RFC 4122 variant bits set to `10xx`.
+
+---
+
+## 32. std.testing — Asserções de teste
+
+Asserções que terminam o programa pelo primitivo `std.error.panic` quando a condição falha; a mensagem usa o formato `expected <e>, found <a>` e termina com status 70.
+
+### `assert_true(condition: bool, message: string) -> unit`
+
+Fails unless `condition` is true.
+
+### `assert_false(condition: bool, message: string) -> unit`
+
+Fails unless `condition` is false.
+
+### `assert_eq_int(actual: int, expected: int, message: string) -> unit`
+
+Fails unless `actual == expected`.
+
+### `assert_eq_bool(actual: bool, expected: bool, message: string) -> unit`
+
+Fails unless `actual == expected`.
+
+### `assert_eq_str(actual: string, expected: string, message: string) -> unit`
+
+Fails unless `actual == expected`.
+
+### `assert_eq_f(actual: float, expected: float, tolerance: float, message: string) -> unit`
+
+Fails when `math.abs_f(actual - expected) > tolerance`; the comparison is inclusive, so a difference exactly equal to `tolerance` passes. Any NaN operand (value or tolerance) fails instead of slipping through the ordered comparison, because `NaN > tolerance` is false.
+
+### `fail(message: string) -> unit`
+
+Fails unconditionally with the caller's message.
+
+---
+
+## 33. std.hash — Hashes não criptográficos
+
+Hashes determinísticos de 32/64 bits sobre os bytes UTF-8 do texto (para chaves, somas e deduplicação — não para segurança).
+
+### `fnv1a64_str(text: string) -> int`
+
+FNV-1a, 64-bit, over the UTF-8 bytes of `text`, wrapping modulo 2^64. The empty string returns the offset basis.
+
+### `djb2_str(text: string) -> int`
+
+DJB2 (`hash * 33 + byte`, starting at 5381) over the UTF-8 bytes of `text`, wrapping modulo 2^64.
+
+### `crc32(text: string) -> int`
+
+CRC-32 (reflected polynomial `0xEDB88320`, init `0xFFFFFFFF`, final XOR) over the UTF-8 bytes of `text`. The result is always in `0..=0xFFFFFFFF`.
 
 ---
 

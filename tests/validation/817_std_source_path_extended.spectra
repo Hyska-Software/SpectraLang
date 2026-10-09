@@ -1,0 +1,131 @@
+// Consumer for the extended `std.path` surface: extensions, components,
+// relativeness, glob matching, sanitizing and relative paths.
+module std_source_path_extended
+
+import std.collections as collections
+import std.option as option
+import std.path as path
+
+public func main() returns int {
+    // ── with_extension ───────────────────────────────────────────────────
+    if path.with_extension("report.txt", "md") != "report.md" {
+        return 1
+    }
+    if path.with_extension("archive", "tar") != "archive.tar" {
+        return 2
+    }
+    if path.with_extension("a/b.md", "") != "a/b" {
+        return 3
+    }
+    if path.with_extension("a.tar.gz", "xz") != "a.tar.xz" {
+        return 4
+    }
+    if path.with_extension("/", "md") != "/" {
+        return 5
+    }
+
+    // ── components ───────────────────────────────────────────────────────
+    let parts = path.components("/usr/local/bin")
+    if collections.list_len(parts) != 3 {
+        return 6
+    }
+    if option.option_unwrap_or(collections.list_get(parts, 0), "x") != "usr" {
+        return 7
+    }
+    if collections.list_len(path.components("a/./b/../c")) != 2 {
+        return 8
+    }
+    if collections.list_len(path.components("")) != 0 {
+        return 9
+    }
+
+    // ── relative / absolute ──────────────────────────────────────────────
+    if not path.is_relative("a/b") or path.is_relative("/a") {
+        return 10
+    }
+
+    // ── glob_match ───────────────────────────────────────────────────────
+    if not path.glob_match("*.spectra", "main.spectra") {
+        return 11
+    }
+    if path.glob_match("*.spectra", "main.txt") {
+        return 12
+    }
+    if not path.glob_match("a?c", "abc") {
+        return 13
+    }
+    if path.glob_match("a?c", "ac") {
+        return 14
+    }
+    if not path.glob_match("file[123].txt", "file2.txt") {
+        return 15
+    }
+    if path.glob_match("file[123].txt", "file4.txt") {
+        return 16
+    }
+    if not path.glob_match("file[!123].txt", "file4.txt") {
+        return 17
+    }
+    if path.glob_match("file[!123].txt", "file1.txt") {
+        return 18
+    }
+    if not path.glob_match("*", "") {
+        return 19
+    }
+    if not path.glob_match("a*b*c", "aXXbYYc") or path.glob_match("a*b*c", "aXXbYY") {
+        return 20
+    }
+    if not path.glob_match("src/*.spectra", "src/lib/main.spectra") {
+        return 21
+    }
+
+    // ── sanitize ─────────────────────────────────────────────────────────
+    if path.sanitize("my file: v2?.txt") != "my file v2.txt" {
+        return 22
+    }
+    if path.sanitize("  spaced  ") != "spaced" {
+        return 23
+    }
+    if path.sanitize("a/b\\c") != "abc" {
+        return 24
+    }
+    if path.sanitize("") != "" {
+        return 25
+    }
+
+    // ── relative_to ──────────────────────────────────────────────────────
+    if option.option_unwrap_or(path.relative_to("/srv/app/src/main.spectra", "/srv/app"), "x") != "src/main.spectra" {
+        return 26
+    }
+    if option.option_unwrap_or(path.relative_to("/a/b", "/a/b"), "x") != "." {
+        return 27
+    }
+    if option.is_some(path.relative_to("/a/b", "/x")) {
+        return 28
+    }
+    if option.is_some(path.relative_to("/a", "/a/b")) {
+        return 29
+    }
+
+    // ── trailing separators, unterminated classes and non-ASCII names ────
+    if path.with_extension("a/b.txt/", "md") != "a/b.md" {
+        return 30
+    }
+    if path.with_extension("dir/", "md") != "dir.md" {
+        return 31
+    }
+    if path.glob_match("[abc", "xabc") {
+        return 32
+    }
+    if not path.glob_match("[abc", "[abc") {
+        return 33
+    }
+    if path.sanitize("café") != "café" {
+        return 34
+    }
+    if path.sanitize("Über: café?") != "Über café" {
+        return 35
+    }
+
+    return 0
+}

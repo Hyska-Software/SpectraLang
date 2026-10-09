@@ -80,13 +80,34 @@
 | Nível | Operador(es) | Tipo / Type | Associatividade |
 |-------|-------------|-------------|-----------------|
 | 1 (alto) | `(expr)`, `f()`, `x.y`, `x[i]` | Primário | Esq. / Left |
-| 2 | `-x` (unário), `!x` | Unário | Direita / Right |
+| 2 | `-x` (unário), `!x`, `~x` | Unário | Direita / Right |
 | 3 | `*`, `/`, `%` | Multiplicativo | Esq. / Left |
 | 4 | `+`, `-` | Aditivo | Esq. / Left |
-| 5 | `<`, `>`, `<=`, `>=` | Relacional | Esq. / Left |
-| 6 | `==`, `!=` | Igualdade | Esq. / Left |
-| 7 | `&&` | E lógico / Logical AND | Esq. / Left |
-| 8 (baixo) | `\|\|` | Ou lógico / Logical OR | Esq. / Left |
+| 5 | `<<`, `>>` | Deslocamento / Shift | Esq. / Left |
+| 6 | `<`, `>`, `<=`, `>=` | Relacional | Esq. / Left |
+| 7 | `==`, `!=` | Igualdade | Esq. / Left |
+| 8 | `&` | E bit a bit / Bitwise AND | Esq. / Left |
+| 9 | `^` | Ou exclusivo bit a bit / Bitwise XOR | Esq. / Left |
+| 10 | `\|` | Ou bit a bit / Bitwise OR | Esq. / Left |
+| 11 | `&&` | E lógico / Logical AND | Esq. / Left |
+| 12 (baixo) | `\|\|` | Ou lógico / Logical OR | Esq. / Left |
+
+Ranges (`..`, `..=`) ficam **abaixo** de todos os níveis acima.
+
+**Semântica dos operadores bit a bit / Bitwise semantics:**
+
+- Operandos: `int` ou um inteiro de largura exata (`i8`…`u64`, `isize`/`usize`).
+  **Os dois operandos devem ter o mesmo tipo**; misturas exigem cast explícito
+  (E038/E049). `float`, `bool` e `char` são rejeitados.
+- Deslocamentos: a contagem é **mascarada para 63** (`x << 64` ≡ `x << 0`,
+  `x >> 65` ≡ `x >> 1`). `>>` é **aritmético** em tipos com sinal e **lógico**
+  em tipos sem sinal.
+- `~x` complementa todos os bits na largura do operando (`~0` é `-1` em `int`,
+  `~0u8` é `255`).
+- Em expressões constantes a dobra usa a interpretação **64 bits com sinal**;
+  deslocamentos `>>` em tipos unsigned pertencem ao código de execução.
+- Precedência igual à de C nos níveis 5–10; `&` liga mais forte que `^`, que
+  liga mais forte que `|`.
 
 **Operadores de atribuição / Assignment operators:**
 
@@ -400,7 +421,7 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | `std.random` | `random_seed`, `random_int`, `random_float`, `random_bool` |
 | `std.fs` | `fs_read`, `fs_write`, `fs_append`, `fs_exists`, `fs_remove` retornando `Result<T, Error>` |
 | `std.compat.fs` | Adaptadores legados de FS com sentinelas explícitos |
-| `std.error` | `new`, `code`, `message`, `operation`, `context`, `origin`, `retryable` |
+| `std.error` | `new`, `code`, `message`, `operation`, `context`, `origin`, `retryable`, `panic` |
 | `std.env` | `env_get`/`env_arg` (`Option<string>`), `env_set`, `env_args_count` |
 | `std.compat.env` | `env_get`, `env_arg` com sentinela `""` legado |
 | `std.option` | `is_some`, `is_none`, `option_unwrap`, `option_unwrap_or` |
@@ -408,16 +429,24 @@ genericos     = "<" IDENT (":" IDENT ("+" IDENT)*)? ("," ...)* ">" ;
 | `std.char` | `is_alpha`, `is_digit_char`, `is_whitespace_char`, `is_alphanumeric`, `to_upper_char`, `to_lower_char` |
 | `std.time` | `time_now_millis`, `time_now_secs`, `sleep_ms` |
 | `std.range` | `create`, `len`, `at`, `eq`, `start`, `end`, `is_inclusive` |
-| `std.algorithms` | `gcd_nonnegative`, `is_prime`, `binary_search_int`, `to_base`, `from_base`, `mod_inverse`, `factorial`, `binomial`, `collatz_steps`, `digit_sum`, `roman_encode`, `roman_decode`, `levenshtein` |
-| `std.encoding` | `hex_encode`, `hex_decode`, `base64_encode`, `base64_decode`, `percent_encode`, `percent_decode`, `rot13` |
-| `std.stats` | `sum_f`, `mean_f`, `median_f`, `variance_f`, `variance_sample_f`, `stddev_f`, `stddev_sample_f`, `percentile_f`, `covariance_f`, `correlation_f` |
-| `std.validate` | `luhn_valid`, `isbn10_valid`, `isbn13_valid`, `cpf_valid`, `cnpj_valid`, `iban_valid`, `email_is_valid`, `url_is_valid` |
-| `std.path` | `join`, `normalize`, `file_name`, `parent`, `extension`, `stem`, `is_absolute` |
-| `std.text` | `slugify`, `normalize_whitespace`, `truncate`, `wrap`, `word_count`, `escape_json`, `unescape_json`, `similarity_ratio` |
-| `std.calendar` | `is_leap_year`, `days_in_month`, `day_of_week`, `add_days`, `diff_days`, `iso_year`, `iso_week`, `format_iso_date`, `format_iso_timestamp`, `parse_iso_date` |
-| `std.iter` | `take<T>`, `skip<T>`, `reverse<T>`, `sum_int`, `count_if_int`, `position_if_int`, `chunk_int`, `window_sum_int` |
-| `std.fmt` | `int_padded`, `thousands`, `float_fixed`, `bytes_si` |
-| `std.semver` | `is_valid`, `compare`, `major`, `minor`, `patch`, `prerelease` |
+| `std.algorithms` | `gcd_nonnegative`, `is_prime`, `binary_search_int`, `to_base`, `from_base`, `mod_inverse`, `factorial`, `binomial`, `collatz_steps`, `digit_sum`, `roman_encode`, `roman_decode`, `levenshtein`, `binary_search_string`, `chinese_remainder`, `damerau_levenshtein`, `integer_sqrt`, `kmp_find`, `lcs`, `mod_pow` |
+| `std.encoding` | `hex_encode`, `hex_decode`, `base64_encode`, `base64_decode`, `percent_encode`, `percent_decode`, `rot13`, `base32_encode`/`base32_decode`, `base58_encode`/`base58_decode`, `base85_encode`/`base85_decode` |
+| `std.stats` | `sum_f`, `mean_f`, `median_f`, `variance_f`, `variance_sample_f`, `stddev_f`, `stddev_sample_f`, `percentile_f`, `covariance_f`, `correlation_f`, `mode_f`, `moving_average_f`, `zscore_f`, `linear_regression_f`, `histogram_f`, `entropy_f` |
+| `std.validate` | `luhn_valid`, `isbn10_valid`, `isbn13_valid`, `cpf_valid`, `cnpj_valid`, `iban_valid`, `email_is_valid`, `url_is_valid`, `card_brand`, `cnh_valid`, `cnpj_alpha_valid`, `pis_valid`, `titulo_eleitor_valid`, `e164_valid`, `gtin_valid` |
+| `std.path` | `join`, `normalize`, `file_name`, `parent`, `extension`, `stem`, `is_absolute`, `components`, `with_extension`, `is_relative`, `relative_to`, `sanitize`, `glob_match` |
+| `std.text` | `slugify`, `normalize_whitespace`, `truncate`, `wrap`, `word_count`, `escape_json`, `unescape_json`, `similarity_ratio`, `split_words`, `title_case`, `normalize_newlines`, `dedent`, `center`, `truncate_middle`, `hard_wrap`, `jaro_winkler` |
+| `std.calendar` | `is_leap_year`, `days_in_month`, `day_of_week`, `add_days`, `diff_days`, `iso_year`, `iso_week`, `format_iso_date`, `format_iso_timestamp`, `parse_iso_date`, `add_months`, `days_between`, `start_of_month`, `start_of_week`, `parse_iso_datetime` |
+| `std.iter` | `take<T>`, `skip<T>`, `reverse<T>`, `sum_int`, `count_if_int`, `position_if_int`, `chunk_int`, `window_sum_int`, `unique_int`, `dedup_adjacent_int`, `flatten_int`, `zip_int`, `enumerate_int`, `partition_int`, `min_by_int`, `max_by_int` |
+| `std.fmt` | `int_padded`, `thousands`, `float_fixed`, `bytes_si`, `pad_center`, `float_scientific`, `percent`, `human_duration` |
+| `std.semver` | `is_valid`, `compare`, `major`, `minor`, `patch`, `prerelease`, `satisfies` |
+| `std.unicode` | `rune_count`, `rune_at`, `byte_offset`, `slice_runes`, `to_codepoints`, `from_codepoints`, `codepoints_from_bytes`, `valid_utf8_bytes`, `is_scalar_value` |
+| `std.bytes` | `to_bytes`, `from_bytes`, `byte_at`, `is_ascii` |
+| `std.csv` | `parse`, `parse_row`, `write` |
+| `std.diff` | `diff_lines`, `same_lines` |
+| `std.vector` | `add_f`, `scale_f`, `dot_f`, `norm_f`, `normalize_f`, `cosine_f` |
+| `std.uuid` | `is_valid`, `parse`, `format`, `version`, `v4` |
+| `std.testing` | `assert_true`, `assert_false`, `assert_eq_int`, `assert_eq_bool`, `assert_eq_str`, `assert_eq_f`, `fail` |
+| `std.hash` | `fnv1a64_str`, `djb2_str`, `crc32` |
 
 ---
 

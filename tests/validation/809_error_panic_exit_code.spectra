@@ -1,0 +1,17 @@
+// `std.error.panic` terminates the process with a documented message and exit
+// code 70 (the `.exit` sidecar records the expected status for the gate).
+module error_panic_exit_code
+
+import std.error as error
+
+func require_positive(value: int) {
+    if value <= 0 {
+        error.panic("invariant violated: expected a positive value")
+    }
+}
+
+public func main() returns int {
+    require_positive(3)
+    require_positive(0)
+    return 0
+}

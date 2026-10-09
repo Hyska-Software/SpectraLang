@@ -1,0 +1,4 @@
+[project]
+name = "stdlib_testing_assertion_failure"
+version = "0.1.0"
+src_dirs = ["src"]

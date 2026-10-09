@@ -130,6 +130,45 @@ impl CodeGenerator {
             }
 
             // Comparison operations
+            InstructionKind::BitAnd { result, lhs, rhs } => {
+                let lhs_val = get_value(lhs)?;
+                let rhs_val = get_value(rhs)?;
+                let result_val = builder.ins().band(lhs_val, rhs_val);
+                value_map.insert(result.id, result_val);
+            }
+            InstructionKind::BitOr { result, lhs, rhs } => {
+                let lhs_val = get_value(lhs)?;
+                let rhs_val = get_value(rhs)?;
+                let result_val = builder.ins().bor(lhs_val, rhs_val);
+                value_map.insert(result.id, result_val);
+            }
+            InstructionKind::BitXor { result, lhs, rhs } => {
+                let lhs_val = get_value(lhs)?;
+                let rhs_val = get_value(rhs)?;
+                let result_val = builder.ins().bxor(lhs_val, rhs_val);
+                value_map.insert(result.id, result_val);
+            }
+            InstructionKind::Shl { result, lhs, rhs } => {
+                let lhs_val = get_value(lhs)?;
+                let rhs_val = get_value(rhs)?;
+                let result_val = builder.ins().ishl(lhs_val, rhs_val);
+                value_map.insert(result.id, result_val);
+            }
+            InstructionKind::Shr {
+                result,
+                lhs,
+                rhs,
+                unsigned,
+            } => {
+                let lhs_val = get_value(lhs)?;
+                let rhs_val = get_value(rhs)?;
+                let result_val = if *unsigned {
+                    builder.ins().ushr(lhs_val, rhs_val)
+                } else {
+                    builder.ins().sshr(lhs_val, rhs_val)
+                };
+                value_map.insert(result.id, result_val);
+            }
             InstructionKind::Eq { result, lhs, rhs } => {
                 let lhs_val = get_value(lhs)?;
                 let rhs_val = get_value(rhs)?;

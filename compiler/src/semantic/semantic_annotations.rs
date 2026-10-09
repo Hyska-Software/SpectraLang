@@ -328,6 +328,12 @@ impl SemanticAnalyzer {
         )
     }
 
+    /// Integer operand types for the bitwise operators: canonical `int` and the
+    /// exact-width integer matrix. Floats, `bool` and `char` are excluded.
+    pub(crate) fn is_integer_type(ty: &Type) -> bool {
+        matches!(ty, Type::Int | Type::ExactInt { .. })
+    }
+
     pub(crate) fn numeric_types_can_interact(&self, left: &Type, right: &Type) -> bool {
         Self::is_numeric_type(left) && Self::is_numeric_type(right)
     }

@@ -1,0 +1,157 @@
+module std.uuid
+
+import std.collections as collections
+import std.option as option
+import std.random as random
+import std.string as str
+
+// RFC 4122/9562 textual UUIDs: canonical `8-4-4-4-12` lowercase output,
+// case-insensitive parsing, and a version-4 generator. The byte form is the
+// 16-octet big-endian representation, one element per byte in `0..=255`.
+
+// True for the canonical `8-4-4-4-12` form: exactly 36 characters, hyphens at
+// offsets 8/13/18/23, hexadecimal digits everywhere else. Upper and lower case
+// are both accepted.
+public func is_valid(text: string) returns bool {
+    if str.len(text) != 36 {
+        return false
+    }
+
+    let index = 0
+    while index < 36 {
+        if is_hyphen(index) {
+            if str.char_at(text, index) != 45 {
+                return false
+            }
+        } else if hex_value(str.char_at(text, index)) < 0 {
+            return false
+        }
+        index = index + 1
+    }
+
+    return true
+}
+
+// The 16 bytes of a canonical UUID, or `None` when `text` is not valid.
+public func parse(text: string) returns Option<List<int>> {
+    if not is_valid(text) {
+        return Option::None
+    }
+
+    let digits: List<int> = collections.list_new()
+    let index = 0
+    while index < 36 {
+        if not is_hyphen(index) {
+            collections.list_push(digits, hex_value(str.char_at(text, index)))
+        }
+        index = index + 1
+    }
+
+    let bytes: List<int> = collections.list_new()
+    let pair = 0
+    while pair < 16 {
+        let high = option.option_unwrap_or(collections.list_get(digits, pair * 2), 0)
+        let low = option.option_unwrap_or(collections.list_get(digits, pair * 2 + 1), 0)
+        collections.list_push(bytes, high * 16 + low)
+        pair = pair + 1
+    }
+
+    return Option::Some(bytes)
+}
+
+// Canonical lowercase text for exactly 16 bytes, or `None` when the list has a
+// different length or any element falls outside `0..=255`.
+public func format(bytes: List<int>) returns Option<string> {
+    if collections.list_len(bytes) != 16 {
+        return Option::None
+    }
+
+    let builder = str.builder_new(36)
+    let index = 0
+    while index < 16 {
+        let value = option.option_unwrap_or(collections.list_get(bytes, index), -1)
+        if value < 0 or value > 255 {
+            str.builder_free(builder)
+            return Option::None
+        }
+        if is_group_start(index) {
+            str.builder_push(builder, "-")
+        }
+        str.builder_push(builder, hex_pair(value))
+        index = index + 1
+    }
+
+    return Option::Some(str.builder_finish(builder))
+}
+
+// Version digit of a canonical UUID: the 13th hexadecimal character. `None`
+// when `text` is invalid or the digit is outside `1..=5`.
+public func version(text: string) returns Option<int> {
+    if not is_valid(text) {
+        return Option::None
+    }
+
+    let digit = hex_value(str.char_at(text, 14))
+    if digit < 1 or digit > 5 {
+        return Option::None
+    }
+    return Option::Some(digit)
+}
+
+// A random version-4 UUID in canonical lowercase form: 122 random bits with the
+// version nibble forced to 4 and the RFC 4122 variant bits set to `10xx`.
+public func v4() returns string {
+    let bytes: List<int> = collections.list_new()
+    let index = 0
+    while index < 16 {
+        collections.list_push(bytes, random.random_int(0, 256))
+        index = index + 1
+    }
+
+    let version_byte = option.option_unwrap_or(collections.list_get(bytes, 6), 0)
+    collections.list_set(bytes, 6, (version_byte & 15) | 64)
+    let variant_byte = option.option_unwrap_or(collections.list_get(bytes, 8), 0)
+    collections.list_set(bytes, 8, (variant_byte & 63) | 128)
+
+    return option.option_unwrap_or(format(bytes), "")
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+// True when `index` is a hyphen position in the canonical form.
+func is_hyphen(index: int) returns bool {
+    return index == 8 or index == 13 or index == 18 or index == 23
+}
+
+// True when `index` starts a 4-character group, i.e. a hyphen precedes it.
+func is_group_start(index: int) returns bool {
+    return index == 4 or index == 6 or index == 8 or index == 10
+}
+
+// Value of an ASCII hexadecimal character, or -1 when it is not one.
+func hex_value(code: int) returns int {
+    if code >= 48 and code <= 57 {
+        return code - 48
+    }
+    if code >= 97 and code <= 102 {
+        return code - 87
+    }
+    if code >= 65 and code <= 70 {
+        return code - 55
+    }
+    return -1
+}
+
+// Lowercase hexadecimal digit for `value` in `0..=15`.
+func hex_char(value: int) returns string {
+    let code = 87 + value
+    if value < 10 {
+        code = 48 + value
+    }
+    return option.option_unwrap_or(str.from_scalar(code), "")
+}
+
+// Two lowercase hexadecimal digits for a byte in `0..=255`.
+func hex_pair(value: int) returns string {
+    return hex_char(value / 16) + hex_char(value % 16)
+}

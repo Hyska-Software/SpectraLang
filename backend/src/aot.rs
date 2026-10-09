@@ -1182,6 +1182,11 @@ pub(crate) fn instruction_result_value(kind: &InstructionKind) -> Option<IRValue
         | InstructionKind::Mul { result, .. }
         | InstructionKind::Div { result, .. }
         | InstructionKind::Rem { result, .. }
+        | InstructionKind::BitAnd { result, .. }
+        | InstructionKind::BitOr { result, .. }
+        | InstructionKind::BitXor { result, .. }
+        | InstructionKind::Shl { result, .. }
+        | InstructionKind::Shr { result, .. }
         | InstructionKind::Eq { result, .. }
         | InstructionKind::Ne { result, .. }
         | InstructionKind::Lt { result, .. }
